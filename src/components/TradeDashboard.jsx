@@ -363,7 +363,7 @@ const TradeDashboard = ({
   // ** 3. Render Helpers **
   const renderOverviewTab = () => (
     <div className="space-y-6">
-        <div className="bg-white p-4 rounded-lg shadow-sm h-96">
+        <div className="bg-white p-4 rounded-lg shadow-sm h-96 flex flex-col">
             <div className="flex justify-between items-center mb-4">
                 <h3 className="font-bold text-slate-700">趨勢圖 A: {trendViewMode === 'summary' ? '金額與單價' : '國家佔比堆疊'}</h3>
                 <div className="flex bg-slate-100 p-1 rounded-md text-xs font-bold">
@@ -372,54 +372,58 @@ const TradeDashboard = ({
                 </div>
             </div>
             
-            <ResponsiveContainer width="100%" height="90%">
-            {trendViewMode === 'summary' ? (
-                <ComposedChart data={aggregatedData}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                    <XAxis dataKey="date" tick={{fontSize: 11}} />
-                    <YAxis yAxisId="left" tickFormatter={(val) => formatCurrencyAxis(val, currencyUnit)} label={{ value: `金額 (${getUnitLabel(currencyUnit)})`, angle: -90, position: 'insideLeft', style: {fontSize: 11, fill: '#64748b'} }} tick={{fontSize: 11}} />
-                    <YAxis yAxisId="right" orientation="right" tickFormatter={(val) => val.toFixed(1)} tick={{fontSize: 11}} unit=" $"/>
-                    <Tooltip content={<CustomTimeTooltip />} />
-                    <Legend />
-                    <Bar yAxisId="left" dataKey="exportValue" name="出口金額" fill="#3b82f6" />
-                    <Bar yAxisId="left" dataKey="importValue" name="進口金額" fill="#10b981" />
-                    <Line yAxisId="right" type="monotone" dataKey="avgExportPrice" name="出口單價" stroke="#f59e0b" strokeWidth={2} dot={false} />
-                    <Line yAxisId="right" type="monotone" dataKey="avgImportPrice" name="進口單價" stroke="#8b5cf6" strokeWidth={2} dot={false} />
-                    {GLOBAL_EVENTS.map((event, i) => (
-                    <ReferenceLine key={i} x={mapEventToDateKey(event.date, granularity)} yAxisId="left" stroke="red" strokeDasharray="3 3" label={{ position: 'top', value: '!', fill: 'red', fontSize: 10 }} />
-                    ))}
-                </ComposedChart>
-            ) : (
-                <BarChart data={countryStackData.data}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                    <XAxis dataKey="date" tick={{fontSize: 11}} />
-                    <YAxis tickFormatter={(val) => countryMetric === 'value' ? formatCurrencyAxis(val, currencyUnit) : formatSmartWeight(val)} tick={{fontSize: 11}} />
-                    <Tooltip formatter={(val) => countryMetric === 'value' ? formatCurrencyAxis(val, currencyUnit) : formatSmartWeight(val)} />
-                    <Legend />
-                    {countryStackData.keys.map((key, i) => (
-                        <Bar key={key} dataKey={key} stackId="a" fill={COLORS[i % COLORS.length]} />
-                    ))}
-                </BarChart>
-            )}
-            </ResponsiveContainer>
+            <div className="flex-1 min-h-0 relative w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                {trendViewMode === 'summary' ? (
+                    <ComposedChart data={aggregatedData}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                        <XAxis dataKey="date" tick={{fontSize: 11}} />
+                        <YAxis yAxisId="left" tickFormatter={(val) => formatCurrencyAxis(val, currencyUnit)} label={{ value: `金額 (${getUnitLabel(currencyUnit)})`, angle: -90, position: 'insideLeft', style: {fontSize: 11, fill: '#64748b'} }} tick={{fontSize: 11}} />
+                        <YAxis yAxisId="right" orientation="right" tickFormatter={(val) => val.toFixed(1)} tick={{fontSize: 11}} unit=" $"/>
+                        <Tooltip content={<CustomTimeTooltip />} />
+                        <Legend />
+                        <Bar yAxisId="left" dataKey="exportValue" name="出口金額" fill="#3b82f6" />
+                        <Bar yAxisId="left" dataKey="importValue" name="進口金額" fill="#10b981" />
+                        <Line yAxisId="right" type="monotone" dataKey="avgExportPrice" name="出口單價" stroke="#f59e0b" strokeWidth={2} dot={false} />
+                        <Line yAxisId="right" type="monotone" dataKey="avgImportPrice" name="進口單價" stroke="#8b5cf6" strokeWidth={2} dot={false} />
+                        {GLOBAL_EVENTS.map((event, i) => (
+                        <ReferenceLine key={i} x={mapEventToDateKey(event.date, granularity)} yAxisId="left" stroke="red" strokeDasharray="3 3" label={{ position: 'top', value: '!', fill: 'red', fontSize: 10 }} />
+                        ))}
+                    </ComposedChart>
+                ) : (
+                    <BarChart data={countryStackData.data}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                        <XAxis dataKey="date" tick={{fontSize: 11}} />
+                        <YAxis tickFormatter={(val) => countryMetric === 'value' ? formatCurrencyAxis(val, currencyUnit) : formatSmartWeight(val)} tick={{fontSize: 11}} />
+                        <Tooltip formatter={(val) => countryMetric === 'value' ? formatCurrencyAxis(val, currencyUnit) : formatSmartWeight(val)} />
+                        <Legend />
+                        {countryStackData.keys.map((key, i) => (
+                            <Bar key={key} dataKey={key} stackId="a" fill={COLORS[i % COLORS.length]} />
+                        ))}
+                    </BarChart>
+                )}
+                </ResponsiveContainer>
+            </div>
         </div>
 
-        <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm h-80">
+        <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm h-80 flex flex-col">
             <h3 className="text-sm font-bold text-slate-700 mb-4 flex items-center gap-2">
                 <Database size={16} className="text-emerald-500"/>
                 趨勢圖 B: 進出口量體 (重量比較)
             </h3>
-            <ResponsiveContainer width="100%" height="90%">
-            <BarChart data={aggregatedData} barGap={0}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="date" tick={{fontSize: 11}} />
-                <YAxis tickFormatter={formatSmartWeight} label={{ value: '重量(KG/MT)', angle: -90, position: 'insideLeft', style: {fontSize: 11, fill: '#64748b'} }} tick={{fontSize: 11}} />
-                <Tooltip content={<CustomTimeTooltip />} />
-                <Legend wrapperStyle={{fontSize: '12px'}}/>
-                <Bar dataKey="exportWeight" name="出口重量" fill="#8884d8" fillOpacity={0.8} />
-                <Bar dataKey="importWeight" name="進口重量" fill="#82ca9d" fillOpacity={0.8} />
-            </BarChart>
-            </ResponsiveContainer>
+            <div className="flex-1 min-h-0 relative w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={aggregatedData} barGap={0}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                    <XAxis dataKey="date" tick={{fontSize: 11}} />
+                    <YAxis tickFormatter={formatSmartWeight} label={{ value: '重量(KG/MT)', angle: -90, position: 'insideLeft', style: {fontSize: 11, fill: '#64748b'} }} tick={{fontSize: 11}} />
+                    <Tooltip content={<CustomTimeTooltip />} />
+                    <Legend wrapperStyle={{fontSize: '12px'}}/>
+                    <Bar dataKey="exportWeight" name="出口重量" fill="#8884d8" fillOpacity={0.8} />
+                    <Bar dataKey="importWeight" name="進口重量" fill="#82ca9d" fillOpacity={0.8} />
+                </BarChart>
+                </ResponsiveContainer>
+            </div>
         </div>
     </div>
   );
@@ -448,31 +452,35 @@ const TradeDashboard = ({
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm h-80">
+            <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm h-80 flex flex-col">
                 <h4 className="font-bold text-center mb-2">{countryViewType === 'balance' ? '貿易總額佔比 (依存度)' : '總量佔比'}</h4>
-                <ResponsiveContainer width="100%" height="90%">
-                    <PieChart>
-                        <Pie data={countryPieData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} dataKey="value" label={renderCustomizedLabel}>
-                            {countryPieData.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
-                        </Pie>
-                        <Tooltip formatter={(val) => countryMetric === 'value' ? formatCurrencyAxis(val, currencyUnit) : formatSmartWeight(val)} />
-                    </PieChart>
-                </ResponsiveContainer>
+                <div className="flex-1 min-h-0 relative w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                            <Pie data={countryPieData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} dataKey="value" label={renderCustomizedLabel}>
+                                {countryPieData.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
+                            </Pie>
+                            <Tooltip formatter={(val) => countryMetric === 'value' ? formatCurrencyAxis(val, currencyUnit) : formatSmartWeight(val)} />
+                        </PieChart>
+                    </ResponsiveContainer>
+                </div>
             </div>
-            <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm h-80">
+            <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm h-80 flex flex-col">
                 <h4 className="font-bold text-center mb-2">{countryViewType === 'balance' ? '順逆差趨勢' : '各國趨勢競賽'}</h4>
-                <ResponsiveContainer width="100%" height="90%">
-                    <LineChart data={countryTrendData}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                        <XAxis dataKey="date" tick={{fontSize: 10}} />
-                        <YAxis tickFormatter={countryMetric==='value'?formatCurrencyAxis:formatSmartWeight} tick={{fontSize: 10}} />
-                        <Tooltip formatter={(value, name) => [(value || 0).toLocaleString(), name]} />
-                        <Legend wrapperStyle={{fontSize: '10px'}}/>
-                        {pivotCountryData.slice(0, parseInt(countryTopN === 'all' ? 10 : countryTopN)).map((c, i) => (
-                            <Line key={c.country} type="monotone" dataKey={c.country} stroke={COLORS[i % COLORS.length]} dot={false} strokeWidth={2} />
-                        ))}
-                    </LineChart>
-                </ResponsiveContainer>
+                <div className="flex-1 min-h-0 relative w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={countryTrendData}>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                            <XAxis dataKey="date" tick={{fontSize: 10}} />
+                            <YAxis tickFormatter={countryMetric==='value'?formatCurrencyAxis:formatSmartWeight} tick={{fontSize: 10}} />
+                            <Tooltip formatter={(value, name) => [(value || 0).toLocaleString(), name]} />
+                            <Legend wrapperStyle={{fontSize: '10px'}}/>
+                            {pivotCountryData.slice(0, parseInt(countryTopN === 'all' ? 10 : countryTopN)).map((c, i) => (
+                                <Line key={c.country} type="monotone" dataKey={c.country} stroke={COLORS[i % COLORS.length]} dot={false} strokeWidth={2} />
+                            ))}
+                        </LineChart>
+                    </ResponsiveContainer>
+                </div>
             </div>
         </div>
         

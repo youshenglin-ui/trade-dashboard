@@ -5,7 +5,7 @@ import {
 } from 'recharts';
 import { 
   Database, Calendar, AlertCircle, Activity, Factory, Leaf, Zap, MapPin, 
-  FileText, ZoomIn, ZoomOut, List, Maximize, Hand, Truck, GripHorizontal
+  FileText, ZoomIn, ZoomOut, List, Maximize, Hand, Truck, GripHorizontal, RefreshCw
 } from 'lucide-react';
 import { 
   normalizeHydrogenData, parseHydrogenCSV, getRegion as getBasicRegion, 
