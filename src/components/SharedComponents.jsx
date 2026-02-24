@@ -3,8 +3,8 @@
 // ==========================================
 import React, { Component, useState, useEffect, useRef, useMemo } from 'react';
 import { AlertTriangle, ArrowUpRight, ArrowDownRight, Newspaper, CheckSquare, ChevronDown, Square } from 'lucide-react';
-import { formatSmartWeight, getCountryFlag, getLocation, getSimplePlantName, cleanNumber } from '../utils/helpers';
-import { GLOBAL_EVENTS, TAIWAN_REGIONS_PATHS } from '../utils/constants';
+import { formatSmartWeight, getCountryFlag, getSimplePlantName, cleanNumber } from '../utils/helpers';
+import { GLOBAL_EVENTS } from '../utils/constants';
 
 // Error Boundary
 export class ErrorBoundary extends Component {
@@ -167,49 +167,6 @@ export const MultiSelectDropdown = ({ options, selected, onChange, label }) => {
                     })}
                 </div>
             )}
-        </div>
-    );
-};
-
-// Industrial Map SVG
-export const IndustrialMap = ({ data, onSelect }) => {
-    const locData = useMemo(() => {
-        const map = {};
-        data.forEach(d => {
-           const loc = getLocation(d.Plant) || { name: '其他', cx: 250, cy: 300, region: '其他' };
-           if(!map[loc.name]) map[loc.name] = { ...loc, value: 0, plants: new Set() };
-           map[loc.name].value += (d.Output_Tons || 0);
-           map[loc.name].plants.add(getSimplePlantName(d.Company, d.Plant));
-        });
-        return Object.values(map);
-    }, [data]);
-
-    return (
-        <div className="relative w-full h-full flex items-center justify-center bg-slate-100 rounded-xl border border-slate-200 overflow-hidden">
-            <svg viewBox="0 0 300 350" className="w-full h-full max-w-[300px] drop-shadow-xl">
-                <path d={TAIWAN_REGIONS_PATHS.NORTH} fill="#e0f2fe" stroke="#94a3b8" strokeWidth="1" />
-                <path d={TAIWAN_REGIONS_PATHS.CENTRAL} fill="#f0fdf4" stroke="#94a3b8" strokeWidth="1" />
-                <path d={TAIWAN_REGIONS_PATHS.SOUTH} fill="#fff7ed" stroke="#94a3b8" strokeWidth="1" />
-                <path d={TAIWAN_REGIONS_PATHS.EAST} fill="#f5f3ff" stroke="#94a3b8" strokeWidth="1" />
-                
-                {locData.map(loc => {
-                   if(loc.value === 0) return null;
-                   const radius = Math.min(Math.sqrt(loc.value) * 5 + 5, 25);
-                   const plantList = Array.from(loc.plants).join(', ');
-                   return (
-                     <g key={loc.name} onClick={() => onSelect(loc.name)} className="cursor-pointer hover:opacity-80 transition-opacity">
-                       <title>{`${loc.name}: ${loc.value.toFixed(1)} 萬噸\n(${plantList})`}</title>
-                       <circle cx={loc.cx} cy={loc.cy} r={radius} fill="#3b82f6" fillOpacity="0.8" stroke="white" strokeWidth="2"/>
-                       <text x={loc.cx} y={loc.cy} dy={-radius-5} textAnchor="middle" fontSize="10" fill="#1e293b" fontWeight="bold" style={{textShadow: '0px 0px 2px white'}}>{loc.name}</text>
-                       <text x={loc.cx} y={loc.cy} dy={4} textAnchor="middle" fontSize="9" fill="white">{(loc.value).toFixed(1)}</text>
-                     </g>
-                   );
-                })}
-            </svg>
-            <div className="absolute bottom-2 right-2 text-[10px] text-slate-500 bg-white/80 px-2 rounded flex flex-col items-end">
-                <span>單位: 萬噸</span>
-                <span className="text-[9px] text-slate-400">* 點擊圓點可篩選</span>
-            </div>
         </div>
     );
 };

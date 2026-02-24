@@ -1,15 +1,16 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  Globe, ShieldAlert, Layers, Factory, ChevronRight, Settings, Plus, Trash2, SearchCode, X, Search, History, Star, RefreshCw, ExternalLink, Zap
+  Globe, ShieldAlert, Layers, Factory, ChevronRight, Settings, Plus, Trash2, SearchCode, X, Search, History, Star, RefreshCw, ExternalLink, Zap, Leaf
 } from 'lucide-react';
 import TradeDashboard from './components/TradeDashboard';
 import HydrogenDashboard from './components/HydrogenDashboard';
+import CcusDashboard from './components/CcusDashboard';
 import { STRATEGIC_TOPICS } from './utils/constants';
 import { normalizeCode, parseCSV_Safe } from './utils/helpers';
 
 const App = () => {
   const [activeTab, setActiveTab] = useState('overview'); 
-  const [activeModule, setActiveModule] = useState('trade'); // 'trade' or 'hydrogen'
+  const [activeModule, setActiveModule] = useState('trade'); // 'trade' | 'hydrogen' | 'ccus'
   const [showConfigModal, setShowConfigModal] = useState(false);
 
   // Shared Trade State
@@ -21,18 +22,30 @@ const App = () => {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const searchContainerRef = useRef(null);
   
+  const activeBase = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQTBhte4P7bzMFSTlYDml3F25Wcr-sYfC7aOWQiePkfid7f2xBR-WUDMN7NAO3Z2e24Po14dqG7ZxnK/pub';
+  const archiveBase = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRzjXsv2ydCw4O_eDQvunQkn1UWxTNaW7ejOaf3EcDrWCZZzTK1i6u6mJ3KSVkowRjaMVNUnYdA45Bx/pub';
+
   const [dataSources, setDataSources] = useState([
-    'https://docs.google.com/spreadsheets/d/e/2PACX-1vQTBhte4P7bzMFSTlYDml3F25Wcr-sYfC7aOWQiePkfid7f2xBR-WUDMN7NAO3Z2e24Po14dqG7ZxnK/pub?gid=1075035870&single=true&output=csv',
-    'https://docs.google.com/spreadsheets/d/e/2PACX-1vQTBhte4P7bzMFSTlYDml3F25Wcr-sYfC7aOWQiePkfid7f2xBR-WUDMN7NAO3Z2e24Po14dqG7ZxnK/pub?gid=111460997&single=true&output=csv',
-    'https://docs.google.com/spreadsheets/d/e/2PACX-1vQTBhte4P7bzMFSTlYDml3F25Wcr-sYfC7aOWQiePkfid7f2xBR-WUDMN7NAO3Z2e24Po14dqG7ZxnK/pub?gid=9883438&single=true&output=csv',
-    'https://docs.google.com/spreadsheets/d/e/2PACX-1vRzjXsv2ydCw4O_eDQvunQkn1UWxTNaW7ejOaf3EcDrWCZZzTK1i6u6mJ3KSVkowRjaMVNUnYdA45Bx/pub?gid=1882060232&single=true&output=csv',
-    'https://docs.google.com/spreadsheets/d/e/2PACX-1vRzjXsv2ydCw4O_eDQvunQkn1UWxTNaW7ejOaf3EcDrWCZZzTK1i6u6mJ3KSVkowRjaMVNUnYdA45Bx/pub?gid=1951510622&single=true&output=csv',
-    'https://docs.google.com/spreadsheets/d/e/2PACX-1vRzjXsv2ydCw4O_eDQvunQkn1UWxTNaW7ejOaf3EcDrWCZZzTK1i6u6mJ3KSVkowRjaMVNUnYdA45Bx/pub?gid=1940628234&single=true&output=csv',
-    'https://docs.google.com/spreadsheets/d/e/2PACX-1vRzjXsv2ydCw4O_eDQvunQkn1UWxTNaW7ejOaf3EcDrWCZZzTK1i6u6mJ3KSVkowRjaMVNUnYdA45Bx/pub?gid=1693737933&single=true&output=csv',
-    'https://docs.google.com/spreadsheets/d/e/2PACX-1vRzjXsv2ydCw4O_eDQvunQkn1UWxTNaW7ejOaf3EcDrWCZZzTK1i6u6mJ3KSVkowRjaMVNUnYdA45Bx/pub?gid=1407313243&single=true&output=csv',
-    'https://docs.google.com/spreadsheets/d/e/2PACX-1vRzjXsv2ydCw4O_eDQvunQkn1UWxTNaW7ejOaf3EcDrWCZZzTK1i6u6mJ3KSVkowRjaMVNUnYdA45Bx/pub?gid=698533804&single=true&output=csv',
-    'https://docs.google.com/spreadsheets/d/e/2PACX-1vRzjXsv2ydCw4O_eDQvunQkn1UWxTNaW7ejOaf3EcDrWCZZzTK1i6u6mJ3KSVkowRjaMVNUnYdA45Bx/pub?gid=54711180&single=true&output=csv',
-    'https://docs.google.com/spreadsheets/d/e/2PACX-1vRzjXsv2ydCw4O_eDQvunQkn1UWxTNaW7ejOaf3EcDrWCZZzTK1i6u6mJ3KSVkowRjaMVNUnYdA45Bx/pub?gid=2061649166&single=true&output=csv',
+    `${activeBase}?gid=9883438&single=true&output=csv`,      // 2025
+    `${activeBase}?gid=111460997&single=true&output=csv`,    // 2024
+    `${activeBase}?gid=1075035870&single=true&output=csv`,   // 2023
+    `${activeBase}?gid=2046100985&single=true&output=csv`,   // 2022
+    `${activeBase}?gid=1831893040&single=true&output=csv`,   // 2021
+    `${activeBase}?gid=1203579653&single=true&output=csv`,   // 2020
+    `${activeBase}?gid=1828590182&single=true&output=csv`,   // 2019
+    `${activeBase}?gid=892690605&single=true&output=csv`,    // 2018
+    `${activeBase}?gid=127022410&single=true&output=csv`,    // 2017
+    `${activeBase}?gid=723477109&single=true&output=csv`,    // 2016
+    `${activeBase}?gid=1464732954&single=true&output=csv`,   // 2015
+
+    `${archiveBase}?gid=1882060232&single=true&output=csv`,
+    `${archiveBase}?gid=1951510622&single=true&output=csv`,
+    `${archiveBase}?gid=1940628234&single=true&output=csv`,
+    `${archiveBase}?gid=1693737933&single=true&output=csv`,
+    `${archiveBase}?gid=1407313243&single=true&output=csv`,
+    `${archiveBase}?gid=698533804&single=true&output=csv`,
+    `${archiveBase}?gid=54711180&single=true&output=csv`,
+    `${archiveBase}?gid=2061649166&single=true&output=csv`
   ]);
   
   const [useRealData, setUseRealData] = useState(true);
@@ -40,10 +53,16 @@ const App = () => {
   const [detectedProductName, setDetectedProductName] = useState('');
   const [inspectorCode, setInspectorCode] = useState('');
   const [currentTopic, setCurrentTopic] = useState(null); 
+  
   const [history, setHistory] = useState([
+      { code: '290511', name: '甲醇' },
+      { code: '291521', name: '醋酸' },
+      { code: '280410', name: '氫氣' },
       { code: '280300', name: '碳黑' },
+      { code: '72', name: '鋼鐵' },
       { code: '2523', name: '水泥' }
   ]);
+  
   const [watchedProducts, setWatchedProducts] = useState([]);
   const [dataHealth, setDataHealth] = useState({});
 
@@ -124,11 +143,7 @@ const App = () => {
         const filtered = prev.filter(h => h.code !== target);
         return [newEntry, ...filtered].slice(0, 8);
     });
-    // Set Trade module active on search
     setActiveModule('trade');
-    if (useRealData && dataset.length > 0) {
-        // The filtering happens inside TradeDashboard via props
-    }
   };
 
   const selectProduct = (code, name) => {
@@ -144,7 +159,6 @@ const App = () => {
       setCurrentTopic(topicKey);
       setInputValue(STRATEGIC_TOPICS[topicKey].title);
       setActiveModule('trade');
-      // setActiveTab('topic_overview'); // 注意：這個 tab 狀態由 TradeDashboard 內部控制，這裡無需設定
   };
 
   const handleInputChange = (e) => {
@@ -152,12 +166,9 @@ const App = () => {
       setInputValue(val);
       if (!val) { setSuggestions([]); setShowSuggestions(false); return; }
       
-      // Simple suggestion logic (can be optimized)
       const uniqueProducts = new Map();
       watchedProducts.forEach(p => uniqueProducts.set(p.code, p.name));
-      // Basic search on dataset
       if (dataset.length > 0) {
-        // optimization: slice dataset
         for(let i=0; i<Math.min(dataset.length, 5000); i++) {
            if(uniqueProducts.size > 20) break;
            const d = dataset[i];
@@ -227,14 +238,24 @@ const App = () => {
         
         <div className="p-4 border-b border-slate-800">
             <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2"><Layers size={14}/> 專項儀表板</h3>
-            <button 
-                onClick={() => { setActiveModule('hydrogen'); setCurrentTopic(null); }}
-                className={`w-full text-left px-3 py-2 text-sm rounded-md transition-colors flex items-center gap-2 ${activeModule === 'hydrogen' ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/50' : 'text-slate-300 hover:bg-slate-800'}`}
-            >
-                <Factory size={16} className={activeModule === 'hydrogen' ? 'text-white' : 'text-emerald-400'}/>
-                <span>氫能供需戰情室</span>
-                {activeModule === 'hydrogen' && <ChevronRight size={14} className="ml-auto opacity-70"/>}
-            </button>
+            <div className="space-y-2">
+                <button 
+                    onClick={() => { setActiveModule('hydrogen'); setCurrentTopic(null); }}
+                    className={`w-full text-left px-3 py-2 text-sm rounded-md transition-colors flex items-center gap-2 ${activeModule === 'hydrogen' ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/50' : 'text-slate-300 hover:bg-slate-800'}`}
+                >
+                    <Factory size={16} className={activeModule === 'hydrogen' ? 'text-white' : 'text-emerald-400'}/>
+                    <span>氫能供需戰情室</span>
+                    {activeModule === 'hydrogen' && <ChevronRight size={14} className="ml-auto opacity-70"/>}
+                </button>
+                <button 
+                    onClick={() => { setActiveModule('ccus'); setCurrentTopic(null); }}
+                    className={`w-full text-left px-3 py-2 text-sm rounded-md transition-colors flex items-center gap-2 ${activeModule === 'ccus' ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/50' : 'text-slate-300 hover:bg-slate-800'}`}
+                >
+                    <Leaf size={16} className={activeModule === 'ccus' ? 'text-white' : 'text-teal-400'}/>
+                    <span>碳捕捉與封存戰情室</span>
+                    {activeModule === 'ccus' && <ChevronRight size={14} className="ml-auto opacity-70"/>}
+                </button>
+            </div>
         </div>
 
         <div className="p-4 overflow-y-auto flex-1">
@@ -252,7 +273,6 @@ const App = () => {
 
       {/* Main Content */}
       <main className="flex-1 overflow-y-auto h-screen flex flex-col relative">
-        {/* Header */}
         <header className="bg-white border-b border-slate-200 px-6 py-4 sticky top-0 z-20 shadow-sm space-y-4">
           <div className="flex flex-wrap items-center gap-4">
             <div className="flex items-center gap-3 flex-1" ref={searchContainerRef}>
@@ -266,17 +286,16 @@ const App = () => {
           </div>
         </header>
 
-        {/* Title Section */}
         <div className="px-6 pt-6 pb-2">
             <div className="flex items-center gap-3">
-                <div className={`p-2 rounded-lg text-white ${currentTopic ? 'bg-purple-600' : activeModule === 'hydrogen' ? 'bg-emerald-600' : 'bg-blue-600'}`}>
-                    {currentTopic ? <Zap size={24} /> : activeModule === 'hydrogen' ? <Factory size={24} /> : <Layers size={24} />}
+                <div className={`p-2 rounded-lg text-white ${currentTopic ? 'bg-purple-600' : activeModule === 'hydrogen' ? 'bg-emerald-600' : activeModule === 'ccus' ? 'bg-teal-600' : 'bg-blue-600'}`}>
+                    {currentTopic ? <Zap size={24} /> : activeModule === 'hydrogen' ? <Factory size={24} /> : activeModule === 'ccus' ? <Leaf size={24} /> : <Layers size={24} />}
                 </div>
                 <div className="flex-1">
                     <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-                        {activeModule === 'hydrogen' ? '氫能供需戰情室' : (detectedProductName || '搜尋結果')}
-                        {!currentTopic && activeModule !== 'hydrogen' && <span className="text-slate-400 text-lg font-normal font-mono">({searchQuery})</span>}
-                        {!currentTopic && activeModule !== 'hydrogen' && (
+                        {activeModule === 'hydrogen' ? '氫能供需戰情室' : activeModule === 'ccus' ? 'CCUS 碳捕捉與封存戰情室' : (detectedProductName || '搜尋結果')}
+                        {!currentTopic && activeModule === 'trade' && <span className="text-slate-400 text-lg font-normal font-mono">({searchQuery})</span>}
+                        {!currentTopic && activeModule === 'trade' && (
                           <button onClick={() => {
                             const isWatched = watchedProducts.some(p => p.code === searchQuery);
                             if (isWatched) setWatchedProducts(prev => prev.filter(p => p.code !== searchQuery));
@@ -294,9 +313,10 @@ const App = () => {
             </div>
         </div>
 
-        {/* View Switcher */}
         {activeModule === 'hydrogen' ? (
              <HydrogenDashboard />
+        ) : activeModule === 'ccus' ? (
+             <CcusDashboard />
         ) : (
              <TradeDashboard 
                 dataSources={dataSources}

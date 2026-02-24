@@ -1,7 +1,6 @@
 // ==========================================
 // 工具函數 (Utility Functions)
 // ==========================================
-import { LOCATION_MAPPING } from './constants';
 
 export function normalizeCode(code) {
     return String(code).replace(/[^0-9]/g, '');
@@ -344,14 +343,6 @@ export const getUsageCategory = (identifiedName) => {
     if (['加氫脫硫', '硫磺尾氣處理', '其他煉油相關'].includes(identifiedName)) return '煉油';
     if (['燃料燃燒'].includes(identifiedName)) return '燃燒';
     return '化工';
-};
-
-export const getLocation = (plantName) => {
-    const n = (plantName || '').trim();
-    for (const loc of LOCATION_MAPPING) {
-        if (loc.keywords.some(k => n.includes(k))) return loc;
-    }
-    return null;
 };
 
 export const getRegion = (plantName) => {
