@@ -86,7 +86,7 @@ const calcDistanceKm = (lat1, lon1, lat2, lon2) => {
 
 const checkHydrogenRequirement = (techName) => {
     const t = String(techName).toLowerCase();
-    if (t.match(/(甲醇|醇|烷|烯|炔)/)) return { requiresH2: true, label: '需配綠/藍氫', color: 'text-blue-600', bg: 'bg-blue-100', ratio: 0.136 }; // 44噸CO2配6噸H2 (6/44 ≈ 0.136)
+    if (t.match(/(甲醇|醇|烷|烯|炔)/)) return { requiresH2: true, label: '需配綠/藍氫', color: 'text-blue-600', bg: 'bg-blue-100', ratio: 0.136 }; 
     if (t.match(/(pc|聚碳酸酯)/)) return { requiresH2: false, label: '無須配氫', color: 'text-slate-500', bg: 'bg-slate-100', ratio: 0 };
     return { requiresH2: false, label: '視製程而定', color: 'text-amber-600', bg: 'bg-amber-100', ratio: 0 };
 };
@@ -145,11 +145,10 @@ const TaiwanCcusMap = ({ mode = 'capture', captureData = [], utilData = [], stor
     // 核心投影公式：將經緯度轉為 SVG 基礎座標
     const projectBase = (lon, lat) => {
         const x = (lon - centerLon) * baseScale;
-        const y = -(lat - centerLat) * baseScale * 1.1; // 1.1 是針對台灣緯度的縱橫比修正
+        const y = -(lat - centerLat) * baseScale * 1.1; 
         return [x, y];
     };
 
-    // 初始化時拉取 g0v 的開源台灣縣市 GeoJSON
     useEffect(() => {
         fetch('https://raw.githubusercontent.com/g0v/twgeojson/master/json/twCounty2010.geo.json')
             .then(res => res.json())
@@ -226,7 +225,6 @@ const TaiwanCcusMap = ({ mode = 'capture', captureData = [], utilData = [], stor
                 onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave={handleMouseLeave}
                 ref={mapRef}
             >
-                {/* 核心 GPU 縮放與平移群組 */}
                 <g transform={`translate(${baseWidth/2 + pan.x}, ${baseHeight/2 + pan.y}) scale(${zoom})`}>
                     
                     {/* 1. 繪製台灣地圖底圖 */}
@@ -240,7 +238,7 @@ const TaiwanCcusMap = ({ mode = 'capture', captureData = [], utilData = [], stor
                     {mode === 'capture' && captureData.map((d, i) => {
                         const coords = (d.Longitude && d.Latitude) ? { lon: d.Longitude, lat: d.Latitude } : getApproximateCoordinates(d.Plant);
                         const [cx, cy] = projectBase(coords.lon, coords.lat);
-                        const r = Math.max(4, Math.min(25, Math.sqrt(d.Net_Capture_Volume || 0) * 1.5)) / zoom; // 保持視覺半徑一致
+                        const r = Math.max(4, Math.min(25, Math.sqrt(d.Net_Capture_Volume || 0) * 1.5)) / zoom; 
                         return (
                             <g key={i} className="hover:opacity-80 transition-opacity">
                                 <circle cx={cx} cy={cy} r={r} fill={stringToColor(d.Capture_Tech)} fillOpacity={0.85} stroke="white" strokeWidth={1.5 / zoom} />
