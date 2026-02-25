@@ -127,6 +127,18 @@ const getApproximateCoordinates = (plant, company) => {
     return { lat: 23.6, lon: 120.9 }; 
 };
 
+// 新增：定義主要工業區的位置與半徑大小，用於地圖底層繪製
+const INDUSTRIAL_ZONES_COORDS = [
+    { name: '雲林麥寮工業區', lat: 23.78, lon: 120.18, radius: 16 },
+    { name: '高雄林園/小港', lat: 22.51, lon: 120.35, radius: 18 },
+    { name: '高雄大發工業區', lat: 22.58, lon: 120.40, radius: 12 },
+    { name: '高雄仁武工業區', lat: 22.70, lon: 120.34, radius: 12 },
+    { name: '彰化彰濱工業區', lat: 24.07, lon: 120.42, radius: 16 },
+    { name: '苗栗頭份工業區', lat: 24.68, lon: 120.91, radius: 10 },
+    { name: '桃園沿海工業帶', lat: 25.03, lon: 121.12, radius: 18 },
+    { name: '台南科學園區', lat: 23.10, lon: 120.27, radius: 12 }
+];
+
 // ==========================================
 // 地理地圖模組
 // ==========================================
@@ -329,6 +341,17 @@ const TaiwanH2Map = ({ supplyData = [], demandData = [] }) => {
                     {mapPaths.map((p, i) => (
                         <path key={`map-${i}`} d={p.d} fill={REGION_COLORS[p.region] || '#f8fafc'} stroke="#cbd5e1" strokeWidth={1.5 / zoom} className="transition-colors hover:fill-slate-200" />
                     ))}
+
+                    {/* 新增：勾勒工業區範圍與標示 */}
+                    {INDUSTRIAL_ZONES_COORDS.map((zone, idx) => {
+                        const [cx, cy] = projectBase(zone.lon, zone.lat);
+                        return (
+                            <g key={`zone-${idx}`} className="pointer-events-none opacity-80">
+                                <circle cx={cx} cy={cy} r={zone.radius} fill="#cbd5e1" fillOpacity={0.35} stroke="#94a3b8" strokeWidth={1.5 / zoom} strokeDasharray={`${4/zoom} ${4/zoom}`} />
+                                <text x={cx} y={cy - zone.radius - (4/zoom)} fontSize={11 / zoom} fill="#64748b" textAnchor="middle" fontWeight="bold" style={{textShadow: '0 0 4px white', letterSpacing: '0.05em'}}>{zone.name}</text>
+                            </g>
+                        );
+                    })}
 
                     {mapNodes.demandNodes.filter(d => d.sourceCoords).map((d, i) => {
                         const [x1, y1] = projectBase(d.sourceCoords.lon, d.sourceCoords.lat);
@@ -712,8 +735,8 @@ const RegionalDeepDive = ({ supplyData, demandData, globalYear }) => {
                 ) : (
                     <div className="flex-1 min-h-[500px]">
                         <TaiwanH2Map 
-                            supplyData={supplyData.filter(d => d.Region === activeRegion && (globalYear === 'ALL' || d.Year === globalYear))} 
-                            demandData={demandData.filter(d => d.Region === activeRegion && (globalYear === 'ALL' || d.Year === globalYear))} 
+                            supplyData={supplyData.filter(d => (globalYear === 'ALL' || d.Year === globalYear))} 
+                            demandData={demandData.filter(d => (globalYear === 'ALL' || d.Year === globalYear))} 
                         />
                     </div>
                 )}
