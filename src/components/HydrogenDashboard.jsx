@@ -457,13 +457,21 @@ const TaiwanH2Map = ({ supplyData = [], demandData = [] }) => {
                         const fillColor = isSupplyDominant ? "#3b82f6" : "#f59e0b";
                         const isSelected = activeSelection?.type === 'plant' && activeSelection.data.label === n.label;
                         
+                        // 處理標籤雙行顯示 (公司名 + 廠區名)
+                        const nameParts = n.label.split(' ');
+                        const compName = nameParts[0];
+                        const plantName = nameParts.slice(1).join(' ');
+                        
                         return (
                             <g key={`node-${i}`} className="cursor-pointer transition-all hover:opacity-80" onClick={() => handlePlantClick(n)}>
                                 <circle cx={cx} cy={cy} r={Math.max(r, 14 / zoom)} fill="transparent" /> {/* 擴大 Hit Area */}
                                 <circle cx={cx} cy={cy} r={r} fill={fillColor} fillOpacity={isSelected ? 1 : 0.85} stroke={isSelected ? "#1e293b" : "white"} strokeWidth={isSelected ? 2.5 / zoom : 1.5 / zoom} />
                                 
-                                {/* 廠區標籤 (明顯白邊防重疊) */}
-                                <text x={cx + r + (4/zoom)} y={cy + (3/zoom)} fontSize={11 / zoom} fill={isSelected ? "#0f172a" : "#334155"} fontWeight={isSelected ? "900" : "bold"} paintOrder="stroke" stroke="white" strokeWidth={3.5/zoom} strokeLinejoin="round" className="pointer-events-none">{n.label.split(' ')[1] || n.label}</text>
+                                {/* 廠區標籤 (明顯白邊防重疊，雙行顯示) */}
+                                <text x={cx + r + (4/zoom)} y={cy - (2/zoom)} fontSize={11 / zoom} fill={isSelected ? "#0f172a" : "#334155"} fontWeight={isSelected ? "900" : "bold"} className="pointer-events-none">
+                                    <tspan x={cx + r + (4/zoom)} dy={0} paintOrder="stroke" stroke="white" strokeWidth={3.5/zoom} strokeLinejoin="round">{compName}</tspan>
+                                    {plantName && <tspan x={cx + r + (4/zoom)} dy={12/zoom} paintOrder="stroke" stroke="white" strokeWidth={3.5/zoom} strokeLinejoin="round">{plantName}</tspan>}
+                                </text>
                             </g>
                         );
                     })}
@@ -489,6 +497,7 @@ const TaiwanH2Map = ({ supplyData = [], demandData = [] }) => {
 
 const StackedTrendChart = ({ data, keys, title, icon: Icon, unit = '萬噸' }) => {
     const [zoomOthers, setZoomOthers] = useState(false);
+    const [activeBar, setActiveBar] = useState(null); // 追蹤滑鼠當前懸浮的柱狀圖區塊
     
     // 依據總量由大到小排序 (確保最大在柱狀圖底層)
     const sortedAllKeys = useMemo(() => {
@@ -503,19 +512,31 @@ const StackedTrendChart = ({ data, keys, title, icon: Icon, unit = '萬噸' }) =
 
     const CustomStackTooltip = ({ active, payload, label }) => {
         if (active && payload && payload.length) {
-            const valid = payload.filter(p => p.value > 0).sort((a, b) => b.value - a.value);
+            let valid = payload.filter(p => p.value > 0).sort((a, b) => b.value - a.value);
+            
+            // 智能排序：將滑鼠懸浮的公司拉到最上面並高亮
+            if (activeBar) {
+                const activeItem = valid.find(p => p.dataKey === activeBar);
+                if (activeItem) {
+                    valid = [activeItem, ...valid.filter(p => p.dataKey !== activeBar)];
+                }
+            }
+
             return (
-                <div className="bg-white/95 backdrop-blur-sm p-3 border border-slate-200 rounded-lg shadow-xl text-xs max-h-64 overflow-y-auto custom-scrollbar min-w-[150px]">
-                    <p className="font-bold text-slate-800 border-b border-slate-200 pb-1 mb-2">{label} 年</p>
-                    {valid.map((p, i) => (
-                        <div key={i} className="flex justify-between gap-4 mb-1.5 items-center">
-                            <span className="flex items-center gap-1.5 truncate max-w-[120px]">
-                                <span className="w-2 h-2 rounded-full flex-shrink-0" style={{backgroundColor: p.color}}></span>
-                                <span className="truncate" title={p.name}>{p.name}</span>
-                            </span>
-                            <span className="font-mono font-bold text-slate-700">{p.value.toFixed(2)}</span>
-                        </div>
-                    ))}
+                <div className="bg-white/95 backdrop-blur-sm p-3 border border-slate-200 rounded-lg shadow-xl text-xs max-h-64 overflow-y-auto custom-scrollbar w-56 pointer-events-auto">
+                    <p className="font-bold text-slate-800 mb-2 border-b border-slate-200 pb-1 sticky top-0 bg-white/95 z-10">{label} 年</p>
+                    {valid.map((p, i) => {
+                        const isHovered = activeBar === p.dataKey;
+                        return (
+                            <div key={i} className={`flex justify-between gap-2 mb-1 items-center p-1.5 rounded-md transition-colors ${isHovered ? 'bg-blue-100 ring-1 ring-blue-300' : ''}`}>
+                                <span className="flex items-center gap-1.5 flex-1 min-w-0">
+                                    <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{backgroundColor: p.color}}></span>
+                                    <span className={`truncate ${isHovered ? 'font-bold text-blue-900' : 'font-medium text-slate-700'}`} title={p.name}>{p.name}</span>
+                                </span>
+                                <span className={`font-mono ${isHovered ? 'font-black text-blue-700' : 'font-bold text-slate-600'}`}>{p.value.toFixed(2)}</span>
+                            </div>
+                        );
+                    })}
                 </div>
             );
         }
@@ -545,12 +566,24 @@ const StackedTrendChart = ({ data, keys, title, icon: Icon, unit = '萬噸' }) =
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0"/>
                         <XAxis dataKey="year" tick={{fontSize:12, fill: '#64748b'}} axisLine={false} tickLine={false} />
                         <YAxis label={{ value: unit, angle: -90, position: 'insideLeft', offset: 15, fontSize: 11, fill: '#94a3b8' }} tick={{fontSize:11, fill: '#64748b'}} axisLine={false} tickLine={false} />
-                        <Tooltip content={<CustomStackTooltip />} cursor={{fill: '#f8fafc'}}/>
+                        
+                        {/* 設定 pointerEvents 允許 Tooltip 內滾動 */}
+                        <Tooltip content={<CustomStackTooltip />} cursor={{fill: '#f8fafc'}} wrapperStyle={{ zIndex: 50, pointerEvents: 'auto' }}/>
+                        
                         {/* 圖例順序與資料陣列順序相同 (最大在左上) */}
                         <Legend wrapperStyle={{fontSize:'10px', paddingTop: '10px'}} />
                         
                         {displayKeys.map((k) => (
-                            <Bar key={k} dataKey={k} stackId="a" fill={stringToColor(k)} name={k} radius={[0, 0, 0, 0]}>
+                            <Bar 
+                                key={k} 
+                                dataKey={k} 
+                                stackId="a" 
+                                fill={stringToColor(k)} 
+                                name={k} 
+                                radius={[0, 0, 0, 0]}
+                                onMouseEnter={() => setActiveBar(k)}
+                                onMouseLeave={() => setActiveBar(null)}
+                            >
                                 {/* 貢獻 >= 1萬噸就顯示標籤 */}
                                 <LabelList dataKey={k} position="center" fill="white" fontSize={11} fontWeight="bold" formatter={(v) => v >= 1 ? v.toFixed(1) : ''} style={{ textShadow: '0 0 3px rgba(0,0,0,0.8)' }} />
                             </Bar>
