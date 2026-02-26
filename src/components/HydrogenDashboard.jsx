@@ -5,7 +5,7 @@ import {
 } from 'recharts';
 import { 
   Database, Calendar, AlertCircle, Activity, Factory, Leaf, Zap, MapPin, 
-  FileText, ZoomIn, ZoomOut, List, Maximize, Hand, Truck, GripHorizontal, RefreshCw, Layers
+  FileText, ZoomIn, ZoomOut, List, Maximize, Hand, Truck, GripHorizontal, RefreshCw, Layers, X
 } from 'lucide-react';
 import { 
   normalizeHydrogenData, parseHydrogenCSV, getRegion as getBasicRegion, 
@@ -89,6 +89,7 @@ const getDashboardPlantName = (company, plant) => {
     return getSimplePlantName(company, plant);
 };
 
+// 重構：統一所有工業區的命名，以便對接座標與點擊邏輯
 const getIndustrialZone = (plant, company) => {
     const p = String(plant || '').trim();
     const c = String(company || '').trim();
@@ -127,20 +128,21 @@ const getApproximateCoordinates = (plant, company) => {
     return { lat: 23.6, lon: 120.9 }; 
 };
 
-// 新增：定義主要工業區的位置與半徑大小，用於地圖底層繪製
+// 主要工業區的中心位置與繪製半徑
 const INDUSTRIAL_ZONES_COORDS = [
-    { name: '雲林麥寮工業區', lat: 23.78, lon: 120.18, radius: 16 },
-    { name: '高雄林園/小港', lat: 22.51, lon: 120.35, radius: 18 },
-    { name: '高雄大發工業區', lat: 22.58, lon: 120.40, radius: 12 },
-    { name: '高雄仁武工業區', lat: 22.70, lon: 120.34, radius: 12 },
-    { name: '彰化彰濱工業區', lat: 24.07, lon: 120.42, radius: 16 },
-    { name: '苗栗頭份工業區', lat: 24.68, lon: 120.91, radius: 10 },
-    { name: '桃園沿海工業帶', lat: 25.03, lon: 121.12, radius: 18 },
-    { name: '台南科學園區', lat: 23.10, lon: 120.27, radius: 12 }
+    { name: '雲林-麥寮工業區', lat: 23.78, lon: 120.18, radius: 24 },
+    { name: '高雄-林園/小港工業區', lat: 22.51, lon: 120.35, radius: 24 },
+    { name: '高雄-大發工業區', lat: 22.58, lon: 120.40, radius: 18 },
+    { name: '高雄-仁武工業區', lat: 22.70, lon: 120.34, radius: 18 },
+    { name: '彰化-彰濱工業區', lat: 24.07, lon: 120.42, radius: 20 },
+    { name: '苗栗-頭份工業區', lat: 24.68, lon: 120.91, radius: 16 },
+    { name: '桃園工業區(含桃煉)', lat: 25.03, lon: 121.12, radius: 26 },
+    { name: '北部-其他工業區', lat: 24.58, lon: 120.82, radius: 14 },
+    { name: '台南-南部科學園區', lat: 23.10, lon: 120.27, radius: 16 }
 ];
 
 // ==========================================
-// 地理地圖模組
+// 地理地圖模組 (防重疊 + 點擊互動 + 獨立柱狀圖)
 // ==========================================
 const TaiwanH2Map = ({ supplyData = [], demandData = [] }) => {
     const mapRef = useRef(null);
@@ -150,7 +152,8 @@ const TaiwanH2Map = ({ supplyData = [], demandData = [] }) => {
     const [lastPos, setLastPos] = useState({ x: 0, y: 0 });
     const [mapPaths, setMapPaths] = useState([]);
     
-    const [hoveredNode, setHoveredNode] = useState(null);
+    // 狀態：被選中的物件 (type: 'plant' | 'zone')
+    const [activeSelection, setActiveSelection] = useState(null);
 
     const baseWidth = 800;
     const baseHeight = 900;
@@ -217,112 +220,175 @@ const TaiwanH2Map = ({ supplyData = [], demandData = [] }) => {
     const handleZoomOut = () => setZoom(prev => Math.max(prev / 1.3, 0.5));
     const handleReset = () => { setZoom(1); setPan({ x: 0, y: 0 }); };
 
-    const plantStatsMap = useMemo(() => {
-        const map = {};
-        supplyData.forEach(d => {
-            const name = getDashboardPlantName(d.Company, d.Plant);
-            if (!map[name]) map[name] = { supply: 0, demand: 0 };
-            map[name].supply += (d.Output_Tons || 0);
-        });
-        demandData.forEach(d => {
-            const name = getDashboardPlantName(d.Company, d.Plant);
-            if (!map[name]) map[name] = { supply: 0, demand: 0 };
-            map[name].demand += (d.Demand_Tons || 0);
-        });
-        return map;
-    }, [supplyData, demandData]);
-
-    const mapNodes = useMemo(() => {
-        const supplyNodes = supplyData.map(d => {
-            const coords = (d.Longitude && d.Latitude) ? { lat: d.Latitude, lon: d.Longitude } : getApproximateCoordinates(d.Plant, d.Company);
-            return { ...d, type: 'supply', coords, value: d.Output_Tons, label: getDashboardPlantName(d.Company, d.Plant) };
-        });
+    // 核心資料整併與防重疊 (Jitter) 演算法
+    const { finalNodes, flows } = useMemo(() => {
+        const plantMap = {};
         
-        const demandNodes = demandData.map(d => {
-            const coords = (d.Longitude && d.Latitude) ? { lat: d.Latitude, lon: d.Longitude } : getApproximateCoordinates(d.Plant, d.Company);
-            let sourceCoords = null;
-            if (d.Source_Company || d.Source_Plant) {
-                sourceCoords = getApproximateCoordinates(d.Source_Plant, d.Source_Company);
+        // 1. 合併供需資料到廠區級別 (Plant Level)
+        const addToMap = (d, isSupply) => {
+            const label = getDashboardPlantName(d.Company, d.Plant);
+            if (!plantMap[label]) {
+                const coords = (d.Longitude && d.Latitude) ? { lat: d.Latitude, lon: d.Longitude } : getApproximateCoordinates(d.Plant, d.Company);
+                plantMap[label] = {
+                    label, Company: d.Company, Plant: d.Plant, Region: d.Region, 
+                    zone: getIndustrialZone(d.Plant, d.Company),
+                    baseLat: coords.lat, baseLon: coords.lon,
+                    supply: 0, demand: 0,
+                    processes: new Set(), usages: new Set(), intensities: new Set(), sources: new Set()
+                };
             }
-            return { ...d, type: 'demand', coords, sourceCoords, value: d.Demand_Tons, label: getDashboardPlantName(d.Company, d.Plant) };
+            if (isSupply) {
+                plantMap[label].supply += d.Output_Tons || 0;
+                if (d.Process) plantMap[label].processes.add(d.Process);
+                if (d.Carbon_Intensity) plantMap[label].intensities.add(d.Carbon_Intensity);
+            } else {
+                plantMap[label].demand += d.Demand_Tons || 0;
+                if (d.Usage_Type) plantMap[label].usages.add(d.Usage_Type);
+                if (d.Source_Company) plantMap[label].sources.add({ src: d.Source_Company, method: d.Transport_Method });
+            }
+        };
+
+        supplyData.forEach(d => addToMap(d, true));
+        demandData.forEach(d => addToMap(d, false));
+
+        // 2. 座標防重疊分組 (將相同座標的廠區向外偏移)
+        const coordGroups = {};
+        Object.values(plantMap).forEach(p => {
+            const key = `${p.baseLat}_${p.baseLon}`;
+            if (!coordGroups[key]) coordGroups[key] = [];
+            coordGroups[key].push(p);
         });
 
-        return { supplyNodes, demandNodes };
+        const nodesList = [];
+        Object.values(coordGroups).forEach(group => {
+            const count = group.length;
+            if (count === 1) {
+                group[0].lat = group[0].baseLat;
+                group[0].lon = group[0].baseLon;
+                nodesList.push(group[0]);
+            } else {
+                // 如果有多個廠區共用座標，圍繞中心點展開
+                group.forEach((p, i) => {
+                    const layer = Math.floor(i / 6) + 1;
+                    const radius = layer * 0.035; // 約 3-4 公里位移
+                    const angle = (i % 6) * (Math.PI / 3) + (layer * 0.2);
+                    p.lat = p.baseLat + radius * Math.sin(angle);
+                    p.lon = p.baseLon + radius * Math.cos(angle);
+                    nodesList.push(p);
+                });
+            }
+        });
+
+        // 3. 建立連線資料 (Flows)
+        const flowList = [];
+        demandData.forEach(d => {
+            if (d.Source_Company && d.Demand_Tons > 0) {
+                const targetLabel = getDashboardPlantName(d.Company, d.Plant);
+                const targetNode = nodesList.find(n => n.label === targetLabel);
+                
+                // 尋找來源節點 (精確匹配或模糊尋找)
+                let sourceNode = nodesList.find(n => n.Company === d.Source_Company);
+                if (!sourceNode) {
+                    const fallbackCoords = getApproximateCoordinates(d.Source_Plant, d.Source_Company);
+                    sourceNode = { lat: fallbackCoords.lat, lon: fallbackCoords.lon, label: d.Source_Company };
+                }
+                
+                if (sourceNode && targetNode) {
+                    flowList.push({
+                        source: sourceNode, target: targetNode,
+                        value: d.Demand_Tons, method: d.Transport_Method || '管線'
+                    });
+                }
+            }
+        });
+
+        return { finalNodes: nodesList, flows: flowList };
     }, [supplyData, demandData]);
 
-    const hoveredStats = hoveredNode ? plantStatsMap[hoveredNode.label] : null;
+    const handlePlantClick = (node) => setActiveSelection({ type: 'plant', data: node });
+    const handleZoneClick = (zoneName) => {
+        const zoneNodes = finalNodes.filter(n => n.zone === zoneName);
+        if (zoneNodes.length > 0) {
+            setActiveSelection({ type: 'zone', name: zoneName, nodes: zoneNodes });
+        }
+    };
 
     return (
         <div className="w-full h-full relative bg-slate-100/80 rounded-xl overflow-hidden border border-slate-200">
-            <div className="absolute top-4 left-4 z-20 w-80 bg-white/95 backdrop-blur shadow-2xl rounded-xl border border-slate-200 p-4 transition-all duration-300">
-                {hoveredNode ? (
-                    <div>
-                        <div className="flex items-center gap-2 mb-3 border-b border-slate-100 pb-2">
-                            <div className={`w-3 h-3 rounded-full shadow-sm ${hoveredNode.type === 'supply' ? 'bg-blue-500' : 'bg-amber-500'}`}></div>
-                            <h3 className="font-bold text-slate-800 text-sm truncate">{hoveredNode.label}</h3>
-                            <span className="ml-auto text-[10px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded font-bold whitespace-nowrap">
-                                {hoveredNode.type === 'supply' ? '供給端' : '需求端'}
-                            </span>
+            
+            {/* 互動資訊卡 (點擊後浮現) */}
+            {activeSelection && (
+                <div className={`absolute top-4 left-4 z-20 bg-white/95 backdrop-blur shadow-2xl rounded-xl border border-slate-200 p-4 transition-all duration-300 ${activeSelection.type === 'zone' ? 'w-[420px]' : 'w-[320px]'}`}>
+                    <button onClick={() => setActiveSelection(null)} className="absolute top-3 right-3 text-slate-400 hover:text-rose-500 bg-slate-100 rounded-full p-1"><X size={14}/></button>
+                    
+                    {/* 模式 A：單一廠區詳細資訊 */}
+                    {activeSelection.type === 'plant' && (
+                        <div>
+                            <div className="flex items-center gap-2 mb-3 border-b border-slate-100 pb-2 pr-6">
+                                <div className={`w-3 h-3 rounded-full shadow-sm ${activeSelection.data.supply > activeSelection.data.demand ? 'bg-blue-500' : 'bg-amber-500'}`}></div>
+                                <h3 className="font-bold text-slate-800 text-sm truncate">{activeSelection.data.label}</h3>
+                            </div>
+                            
+                            <div className="space-y-1.5 text-xs text-slate-600 mb-3">
+                                <div className="flex justify-between items-center"><span className="text-slate-400">所屬工業區</span> <span className="font-bold text-blue-800 bg-blue-50 px-1.5 py-0.5 rounded truncate max-w-[150px]">{activeSelection.data.zone}</span></div>
+                                <div className="flex justify-between items-center"><span className="text-slate-400">製程名稱</span> <span className="font-medium truncate max-w-[150px]">{Array.from(activeSelection.data.processes).join(', ') || '-'}</span></div>
+                                <div className="flex justify-between items-center"><span className="text-slate-400">化學用途</span> <span className="font-medium truncate max-w-[150px]">{Array.from(activeSelection.data.usages).join(', ') || '-'}</span></div>
+                                <div className="flex justify-between items-center"><span className="text-slate-400">單位碳排</span> <span className="font-mono bg-slate-100 px-1.5 rounded">{Array.from(activeSelection.data.intensities).join(', ') || '-'} kg</span></div>
+                            </div>
+                            
+                            <div className="text-[10px] text-slate-500 font-bold mb-1 flex items-center gap-1"><Activity size={12}/> 該廠獨立供需直式柱狀圖 (萬噸)</div>
+                            <ResponsiveContainer width="100%" height={160}>
+                                <BarChart data={[{name: '供給量', value: activeSelection.data.supply, fill: '#3b82f6'}, {name: '需求量', value: activeSelection.data.demand, fill: '#f59e0b'}]} margin={{top: 20, right: 10, bottom: 0, left: -20}}>
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.5}/>
+                                    <XAxis dataKey="name" tick={{fontSize: 11, fontWeight: 'bold'}} axisLine={false} tickLine={false}/>
+                                    <YAxis tick={{fontSize: 10}} axisLine={false} tickLine={false}/>
+                                    <Tooltip cursor={{fill: 'transparent'}} contentStyle={{fontSize: '12px', borderRadius: '8px'}} formatter={(val) => val.toFixed(2)}/>
+                                    <Bar dataKey="value" radius={[4, 4, 0, 0]} barSize={40}>
+                                        {[{name: '供給量', value: activeSelection.data.supply, fill: '#3b82f6'}, {name: '需求量', value: activeSelection.data.demand, fill: '#f59e0b'}].map((entry, index) => <Cell key={`cell-${index}`} fill={entry.fill} />)}
+                                        <LabelList dataKey="value" position="top" fontSize={11} fontWeight="bold" fill="#475569" formatter={v => v > 0 ? v.toFixed(1) : ''} />
+                                    </Bar>
+                                </BarChart>
+                            </ResponsiveContainer>
                         </div>
-                        
-                        {hoveredNode.type === 'supply' ? (
-                            <div className="space-y-1.5 text-xs text-slate-600">
-                                <div className="flex justify-between items-center"><span className="text-slate-400">所在區域</span> <span className="font-bold bg-slate-100 px-1.5 py-0.5 rounded">{hoveredNode.Region}</span></div>
-                                <div className="flex justify-between items-center"><span className="text-slate-400">製程技術</span> <span className="font-medium text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded">{hoveredNode.Process}</span></div>
-                                <div className="flex justify-between items-center"><span className="text-slate-400">碳排強度</span> <span className="font-mono">{hoveredNode.Carbon_Intensity} kg CO2e</span></div>
-                            </div>
-                        ) : (
-                            <div className="space-y-1.5 text-xs text-slate-600">
-                                <div className="flex justify-between items-center"><span className="text-slate-400">所在區域</span> <span className="font-bold bg-slate-100 px-1.5 py-0.5 rounded">{hoveredNode.Region}</span></div>
-                                <div className="flex justify-between items-center"><span className="text-slate-400">化學用途</span> <span className="font-medium text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded">{hoveredNode.Usage_Type}</span></div>
-                                
-                                {hoveredNode.Source_Company && (
-                                    <>
-                                        <div className="my-1 border-t border-dashed border-slate-200"></div>
-                                        <div className="flex justify-between items-center"><span className="text-slate-400">外購來源</span> <span className="font-bold text-blue-600 truncate max-w-[120px] text-right">{hoveredNode.Source_Company}</span></div>
-                                        <div className="flex justify-between items-center"><span className="text-slate-400">運輸方式</span> 
-                                            <span className="flex items-center gap-1 font-bold">
-                                                {hoveredNode.Transport_Method?.includes('槽車') ? <Truck size={12} className="text-amber-500"/> : <GripHorizontal size={12} className="text-blue-500"/>}
-                                                {hoveredNode.Transport_Method || '管線'}
-                                            </span>
-                                        </div>
-                                    </>
-                                )}
-                            </div>
-                        )}
+                    )}
 
-                        {hoveredStats && (
-                            <div className="mt-3 pt-3 border-t border-slate-200">
-                                <div className="text-[10px] text-slate-500 font-bold mb-2 flex items-center gap-1">
-                                    <Activity size={12}/> 該廠區總體供需現況 (萬噸)
-                                </div>
-                                <div className="flex flex-col gap-2">
-                                    <div className="flex items-center gap-2 text-xs">
-                                        <span className="w-8 text-right text-slate-500 font-medium">供給</span>
-                                        <div className="flex-1 bg-slate-100 rounded-full h-3 overflow-hidden flex">
-                                            <div className="bg-blue-500 h-full transition-all duration-500" style={{width: `${Math.min(100, (hoveredStats.supply / Math.max(hoveredStats.supply, hoveredStats.demand, 0.1)) * 100)}%`}}></div>
-                                        </div>
-                                        <span className="w-10 font-mono font-bold text-blue-600 text-right">{hoveredStats.supply.toFixed(1)}</span>
-                                    </div>
-                                    <div className="flex items-center gap-2 text-xs">
-                                        <span className="w-8 text-right text-slate-500 font-medium">需求</span>
-                                        <div className="flex-1 bg-slate-100 rounded-full h-3 overflow-hidden flex">
-                                            <div className="bg-amber-500 h-full transition-all duration-500" style={{width: `${Math.min(100, (hoveredStats.demand / Math.max(hoveredStats.supply, hoveredStats.demand, 0.1)) * 100)}%`}}></div>
-                                        </div>
-                                        <span className="w-10 font-mono font-bold text-amber-600 text-right">{hoveredStats.demand.toFixed(1)}</span>
-                                    </div>
-                                </div>
+                    {/* 模式 B：工業區內全體廠區比較 */}
+                    {activeSelection.type === 'zone' && (
+                        <div>
+                            <div className="flex items-center gap-2 mb-3 border-b border-slate-100 pb-2 pr-6">
+                                <MapPin size={16} className="text-rose-500"/>
+                                <h3 className="font-bold text-slate-800 text-sm truncate">{activeSelection.name}</h3>
+                                <span className="ml-auto text-[10px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded font-bold">共 {activeSelection.nodes.length} 廠</span>
                             </div>
-                        )}
-                    </div>
-                ) : (
-                    <div className="text-center text-slate-400 text-xs py-8 flex flex-col items-center gap-3">
-                        <div className="p-3 bg-slate-50 rounded-full"><Hand size={24} className="opacity-50 text-blue-500"/></div>
-                        <p className="leading-relaxed">將滑鼠游標移至地圖節點<br/><span className="font-bold text-slate-500 mt-1 block">檢視廠區供需柱狀圖與運輸流向</span></p>
-                    </div>
-                )}
-            </div>
+                            
+                            <div className="text-[10px] text-slate-500 font-bold mb-2 flex items-center gap-1"><List size={12}/> 區內廠區供需直式比較圖 (萬噸)</div>
+                            <ResponsiveContainer width="100%" height={250}>
+                                <BarChart data={activeSelection.nodes.map(n => ({ name: n.label.split(' ')[1] || n.label, supply: n.supply, demand: n.demand }))} margin={{top: 10, right: 10, bottom: 20, left: -20}}>
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.5}/>
+                                    <XAxis dataKey="name" tick={{fontSize: 10}} interval={0} angle={-30} textAnchor="end" axisLine={false} tickLine={false}/>
+                                    <YAxis tick={{fontSize: 10}} axisLine={false} tickLine={false}/>
+                                    <Tooltip cursor={{fill: '#f1f5f9'}} contentStyle={{fontSize: '12px', borderRadius: '8px'}} formatter={(val) => val.toFixed(2)}/>
+                                    <Legend wrapperStyle={{fontSize: '10px'}}/>
+                                    <Bar dataKey="supply" name="供給量" fill="#3b82f6" radius={[2, 2, 0, 0]} barSize={16}>
+                                        <LabelList dataKey="supply" position="top" fontSize={9} fill="#3b82f6" formatter={v => v > 0 ? v.toFixed(1) : ''} />
+                                    </Bar>
+                                    <Bar dataKey="demand" name="需求量" fill="#f59e0b" radius={[2, 2, 0, 0]} barSize={16}>
+                                        <LabelList dataKey="demand" position="top" fontSize={9} fill="#f59e0b" formatter={v => v > 0 ? v.toFixed(1) : ''} />
+                                    </Bar>
+                                </BarChart>
+                            </ResponsiveContainer>
+                        </div>
+                    )}
+                </div>
+            )}
 
+            {!activeSelection && (
+                <div className="absolute top-4 left-4 z-10 bg-white/80 backdrop-blur border border-blue-200 text-blue-800 text-xs px-4 py-2 rounded-lg shadow-sm flex items-center gap-2 animate-pulse">
+                    <Hand size={14}/> 點擊地圖上的「工業區」或「各廠區圓點」檢視獨立直式柱狀圖
+                </div>
+            )}
+
+            {/* 地圖操作面板 (右上方) */}
             <div className="absolute top-4 right-4 z-10 flex flex-col gap-2 bg-white/95 p-1.5 rounded-lg shadow-sm border border-slate-200 backdrop-blur">
                 <button onClick={handleZoomIn} className="p-2 bg-slate-50 hover:bg-slate-200 rounded-md text-slate-600 transition-colors" title="放大"><ZoomIn size={18}/></button>
                 <button onClick={handleZoomOut} className="p-2 bg-slate-50 hover:bg-slate-200 rounded-md text-slate-600 transition-colors" title="縮小"><ZoomOut size={18}/></button>
@@ -338,65 +404,77 @@ const TaiwanH2Map = ({ supplyData = [], demandData = [] }) => {
                 ref={mapRef}
             >
                 <g transform={`translate(${baseWidth/2 + pan.x}, ${baseHeight/2 + pan.y}) scale(${zoom})`}>
+                    {/* 地圖底圖 */}
                     {mapPaths.map((p, i) => (
                         <path key={`map-${i}`} d={p.d} fill={REGION_COLORS[p.region] || '#f8fafc'} stroke="#cbd5e1" strokeWidth={1.5 / zoom} className="transition-colors hover:fill-slate-200" />
                     ))}
 
-                    {/* 新增：勾勒工業區範圍與標示 */}
+                    {/* 工業區範圍圈 (點擊可看區域長條圖) */}
                     {INDUSTRIAL_ZONES_COORDS.map((zone, idx) => {
                         const [cx, cy] = projectBase(zone.lon, zone.lat);
+                        const isSelected = activeSelection?.type === 'zone' && activeSelection?.name === zone.name;
                         return (
-                            <g key={`zone-${idx}`} className="pointer-events-none opacity-80">
-                                <circle cx={cx} cy={cy} r={zone.radius} fill="#cbd5e1" fillOpacity={0.35} stroke="#94a3b8" strokeWidth={1.5 / zoom} strokeDasharray={`${4/zoom} ${4/zoom}`} />
-                                <text x={cx} y={cy - zone.radius - (4/zoom)} fontSize={11 / zoom} fill="#64748b" textAnchor="middle" fontWeight="bold" style={{textShadow: '0 0 4px white', letterSpacing: '0.05em'}}>{zone.name}</text>
+                            <g key={`zone-${idx}`} className="cursor-pointer group" onClick={() => handleZoneClick(zone.name)}>
+                                <circle cx={cx} cy={cy} r={zone.radius} fill={isSelected ? "#bfdbfe" : "#cbd5e1"} fillOpacity={isSelected ? 0.6 : 0.35} stroke={isSelected ? "#3b82f6" : "#94a3b8"} strokeWidth={isSelected ? 2.5 / zoom : 1.5 / zoom} strokeDasharray={isSelected ? "0" : `${4/zoom} ${4/zoom}`} className="transition-all group-hover:stroke-blue-500 group-hover:fill-blue-100" />
+                                <text x={cx} y={cy - zone.radius - (4/zoom)} fontSize={11 / zoom} fill={isSelected ? "#1e3a8a" : "#64748b"} textAnchor="middle" fontWeight="bold" style={{textShadow: '0 0 4px white', letterSpacing: '0.05em'}} className="pointer-events-none transition-colors group-hover:fill-blue-700">{zone.name}</text>
                             </g>
                         );
                     })}
 
-                    {mapNodes.demandNodes.filter(d => d.sourceCoords).map((d, i) => {
-                        const [x1, y1] = projectBase(d.sourceCoords.lon, d.sourceCoords.lat);
-                        const [x2, y2] = projectBase(d.coords.lon, d.coords.lat);
-                        const isTruck = d.Transport_Method && d.Transport_Method.includes('槽車');
+                    {/* 流向連線 (智能高亮) */}
+                    {flows.map((f, i) => {
+                        const [x1, y1] = projectBase(f.source.lon, f.source.lat);
+                        const [x2, y2] = projectBase(f.target.lon, f.target.lat);
+                        const isTruck = f.method.includes('槽車');
+                        
+                        // 判斷是否高亮
+                        let opacity = 0.25;
+                        if (activeSelection?.type === 'plant') {
+                            if (activeSelection.data.label === f.source.label || activeSelection.data.label === f.target.label) opacity = 1;
+                        } else if (activeSelection?.type === 'zone') {
+                            if (activeSelection.nodes.some(n => n.label === f.source.label || n.label === f.target.label)) opacity = 0.8;
+                        } else {
+                            opacity = 0.45; // 預設
+                        }
+
                         return (
-                            <g key={`flow-${i}`} className="opacity-50 transition-opacity" style={{ opacity: hoveredNode && (hoveredNode.label === d.label || hoveredNode.Company === d.Source_Company) ? 1 : 0.3 }}>
-                                <line x1={x1} y1={y1} x2={x2} y2={y2} stroke={isTruck ? "#f59e0b" : "#3b82f6"} strokeWidth={3 / zoom} strokeDasharray={isTruck ? `${8/zoom} ${6/zoom}` : "0"} />
+                            <g key={`flow-${i}`} className="transition-opacity" style={{ opacity }}>
+                                <line x1={x1} y1={y1} x2={x2} y2={y2} stroke={isTruck ? "#f59e0b" : "#3b82f6"} strokeWidth={2.5 / zoom} strokeDasharray={isTruck ? `${8/zoom} ${6/zoom}` : "0"} />
                                 <circle cx={x1} cy={y1} r={3 / zoom} fill="#3b82f6" />
                             </g>
                         );
                     })}
 
-                    {mapNodes.demandNodes.map((d, i) => {
-                        const [cx, cy] = projectBase(d.coords.lon, d.coords.lat);
-                        const r = Math.max(6, Math.min(25, Math.sqrt(d.value || 0) * 2)) / zoom;
-                        const isHovered = hoveredNode && hoveredNode.label === d.label;
+                    {/* 廠區節點 (單一圓點，依淨供需變色) */}
+                    {finalNodes.map((n, i) => {
+                        const [cx, cy] = projectBase(n.lon, n.lat);
+                        // 半徑正比於最大量
+                        const maxVal = Math.max(n.supply, n.demand, 0.1);
+                        const r = Math.max(4, Math.min(22, Math.sqrt(maxVal) * 1.5)) / zoom;
+                        
+                        // 顏色邏輯：供給大於需求為藍，反之為橘
+                        const isSupplyDominant = n.supply >= n.demand;
+                        const fillColor = isSupplyDominant ? "#3b82f6" : "#f59e0b";
+                        const isSelected = activeSelection?.type === 'plant' && activeSelection.data.label === n.label;
+                        
                         return (
-                            <g key={`demand-${i}`} className="cursor-pointer transition-all" onMouseEnter={() => setHoveredNode(d)} onMouseLeave={() => setHoveredNode(null)}>
-                                <circle cx={cx} cy={cy} r={Math.max(r, 16 / zoom)} fill="transparent" /> 
-                                <circle cx={cx} cy={cy} r={r} fill={isHovered ? "#d97706" : "#f59e0b"} fillOpacity={isHovered ? 1 : 0.75} stroke="white" strokeWidth={1.5 / zoom} />
-                                <text x={cx + r + (6/zoom)} y={cy + (4/zoom)} fontSize={12 / zoom} fill="#78350f" fontWeight="900" paintOrder="stroke" stroke="white" strokeWidth={3/zoom} strokeLinejoin="round" className="pointer-events-none">{d.label}</text>
-                            </g>
-                        );
-                    })}
-
-                    {mapNodes.supplyNodes.map((d, i) => {
-                        const [cx, cy] = projectBase(d.coords.lon, d.coords.lat);
-                        const r = Math.max(7, Math.min(30, Math.sqrt(d.value || 0) * 1.5)) / zoom;
-                        const isHovered = hoveredNode && hoveredNode.label === d.label;
-                        return (
-                            <g key={`supply-${i}`} className="cursor-pointer transition-all" onMouseEnter={() => setHoveredNode(d)} onMouseLeave={() => setHoveredNode(null)}>
-                                <circle cx={cx} cy={cy} r={Math.max(r, 16 / zoom)} fill="transparent" /> 
-                                <circle cx={cx} cy={cy} r={r} fill={isHovered ? "#1d4ed8" : "#3b82f6"} fillOpacity={isHovered ? 1 : 0.85} stroke="white" strokeWidth={2 / zoom} />
-                                <text x={cx - r - (6/zoom)} y={cy + (4/zoom)} fontSize={12 / zoom} fill="#1e3a8a" fontWeight="900" textAnchor="end" paintOrder="stroke" stroke="white" strokeWidth={3/zoom} strokeLinejoin="round" className="pointer-events-none">{d.label}</text>
+                            <g key={`node-${i}`} className="cursor-pointer transition-all hover:opacity-80" onClick={() => handlePlantClick(n)}>
+                                <circle cx={cx} cy={cy} r={Math.max(r, 14 / zoom)} fill="transparent" /> {/* 擴大 Hit Area */}
+                                <circle cx={cx} cy={cy} r={r} fill={fillColor} fillOpacity={isSelected ? 1 : 0.85} stroke={isSelected ? "#1e293b" : "white"} strokeWidth={isSelected ? 2.5 / zoom : 1.5 / zoom} />
+                                
+                                {/* 廠區標籤 (明顯白邊防重疊) */}
+                                <text x={cx + r + (4/zoom)} y={cy + (3/zoom)} fontSize={11 / zoom} fill={isSelected ? "#0f172a" : "#334155"} fontWeight={isSelected ? "900" : "bold"} paintOrder="stroke" stroke="white" strokeWidth={3.5/zoom} strokeLinejoin="round" className="pointer-events-none">{n.label.split(' ')[1] || n.label}</text>
                             </g>
                         );
                     })}
                 </g>
             </svg>
             
+            {/* 地圖圖例 (右下方) */}
             <div className="absolute bottom-4 right-4 bg-white/95 p-3 rounded-lg shadow-sm border border-slate-200 text-[10px] text-slate-700 pointer-events-none backdrop-blur">
                 <div className="space-y-1.5">
-                    <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-blue-500 border border-white"></div> 供給源 (半徑=產量)</div>
-                    <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-amber-500 border border-white opacity-80"></div> 需求端 (半徑=用量)</div>
+                    <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-blue-500 border border-white"></div> 淨產出廠區 (供給≥需求)</div>
+                    <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-amber-500 border border-white"></div> 淨消耗廠區 (需求&gt;供給)</div>
                     <div className="flex items-center gap-2"><div className="w-6 h-1 bg-blue-500"></div> 外購流向 (管線)</div>
                     <div className="flex items-center gap-2"><div className="w-6 h-0 border-t-2 border-amber-500 border-dashed"></div> 外購流向 (槽車)</div>
                 </div>
@@ -645,26 +723,30 @@ const RegionalDeepDive = ({ supplyData, demandData, globalYear }) => {
                     </div>
                 </div>
 
-                <div className="flex gap-1 bg-slate-200/50 p-1 rounded-lg">
-                    {regions.map(r => (
-                        <button key={r} onClick={() => setActiveRegion(r)} className={`px-4 py-1.5 text-xs font-bold rounded-md transition-all ${activeRegion === r ? 'bg-white text-rose-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
-                            {r}
-                        </button>
-                    ))}
-                </div>
+                {activeTab === 'charts' && (
+                    <div className="flex gap-1 bg-slate-200/50 p-1 rounded-lg">
+                        {regions.map(r => (
+                            <button key={r} onClick={() => setActiveRegion(r)} className={`px-4 py-1.5 text-xs font-bold rounded-md transition-all ${activeRegion === r ? 'bg-white text-rose-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+                                {r}
+                            </button>
+                        ))}
+                    </div>
+                )}
             </div>
 
             <div className="p-4 flex-1 flex flex-col gap-4 overflow-y-auto">
-                <div className="flex gap-4">
-                    <div className="flex-1 bg-blue-50 border border-blue-100 p-3 rounded-lg flex flex-col justify-center">
-                        <div className="text-[10px] text-blue-600 font-bold uppercase mb-1">涵蓋縣市與區域</div>
-                        <div className="text-xs text-slate-700 font-medium leading-relaxed">{REGION_COUNTIES[activeRegion].join('、')}</div>
+                {activeTab === 'charts' && (
+                    <div className="flex gap-4">
+                        <div className="flex-1 bg-blue-50 border border-blue-100 p-3 rounded-lg flex flex-col justify-center">
+                            <div className="text-[10px] text-blue-600 font-bold uppercase mb-1">涵蓋縣市與區域</div>
+                            <div className="text-xs text-slate-700 font-medium leading-relaxed">{REGION_COUNTIES[activeRegion].join('、')}</div>
+                        </div>
+                        <div className={`flex-1 p-3 rounded-lg border flex flex-col justify-center ${summary.gap >= 0 ? 'bg-emerald-50 border-emerald-100' : 'bg-rose-50 border-rose-100'}`}>
+                            <div className={`text-[10px] font-bold uppercase mb-1 ${summary.gap >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>區域供需現況總結 ({globalYear})</div>
+                            <div className="text-xs text-slate-700 font-medium leading-relaxed">{summary.conclusion}</div>
+                        </div>
                     </div>
-                    <div className={`flex-1 p-3 rounded-lg border flex flex-col justify-center ${summary.gap >= 0 ? 'bg-emerald-50 border-emerald-100' : 'bg-rose-50 border-rose-100'}`}>
-                        <div className={`text-[10px] font-bold uppercase mb-1 ${summary.gap >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>區域供需現況總結 ({globalYear})</div>
-                        <div className="text-xs text-slate-700 font-medium leading-relaxed">{summary.conclusion}</div>
-                    </div>
-                </div>
+                )}
 
                 {activeTab === 'charts' ? (
                     <div className="flex flex-col lg:flex-row gap-4 flex-1 min-h-[400px]">
@@ -733,7 +815,7 @@ const RegionalDeepDive = ({ supplyData, demandData, globalYear }) => {
                         </div>
                     </div>
                 ) : (
-                    <div className="flex-1 min-h-[500px]">
+                    <div className="flex-1 min-h-[600px] -mx-4 -mb-4">
                         <TaiwanH2Map 
                             supplyData={supplyData.filter(d => (globalYear === 'ALL' || d.Year === globalYear))} 
                             demandData={demandData.filter(d => (globalYear === 'ALL' || d.Year === globalYear))} 
