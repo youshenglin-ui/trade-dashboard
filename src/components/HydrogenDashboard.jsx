@@ -118,8 +118,8 @@ const getApproximateCoordinates = (plant, company) => {
     
     // 精準座標覆寫
     if (company.includes('台塑科騰')) return { lat: 23.783110, lon: 120.179416 };
-    if (company.includes('李長榮') && plant.includes('高雄')) return { lat: 22.538, lon: 120.343 }; // 小港中林路
-    if ((company.includes('台苯') || company.includes('台灣苯乙烯')) && plant.includes('高雄')) return { lat: 22.493, lon: 120.382 }; // 林園工業一路
+    if (company.includes('李長榮') && plant.includes('高雄')) return { lat: 22.538, lon: 120.343 }; 
+    if ((company.includes('台苯') || company.includes('台灣苯乙烯')) && plant.includes('高雄')) return { lat: 22.493, lon: 120.382 }; 
 
     // 模糊座標推測
     if (n.includes('大發') || company.includes('台灣石化')) return { lat: 22.58, lon: 120.40 };
@@ -341,7 +341,7 @@ const TaiwanH2Map = ({ supplyData = [], demandData = [] }) => {
                             </div>
                             
                             <div className="text-[10px] text-slate-500 font-bold mb-1 flex items-center gap-1"><Activity size={12}/> 該廠獨立供需直式柱狀圖 (萬噸)</div>
-                            <ResponsiveContainer width="100%" height={160}>
+                            <ResponsiveContainer width="100%" height={160} minWidth={1} minHeight={1}>
                                 <BarChart data={[{name: '供給量', value: activeSelection.data.supply, fill: '#3b82f6'}, {name: '需求量', value: activeSelection.data.demand, fill: '#f59e0b'}]} margin={{top: 20, right: 10, bottom: 0, left: -20}}>
                                     <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.5}/>
                                     <XAxis dataKey="name" tick={{fontSize: 11, fontWeight: 'bold'}} axisLine={false} tickLine={false}/>
@@ -365,7 +365,7 @@ const TaiwanH2Map = ({ supplyData = [], demandData = [] }) => {
                             </div>
                             
                             <div className="text-[10px] text-slate-500 font-bold mb-2 flex items-center gap-1"><List size={12}/> 區內廠區供需直式比較圖 (萬噸)</div>
-                            <ResponsiveContainer width="100%" height={250}>
+                            <ResponsiveContainer width="100%" height={250} minWidth={1} minHeight={1}>
                                 <BarChart data={activeSelection.nodes.map(n => ({ name: n.Company, supply: n.supply, demand: n.demand }))} margin={{top: 10, right: 10, bottom: 20, left: -20}}>
                                     <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.5}/>
                                     <XAxis dataKey="name" tick={{fontSize: 10}} interval={0} angle={-30} textAnchor="end" axisLine={false} tickLine={false}/>
@@ -445,43 +445,34 @@ const TaiwanH2Map = ({ supplyData = [], demandData = [] }) => {
                         );
                     })}
 
-                    {/* 需求點 (橘色) */}
-                    {mapNodes.demandNodes.map((d, i) => {
-                        const [cx, cy] = projectBase(d.coords.lon, d.coords.lat);
-                        const r = Math.max(4, Math.min(25, Math.sqrt(d.value || 0) * 2)) / zoom;
-                        const isSelected = activeSelection?.type === 'plant' && activeSelection.data.label === d.label;
-                        const isHovered = hoveredNode === d.label;
+                    {/* 廠區節點 (單一圓點，依淨供需變色) */}
+                    {finalNodes.map((n, i) => {
+                        const [cx, cy] = projectBase(n.lon, n.lat);
+                        // 半徑正比於最大量
+                        const maxVal = Math.max(n.supply, n.demand, 0.1);
+                        const r = Math.max(4, Math.min(22, Math.sqrt(maxVal) * 1.5)) / zoom;
+                        
+                        // 顏色邏輯：供給大於需求為藍，反之為橘
+                        const isSupplyDominant = n.supply >= n.demand;
+                        const fillColor = isSupplyDominant ? "#3b82f6" : "#f59e0b";
+                        const strokeColor = isSupplyDominant ? "#1d4ed8" : "#d97706";
+                        const isSelected = activeSelection?.type === 'plant' && activeSelection.data.label === n.label;
+                        const isHovered = hoveredNode === n.label;
+                        
+                        // 處理標籤雙行顯示 (公司名 + 廠區名)
+                        const nameParts = n.label.split(' ');
+                        const compName = nameParts[0];
+                        const plantName = nameParts.slice(1).join(' ');
                         
                         return (
-                            <g key={`demand-${i}`} className="cursor-pointer transition-all" onClick={() => handlePlantClick(d)} onMouseEnter={() => setHoveredNode(d.label)} onMouseLeave={() => setHoveredNode(null)}>
-                                {/* 動態 Hit Area：縮小倍率越大，隱形範圍越寬，確保極易點擊 */}
-                                <circle cx={cx} cy={cy} r={Math.max(r, 24 / zoom)} fill="transparent" /> 
-                                <circle cx={cx} cy={cy} r={r} fill={isSelected || isHovered ? "#d97706" : "#f59e0b"} fillOpacity={isSelected || isHovered ? 1 : 0.75} stroke="white" strokeWidth={1.5 / zoom} />
+                            <g key={`node-${i}`} className="cursor-pointer transition-all" onClick={() => handlePlantClick(n)} onMouseEnter={() => setHoveredNode(n.label)} onMouseLeave={() => setHoveredNode(null)}>
+                                <circle cx={cx} cy={cy} r={Math.max(r, 24 / zoom)} fill="transparent" /> {/* 擴大 Hit Area */}
+                                <circle cx={cx} cy={cy} r={r} fill={isSelected || isHovered ? strokeColor : fillColor} fillOpacity={isSelected || isHovered ? 1 : 0.85} stroke="white" strokeWidth={1.5 / zoom} />
                                 
-                                <text x={cx + r + (6/zoom)} y={cy - (2/zoom)} fontSize={11 / textScale} fill={isSelected || isHovered ? "#78350f" : "#92400e"} fontWeight="900" textAnchor="start" className="pointer-events-none transition-all">
-                                    <tspan x={cx + r + (6/zoom)} dy={0} paintOrder="stroke" stroke="white" strokeWidth={3.5/textScale} strokeLinejoin="round">{d.Company}</tspan>
-                                    {d.Plant && <tspan x={cx + r + (6/zoom)} dy={14/textScale} paintOrder="stroke" stroke="white" strokeWidth={3.5/textScale} strokeLinejoin="round">{d.Plant}</tspan>}
-                                </text>
-                            </g>
-                        );
-                    })}
-
-                    {/* 供給點 (藍色) */}
-                    {mapNodes.supplyNodes.map((d, i) => {
-                        const [cx, cy] = projectBase(d.coords.lon, d.coords.lat);
-                        const r = Math.max(5, Math.min(30, Math.sqrt(d.value || 0) * 1.5)) / zoom;
-                        const isSelected = activeSelection?.type === 'plant' && activeSelection.data.label === d.label;
-                        const isHovered = hoveredNode === d.label;
-
-                        return (
-                            <g key={`supply-${i}`} className="cursor-pointer transition-all" onClick={() => handlePlantClick(d)} onMouseEnter={() => setHoveredNode(d.label)} onMouseLeave={() => setHoveredNode(null)}>
-                                {/* 動態 Hit Area */}
-                                <circle cx={cx} cy={cy} r={Math.max(r, 24 / zoom)} fill="transparent" /> 
-                                <circle cx={cx} cy={cy} r={r} fill={isSelected || isHovered ? "#1d4ed8" : "#3b82f6"} fillOpacity={isSelected || isHovered ? 1 : 0.85} stroke="white" strokeWidth={2 / zoom} />
-                                
-                                <text x={cx - r - (6/zoom)} y={cy - (2/zoom)} fontSize={11 / textScale} fill={isSelected || isHovered ? "#1e3a8a" : "#1e40af"} fontWeight="900" textAnchor="end" className="pointer-events-none transition-all">
-                                    <tspan x={cx - r - (6/zoom)} dy={0} paintOrder="stroke" stroke="white" strokeWidth={3.5/textScale} strokeLinejoin="round">{d.Company}</tspan>
-                                    {d.Plant && <tspan x={cx - r - (6/zoom)} dy={14/textScale} paintOrder="stroke" stroke="white" strokeWidth={3.5/textScale} strokeLinejoin="round">{d.Plant}</tspan>}
+                                {/* 廠區標籤 (明顯白邊防重疊，雙行顯示) */}
+                                <text x={cx + (isSupplyDominant ? -r - (6/zoom) : r + (6/zoom))} y={cy - (2/zoom)} fontSize={11 / textScale} fill={isSelected || isHovered ? "#0f172a" : "#334155"} fontWeight="900" textAnchor={isSupplyDominant ? "end" : "start"} className="pointer-events-none transition-all">
+                                    <tspan x={cx + (isSupplyDominant ? -r - (6/zoom) : r + (6/zoom))} dy={0} paintOrder="stroke" stroke="white" strokeWidth={3.5/textScale} strokeLinejoin="round">{compName}</tspan>
+                                    {plantName && zoom > 1.2 && <tspan x={cx + (isSupplyDominant ? -r - (6/zoom) : r + (6/zoom))} dy={14/textScale} paintOrder="stroke" stroke="white" strokeWidth={3.5/textScale} strokeLinejoin="round">{plantName}</tspan>}
                                 </text>
                             </g>
                         );
@@ -489,6 +480,7 @@ const TaiwanH2Map = ({ supplyData = [], demandData = [] }) => {
                 </g>
             </svg>
             
+            {/* 地圖圖例 (右下方) */}
             <div className="absolute bottom-4 right-4 bg-white/95 p-3 rounded-lg shadow-sm border border-slate-200 text-[10px] text-slate-700 pointer-events-none backdrop-blur">
                 <div className="space-y-1.5">
                     <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-blue-500 border border-white"></div> 淨產出廠區 (供給≥需求)</div>
@@ -569,7 +561,7 @@ const StackedTrendChart = ({ data, keys, title, icon: Icon, unit = '萬噸' }) =
                 </button>
             </div>
             <div className="flex-1 min-h-0 w-full h-full relative">
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                     <BarChart data={data} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0"/>
                         <XAxis dataKey="year" tick={{fontSize:12, fill: '#64748b'}} axisLine={false} tickLine={false} />
@@ -791,7 +783,7 @@ const RegionalDeepDive = ({ supplyData, demandData, globalYear }) => {
                             <div className="text-xs font-bold text-slate-500 mb-2 text-center">該區歷年供需趨勢 (依工業區分佈)</div>
                             <div className="flex-1 min-h-0 w-full h-full relative">
                                 {yearlyTrend.length > 0 ? (
-                                    <ResponsiveContainer width="100%" height="100%">
+                                    <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                                         <BarChart data={yearlyTrend} margin={{top: 10, right: 10, left: -20, bottom: 20}} barGap={4}>
                                             <CartesianGrid strokeDasharray="3 3" vertical={false} />
                                             <XAxis dataKey="year" tick={{fontSize: 10}} axisLine={false} tickLine={false}/>
@@ -822,7 +814,7 @@ const RegionalDeepDive = ({ supplyData, demandData, globalYear }) => {
                             </div>
                             <div className="flex-1 min-h-0 w-full h-full relative">
                                 {plantDetails.length > 0 ? (
-                                    <ResponsiveContainer width="100%" height="100%">
+                                    <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                                         <BarChart data={plantDetails} layout="vertical" margin={{top: 5, right: 40, left: 20, bottom: 20}} barGap={4}>
                                             <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} />
                                             <XAxis type="number" fontSize={10} unit="萬噸"/>
@@ -884,7 +876,7 @@ const TechBalanceChart = ({ supplyData, demandData }) => {
     return (
         <div className="relative w-full h-full flex flex-col items-center justify-center py-2">
             <div className="relative w-full flex-1 min-h-[140px] z-10 flex items-end justify-center -mb-2">
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                     <PieChart margin={{top: 20, bottom: 0}}>
                         <Pie data={sData} cx="50%" cy="100%" startAngle={180} endAngle={0} innerRadius="55%" outerRadius="90%" dataKey="value" stroke="white" strokeWidth={2}>
                             {sData.map((entry, index) => <Cell key={`cell-${index}`} fill={SOLID_REGION_COLORS[entry.name] || '#3b82f6'} />)}
@@ -906,7 +898,7 @@ const TechBalanceChart = ({ supplyData, demandData }) => {
             </div>
 
             <div className="relative w-full flex-1 min-h-[140px] mt-2">
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                     <PieChart margin={{top: 0, bottom: 20}}>
                         <Pie data={dData} cx="50%" cy="0%" startAngle={180} endAngle={360} innerRadius="55%" outerRadius="90%" dataKey="value" stroke="white" strokeWidth={2}>
                             {dData.map((entry, index) => <Cell key={`cell-${index}`} fill={SOLID_REGION_COLORS[entry.name] || '#f59e0b'} />)}
@@ -971,7 +963,7 @@ const StructureAnalysis = ({ data, typeField, valueField, categoryFn, colorMap }
     return (
         <div className="flex h-full gap-4 pb-2">
             <div className="w-1/2 h-full relative min-h-[250px] flex-shrink-0">
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                     <PieChart>
                         <Pie data={l1} dataKey="value" cx="50%" cy="50%" outerRadius="45%" stroke="white" strokeWidth={2}>
                             {l1.map((e, i) => <Cell key={i} fill={colorMap[e.name] || '#94a3b8'} />)}
@@ -1220,7 +1212,7 @@ const HydrogenDashboard = () => {
                          
                          <div className="flex-1 h-full relative border border-slate-100 rounded-lg p-2 bg-slate-50/50 min-h-0">
                             <div className="absolute top-2 right-4 text-[10px] text-slate-400 bg-white/80 px-2 rounded z-10">圓點大小 = 總碳排量</div>
-                            <ResponsiveContainer width="100%" height="100%">
+                            <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                                 <ScatterChart margin={{top:20, right:20, bottom:30, left:20}}>
                                     <CartesianGrid strokeDasharray="3 3"/>
                                     <XAxis type="number" dataKey="output" name="產量" unit="萬噸" scale="log" domain={['auto', 'auto']} tick={{fontSize:10, fill:'#64748b'}}>
@@ -1242,7 +1234,7 @@ const HydrogenDashboard = () => {
                          </div>
                          
                          <div className="flex-1 h-full border border-slate-100 rounded-lg p-2 min-h-0 relative">
-                            <ResponsiveContainer width="100%" height="100%">
+                            <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                                  <ComposedChart data={efficiencyChartData} margin={{top:20, right:20, bottom:40, left:0}}>
                                      <CartesianGrid strokeDasharray="3 3" vertical={false} />
                                      <XAxis dataKey="name" angle={-35} textAnchor="end" height={60} tick={{fontSize:10, fill:'#64748b'}} interval={0}/>
