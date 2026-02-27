@@ -149,7 +149,7 @@ const INDUSTRIAL_ZONES_COORDS = [
 ];
 
 // ==========================================
-// 地理地圖模組 (防重疊 + 點擊互動 + 動態縮放)
+// 地理地圖模組 (防重疊 + 點擊互動 + 動態縮放 + 強制雙行顯示)
 // ==========================================
 const TaiwanH2Map = ({ supplyData = [], demandData = [] }) => {
     const mapRef = useRef(null);
@@ -460,7 +460,7 @@ const TaiwanH2Map = ({ supplyData = [], demandData = [] }) => {
                                 
                                 <text x={cx + r + (6/zoom)} y={cy - (2/zoom)} fontSize={11 / textScale} fill={isSelected || isHovered ? "#78350f" : "#92400e"} fontWeight="900" textAnchor="start" className="pointer-events-none transition-all">
                                     <tspan x={cx + r + (6/zoom)} dy={0} paintOrder="stroke" stroke="white" strokeWidth={3.5/textScale} strokeLinejoin="round">{d.Company}</tspan>
-                                    {(d.Plant && zoom > 1.2) && <tspan x={cx + r + (6/zoom)} dy={12/textScale} paintOrder="stroke" stroke="white" strokeWidth={3.5/textScale} strokeLinejoin="round">{d.Plant}</tspan>}
+                                    {d.Plant && <tspan x={cx + r + (6/zoom)} dy={14/textScale} paintOrder="stroke" stroke="white" strokeWidth={3.5/textScale} strokeLinejoin="round">{d.Plant}</tspan>}
                                 </text>
                             </g>
                         );
@@ -481,7 +481,7 @@ const TaiwanH2Map = ({ supplyData = [], demandData = [] }) => {
                                 
                                 <text x={cx - r - (6/zoom)} y={cy - (2/zoom)} fontSize={11 / textScale} fill={isSelected || isHovered ? "#1e3a8a" : "#1e40af"} fontWeight="900" textAnchor="end" className="pointer-events-none transition-all">
                                     <tspan x={cx - r - (6/zoom)} dy={0} paintOrder="stroke" stroke="white" strokeWidth={3.5/textScale} strokeLinejoin="round">{d.Company}</tspan>
-                                    {(d.Plant && zoom > 1.2) && <tspan x={cx - r - (6/zoom)} dy={12/textScale} paintOrder="stroke" stroke="white" strokeWidth={3.5/textScale} strokeLinejoin="round">{d.Plant}</tspan>}
+                                    {d.Plant && <tspan x={cx - r - (6/zoom)} dy={14/textScale} paintOrder="stroke" stroke="white" strokeWidth={3.5/textScale} strokeLinejoin="round">{d.Plant}</tspan>}
                                 </text>
                             </g>
                         );
