@@ -8,6 +8,15 @@ import {
   FileText, ZoomIn, ZoomOut, List, Maximize, Hand, Truck, GripHorizontal, RefreshCw, Layers, X
 } from 'lucide-react';
 
+// 補回缺失的 imports
+import { 
+  normalizeHydrogenData, parseHydrogenCSV, getRegion as getBasicRegion, 
+  simplifyCompanyName, getSimplePlantName, getProcessType, identifyProcess, 
+  identifyUsage, getUsageCategory, stringToColor, cleanNumber
+} from '../utils/helpers';
+import { H2_DATA_SOURCES, MOCK_SUPPLY_MATRIX, MOCK_DEMAND_MATRIX, COLORS_PROCESS, COLORS_USAGE } from '../utils/constants';
+import { ErrorBoundary } from './SharedComponents';
+
 const REGION_COLORS = { '北區': '#e0f2fe', '中區': '#d1fae5', '南區': '#fffbeb', '東區': '#f5f3ff', '其他': '#f1f5f9' };
 const SOLID_REGION_COLORS = { '北區': '#2563eb', '中區': '#059669', '南區': '#ea580c', '東區': '#7c3aed', '其他': '#475569' };
 const REGION_COUNTIES = {
@@ -17,25 +26,6 @@ const REGION_COUNTIES = {
     '東區': ['花蓮縣', '臺東縣']
 };
 
-export const simplifyCompanyName = (name) => {
-  if (!name) return '未知廠商';
-  let n = name.trim().replace(/股份有限公司|工業|企業/g, '').trim();
-  const mapping = {
-      '台灣化學纖維': '台化', '台化': '台化',
-      '台灣苯乙烯': '台苯', '台苯': '台苯',
-      '中國石油化學': '中石化', '中石化': '中石化',
-      '台灣中油': '中油', '中油': '中油',
-      '台塑石化': '台塑化', '台塑化': '台塑化',
-      '台灣積體電路製造': '台積電', '台積電': '台積電',
-      '中國鋼鐵': '中鋼', '中鋼': '中鋼',
-      '長春人造樹脂': '長春樹脂', '長春石油化學': '長春石化'
-  };
-  for (const [full, short] of Object.entries(mapping)) {
-      if (n.includes(full)) return short;
-  }
-  return n;
-};
-
 const getRegionByCounty = (countyName) => {
     const n = String(countyName || '');
     if (n.match(/(基隆|臺北|台北|新北|桃園|新竹|宜蘭)/)) return '北區';
@@ -43,6 +33,24 @@ const getRegionByCounty = (countyName) => {
     if (n.match(/(嘉義|臺南|台南|高雄|屏東)/)) return '南區';
     if (n.match(/(花蓮|臺東|台東)/)) return '東區';
     return '其他';
+};
+
+const getRefinedRegion = (plantName, companyName) => {
+    const p = String(plantName || '').trim();
+    const c = String(companyName || '').trim();
+    const full = `${c} ${p}`;
+    if (full.includes('長春') && (p.includes('二廠') || p.includes('苗栗二'))) return '北區';
+    if (c.includes('台灣化纖') || c.includes('台化') || c.includes('台塑科騰')) return '中區';
+    if (p.match(/(仁武|大社|林園|小港|大發|大林|高雄|屏東|台南|嘉義|南科|善化)/)) return '南區';
+    if (p.match(/(麥寮|六輕|彰濱|線西|中龍|頭份|苗栗|台中|彰化|南投|雲林)/)) return '中區';
+    if (p.match(/(桃園|觀音|大園|桃煉|新北|台北|基隆|新竹)/)) return '北區';
+    if (c.includes('大連') && p.includes('大發')) return '南區'; 
+    if (c.includes('李長榮') && p.includes('高雄')) return '南區'; 
+    if (c.includes('國喬') && p.includes('高雄')) return '南區'; 
+    if (c.includes('中油') && (p.includes('大林') || p.includes('石化') || p.includes('林園'))) return '南區'; 
+    if (c.includes('中油') && p.includes('桃園')) return '北區';
+    if (c.includes('台灣石化') || c.includes('台苯')) return '南區';
+    return getBasicRegion(plantName);
 };
 
 const getDashboardPlantName = (company, plant) => {
@@ -93,41 +101,17 @@ const getApproximateCoordinates = (plant, company) => {
     return { lat: 23.6, lon: 120.9 }; 
 };
 
-const stringToColor = (str) => {
-    const COLORS_POOL = ['#2563eb', '#3b82f6', '#60a5fa', '#059669', '#10b981', '#34d399', '#d97706', '#f59e0b', '#7c3aed', '#8b5cf6', '#dc2626', '#ef4444'];
-    let hash = 0; 
-    const s = String(str || '');
-    for (let i = 0; i < s.length; i++) hash = s.charCodeAt(i) + ((hash << 5) - hash);
-    return COLORS_POOL[Math.abs(hash) % COLORS_POOL.length];
-};
-
-const parseHydrogenCSV = (text) => {
-    if (!text || text.includes('<!DOCTYPE html>')) return [];
-    const lines = text.split(/\r\n|\n/).filter(l => l.trim());
-    if (lines.length < 2) return [];
-    const parseLine = (line) => {
-        const res = []; let current = ''; let inQuote = false;
-        for (let c of line) {
-            if (c === '"') { inQuote = !inQuote; continue; }
-            if (c === ',' && !inQuote) { res.push(current.trim()); current = ''; continue; }
-            current += c;
-        }
-        res.push(current.trim()); return res;
-    };
-    const headers = parseLine(lines[0]);
-    return lines.slice(1).map(line => {
-        const row = parseLine(line); const obj = {};
-        headers.forEach((h, i) => { obj[h.replace(/^[\uFEFF\s]+|[\s]+$/g, '')] = row[i]; });
-        return obj;
-    });
-};
-
-const cleanNumber = (val) => {
-  if (val === undefined || val === null || val === '') return 0;
-  if (typeof val === 'number') return isFinite(val) ? val : 0;
-  const num = parseFloat(String(val).replace(/[,%\s]/g, ''));
-  return isFinite(num) ? num : 0;
-};
+const INDUSTRIAL_ZONES_COORDS = [
+    { name: '雲林-麥寮工業區', lat: 23.78, lon: 120.18, radius: 24 },
+    { name: '高雄-林園工業區', lat: 22.50, lon: 120.38, radius: 18 },
+    { name: '高雄-小港工業區', lat: 22.54, lon: 120.34, radius: 18 },
+    { name: '高雄-大發工業區', lat: 22.58, lon: 120.40, radius: 16 },
+    { name: '高雄-仁武工業區', lat: 22.70, lon: 120.34, radius: 18 },
+    { name: '彰化-彰濱工業區', lat: 24.07, lon: 120.42, radius: 20 },
+    { name: '苗栗-頭份工業區', lat: 24.68, lon: 120.91, radius: 16 },
+    { name: '桃園工業區(含桃煉)', lat: 25.03, lon: 121.12, radius: 26 },
+    { name: '台南-南部科學園區', lat: 23.10, lon: 120.27, radius: 16 }
+];
 
 // ==========================================
 // 地理地圖模組 (Anti-Crash Version)
@@ -243,7 +227,6 @@ const TaiwanH2Map = ({ supplyData = [], demandData = [] }) => {
         demandData.forEach(d => {
             if (d.Source_Company && d.Trade_Vol > 0) {
                 const targetNode = nodesList.find(n => n.label === d.label);
-                // 修正：加入可選鏈與嚴謹比對，防止崩潰
                 let sourceNode = nodesList.find(n => n.Company && (n.Company.includes(d.Source_Company) || d.Source_Company.includes(n.Company)));
                 if (!sourceNode) {
                     const fallbackCoords = getApproximateCoordinates(d.Source_Plant, d.Source_Company);
@@ -266,18 +249,6 @@ const TaiwanH2Map = ({ supplyData = [], demandData = [] }) => {
 
     const textScale = Math.pow(zoom, 0.7); 
     const zoneOpacity = zoom > 1.5 ? 0.7 : (zoom < 1 ? 0.2 : 0.4); 
-
-    const INDUSTRIAL_ZONES_COORDS = [
-        { name: '雲林-麥寮工業區', lat: 23.78, lon: 120.18, radius: 24 },
-        { name: '高雄-林園工業區', lat: 22.50, lon: 120.38, radius: 18 },
-        { name: '高雄-小港工業區', lat: 22.54, lon: 120.34, radius: 18 },
-        { name: '高雄-大發工業區', lat: 22.58, lon: 120.40, radius: 16 },
-        { name: '高雄-仁武工業區', lat: 22.70, lon: 120.34, radius: 18 },
-        { name: '彰化-彰濱工業區', lat: 24.07, lon: 120.42, radius: 20 },
-        { name: '苗栗-頭份工業區', lat: 24.68, lon: 120.91, radius: 16 },
-        { name: '桃園工業區(含桃煉)', lat: 25.03, lon: 121.12, radius: 26 },
-        { name: '台南-南部科學園區', lat: 23.10, lon: 120.27, radius: 16 }
-    ];
 
     return (
         <div className="w-full h-full relative bg-slate-100/80 rounded-xl overflow-hidden border border-slate-200">
@@ -635,9 +606,9 @@ const RegionalDeepDive = ({ supplyData, demandData, globalYear }) => {
                     {payload.map((entry, index) => {
                         let nameLabel = ''; let isDashed = false;
                         if (entry.dataKey === 'supply_self') nameLabel = '廠內保留/自用產量';
-                        if (entry.dataKey === 'supply_sold') { nameLabel = '對外流出/銷售產量'; isDashed = true; }
-                        if (entry.dataKey === 'demand_self') nameLabel = '消耗廠內自產氫氣';
-                        if (entry.dataKey === 'demand_purchased') { nameLabel = '外部來源採購需求'; isDashed = true; }
+                        if (entry.dataKey === 'supply_sold') { nameLabel = '對外銷售產量'; isDashed = true; }
+                        if (entry.dataKey === 'demand_self') nameLabel = '廠內自產自用消耗';
+                        if (entry.dataKey === 'demand_purchased') { nameLabel = '外部採購需求'; isDashed = true; }
                         if (cleanNumber(entry.value) === 0) return null;
                         return (
                             <div key={index} className="flex justify-between gap-4 mb-1">
@@ -736,9 +707,9 @@ const RegionalDeepDive = ({ supplyData, demandData, globalYear }) => {
                                                 <Tooltip cursor={{fill: '#f8fafc'}} content={<DeepDiveTooltip />} />
                                                 <Legend wrapperStyle={{fontSize: '10px'}} verticalAlign="top" formatter={(value) => {
                                                     if (value === 'supply_self') return '保留產量 (自用)';
-                                                    if (value === 'supply_sold') return '外售流出產量';
+                                                    if (value === 'supply_sold') return '外售產量';
                                                     if (value === 'demand_self') return '廠內消耗需求';
-                                                    if (value === 'demand_purchased') return '外部採購需求';
+                                                    if (value === 'demand_purchased') return '外購氫氣需求';
                                                     return value;
                                                 }}/>
                                                 
@@ -979,6 +950,8 @@ const HydrogenDashboard = () => {
                 const tradeVol = match ? cleanNumber(match[volKey]) : 0;
                 let tradeTarget = match ? String(match[targetKey] || '') : '';
                 
+                if (tradeVol > 0 && !tradeTarget) tradeTarget = '公用網路(鄰近廠區)';
+
                 if (type === 'supply') {
                     n.Output_Tons = baseVol; 
                     n.Trade_Vol = tradeVol;
