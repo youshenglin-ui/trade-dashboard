@@ -5,7 +5,7 @@ import {
 } from 'recharts';
 import { 
   Leaf, RefreshCw, Target, Activity, MapPin, DollarSign, Box, AlertTriangle, 
-  Truck, Ship, GripHorizontal, FlaskConical, Plus, ZoomIn, ZoomOut, Maximize, Hand, Factory, CheckCircle2, List
+  Truck, Ship, GripHorizontal, FlaskConical, Plus, ZoomIn, ZoomOut, Maximize, Hand, Factory
 } from 'lucide-react';
 
 const CCUS_DATA_SOURCES = {
@@ -71,18 +71,11 @@ const parseHydrogenCSV = (text) => {
     });
 };
 
-const calcDistanceKm = (lat1, lon1, lat2, lon2) => {
-    const R = 6371; 
-    const dLat = (lat2 - lat1) * Math.PI / 180; const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon/2) * Math.sin(dLon/2);
-    return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
-};
-
 class ErrorBoundary extends React.Component {
     constructor(props) { super(props); this.state = { hasError: false }; }
     static getDerivedStateFromError(error) { return { hasError: true }; }
     render() {
-      if (this.state.hasError) return <div className="h-full flex flex-col items-center justify-center bg-slate-50 border border-slate-200 rounded text-slate-400"><AlertTriangle size={32} className="mb-2 text-amber-400" /><p className="text-sm">圖表資料異常</p></div>;
+      if (this.state.hasError) return <div className="h-full flex flex-col items-center justify-center bg-slate-50 border border-slate-200 rounded text-slate-400"><AlertTriangle size={32} className="mb-2 text-amber-400" /><p className="text-sm">圖表資料異常，請檢查資料來源格式</p></div>;
       return this.props.children;
     }
 }
@@ -97,7 +90,12 @@ const TaiwanCcusMap = ({ mode = 'capture', captureData = [], utilData = [], stor
     const [hoveredNode, setHoveredNode] = useState(null);
 
     const baseWidth = 800, baseHeight = 900, centerLon = 120.9, centerLat = 23.7, baseScale = 380; 
-    const projectBase = (lon, lat) => [(lon - centerLon) * baseScale, -(lat - centerLat) * baseScale * 1.1];
+    
+    // 安全防護座標轉換 (避免 NaN 導致 React SVG 崩潰)
+    const projectBase = (lon, lat) => {
+        if (!lon || !lat || isNaN(lon) || isNaN(lat)) return [-9999, -9999]; // 隱藏於畫面外
+        return [(lon - centerLon) * baseScale, -(lat - centerLat) * baseScale * 1.1];
+    };
 
     const handleMouseDown = (e) => { setIsDragging(true); setLastPos({ x: e.clientX, y: e.clientY }); };
     const handleMouseMove = (e) => {
@@ -114,7 +112,7 @@ const TaiwanCcusMap = ({ mode = 'capture', captureData = [], utilData = [], stor
             .then(data => {
                 const paths = data.features.map(f => {
                     let d = '';
-                    const pr = (ring) => { if(!ring||ring.length===0)return; const [x,y]=projectBase(ring[0][0],ring[0][1]); d+=`M${x},${y} `; for(let i=1;i<ring.length;i++){const [lx,ly]=projectBase(ring[i][0],ring[i][1]); d+=`L${lx},${ly} `;} d+='Z '; };
+                    const pr = (ring) => { if(!ring||ring.length===0)return; const [x,y]=projectBase(ring[0][0],ring[0][1]); if (x === -9999) return; d+=`M${x},${y} `; for(let i=1;i<ring.length;i++){const [lx,ly]=projectBase(ring[i][0],ring[i][1]); d+=`L${lx},${ly} `;} d+='Z '; };
                     if(f.geometry.type==='Polygon') f.geometry.coordinates.forEach(pr); else if(f.geometry.type==='MultiPolygon') f.geometry.coordinates.forEach(p=>p.forEach(pr));
                     return { d };
                 });
@@ -145,9 +143,10 @@ const TaiwanCcusMap = ({ mode = 'capture', captureData = [], utilData = [], stor
                                 <div className="bg-slate-50 rounded py-1"><div className="text-[9px] text-slate-400">濃度</div><div className="font-mono font-bold text-slate-700">{hoveredNode.Concentration || '-'}</div></div>
                             </div>
                             
-                            <div className="mt-2 flex justify-between items-center bg-blue-50 p-2 rounded-lg">
-                                <span className="text-blue-800 font-bold">總捕捉量</span>
-                                <span className="font-mono font-black text-blue-600 text-sm">{hoveredNode.Capture_Volume} <span className="text-[10px] font-normal">萬噸</span></span>
+                            <div className="mt-2 bg-blue-50 p-2 rounded-lg border border-blue-100 space-y-1 text-xs">
+                                <div className="flex justify-between"><span className="text-slate-500">總捕捉量(A):</span><span className="font-mono font-bold text-slate-700">{hoveredNode.Capture_Volume.toFixed(2)} 萬噸</span></div>
+                                <div className="flex justify-between"><span className="text-rose-500">設備耗能(B):</span><span className="font-mono font-bold text-rose-600">-{hoveredNode.Captur_energy.toFixed(2)} 萬噸</span></div>
+                                <div className="flex justify-between pt-1 border-t border-blue-200 mt-1"><span className="text-blue-800 font-bold">淨捕捉量(A-B)</span><span className="font-mono font-black text-blue-700">{hoveredNode.Net_Capture_Volume.toFixed(2)} 萬噸</span></div>
                             </div>
                         </div>
 
@@ -217,8 +216,8 @@ const TaiwanCcusMap = ({ mode = 'capture', captureData = [], utilData = [], stor
                     {mapPaths.map((p, i) => <path key={i} d={p.d} fill="#f8fafc" stroke="#cbd5e1" strokeWidth={1.5 / zoom} />)}
 
                     {mode === 'capture' && captureData.map((d, i) => {
-                        if (!d.Latitude || !d.Longitude) return null;
                         const [cx, cy] = projectBase(d.Longitude, d.Latitude);
+                        if (cx === -9999) return null;
                         const r = Math.max(6, Math.min(25, Math.sqrt(d.Capture_Volume || 0) * 1.5)) / zoom; 
                         const isHovered = hoveredNode === d;
                         return (
@@ -236,6 +235,7 @@ const TaiwanCcusMap = ({ mode = 'capture', captureData = [], utilData = [], stor
                         const findCoords = (c, p) => captureData.find(x => x.Company === c && x.Plant === p) || { Latitude: 23.6, Longitude: 120.9 };
                         const coords = findCoords(d.Target_Company, d.Target_Plant);
                         const [cx, cy] = projectBase(coords.Longitude, coords.Latitude);
+                        if (cx === -9999) return null;
                         const r = Math.max(8, Math.min(20, Math.sqrt(d.Expected_Demand || 0) * 2)) / zoom;
                         const isHovered = hoveredNode === d;
                         return (
@@ -253,6 +253,7 @@ const TaiwanCcusMap = ({ mode = 'capture', captureData = [], utilData = [], stor
                         const findCoords = (c) => captureData.find(x => x.Company === c) || { Latitude: 23.6, Longitude: 120.9 };
                         const srcCoords = findCoords(d.Source_Company);
                         const [x1, y1] = projectBase(srcCoords.Longitude, srcCoords.Latitude);
+                        if (x1 === -9999) return null;
                         const [x2, y2] = projectBase(srcCoords.Longitude - 0.5, srcCoords.Latitude - 0.2); 
                         
                         let strokeDash = "0"; let lineColor = "#3b82f6";
@@ -289,7 +290,7 @@ const TaiwanCcusMap = ({ mode = 'capture', captureData = [], utilData = [], stor
     );
 };
 
-// 捕捉專用 Tooltip (加入公司+廠區 及 未來展望)
+// 捕捉專用 Tooltip (公式清楚化)
 const CaptureTooltip = ({ active, payload, label }) => {
     if (active && payload && payload.length) {
         const data = payload[0].payload;
@@ -302,10 +303,13 @@ const CaptureTooltip = ({ active, payload, label }) => {
                    <div>壓力: <span className="font-mono font-bold">{data.Pressure || '-'}</span></div>
                    <div className="col-span-2">濃度: <span className="font-mono font-bold">{data.Concentration || '-'}</span></div>
                 </div>
-                <p className="text-slate-600 mb-0.5 flex justify-between"><span className="text-slate-400">總捕捉量:</span> <span className="font-bold">{data.Capture_Volume.toFixed(2)} 萬噸</span></p>
-                <p className="text-rose-500 mb-0.5 flex justify-between"><span className="text-slate-400">設備耗能(碳排):</span> <span className="font-bold">-{data.Captur_energy.toFixed(2)} 萬噸</span></p>
-                <p className="text-emerald-600 font-bold font-mono mt-1 pt-1 border-t border-slate-100 flex justify-between"><span className="text-slate-500 font-sans font-normal">淨捕捉量:</span> <span>{data.Net_Capture_Volume.toFixed(2)} 萬噸</span></p>
                 
+                <div className="bg-blue-50/50 p-2 border border-blue-100 rounded space-y-1">
+                    <div className="flex justify-between text-slate-600"><span className="text-slate-500">總捕捉量 (A):</span> <span className="font-mono font-bold">{data.Capture_Volume.toFixed(2)} 萬噸</span></div>
+                    <div className="flex justify-between text-rose-600"><span className="text-rose-500">設備耗能 (B):</span> <span className="font-mono font-bold">-{data.Captur_energy.toFixed(2)} 萬噸</span></div>
+                    <div className="flex justify-between pt-1 border-t border-blue-200 text-blue-700 font-bold"><span className="text-blue-800">淨捕捉量 (=A-B):</span> <span className="font-mono font-black">{data.Net_Capture_Volume.toFixed(2)} 萬噸</span></div>
+                </div>
+
                 {data.Potential_Source && (
                     <div className="mt-2 pt-2 border-t border-dashed border-amber-200 bg-amber-50/50 p-1.5 rounded">
                         <p className="font-bold text-amber-700 flex items-center gap-1 mb-1"><AlertTriangle size={12}/> 未來擴充潛力</p>
@@ -321,7 +325,6 @@ const CaptureTooltip = ({ active, payload, label }) => {
 
 const CcusDashboard = () => {
     const [activeTab, setActiveTab] = useState('capture');
-    const [captureViewMode, setCaptureViewMode] = useState('map'); // 'map' | 'table_current' | 'table_future'
     const [captureData, setCaptureData] = useState([]);
     const [utilizationData, setUtilizationData] = useState([]);
     const [storageData, setStorageData] = useState([]);
@@ -349,7 +352,7 @@ const CcusDashboard = () => {
 
                 setCaptureData(rawCap.map(d => {
                     const capVol = cleanNumber(d.Capture_Volume);
-                    const capEng = cleanNumber(d.Captur_energy || d.Emission_Per_Ton); // 向後相容
+                    const capEng = cleanNumber(d.Captur_energy || d.Emission_Per_Ton); 
                     return {
                         ...d,
                         Year: String(d.Year || '2025'),
@@ -359,7 +362,7 @@ const CcusDashboard = () => {
                         Capture_Tech: d.Capture_Tech || '未知技術',
                         Capture_Volume: capVol,
                         Captur_energy: capEng,
-                        Net_Capture_Volume: Math.max(0, capVol - capEng),
+                        Net_Capture_Volume: cleanNumber(d.Net_Capture_Volume) || Math.max(0, capVol - capEng), // 優先使用資料庫算好的值
                         TRL: String(d.TRL || '-'), 
                         Capture_Source: d.Capture_Source || '',
                         Separation_Tech: d.Separation_Tech || '',
@@ -460,98 +463,34 @@ const CcusDashboard = () => {
                             <div className="w-14 h-14 rounded-full bg-slate-100 flex items-center justify-center text-slate-600"><MapPin size={28}/></div>
                         </div>
                     </div>
-                    
-                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col">
-                        <div className="flex justify-between items-center mb-4 border-b pb-2">
-                            <h3 className="font-bold text-slate-700 text-sm flex items-center gap-2"><MapPin size={16} className="text-blue-500"/> 潛在碳捕捉點分佈與工程清單</h3>
-                            <div className="flex bg-slate-100 p-1 rounded-lg text-xs font-bold shadow-inner">
-                                <button onClick={() => setCaptureViewMode('map')} className={`px-3 py-1.5 rounded-md flex items-center gap-1 ${captureViewMode === 'map' ? 'bg-white shadow text-blue-600' : 'text-slate-500'}`}><MapPin size={14}/> 地圖分佈</button>
-                                <button onClick={() => setCaptureViewMode('table_current')} className={`px-3 py-1.5 rounded-md flex items-center gap-1 ${captureViewMode === 'table_current' ? 'bg-white shadow text-blue-600' : 'text-slate-500'}`}><List size={14}/> 現有設備清單</button>
-                                <button onClick={() => setCaptureViewMode('table_future')} className={`px-3 py-1.5 rounded-md flex items-center gap-1 ${captureViewMode === 'table_future' ? 'bg-white shadow text-blue-600' : 'text-slate-500'}`}><AlertTriangle size={14}/> 未來展望清單</button>
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                        <div className="lg:col-span-5 bg-white p-4 rounded-xl border border-slate-200 shadow-sm h-[650px] flex flex-col">
+                            <h3 className="font-bold text-slate-700 text-sm mb-4 border-b pb-2 flex items-center gap-2"><MapPin size={16} className="text-blue-500"/> 潛在碳捕捉點分佈 (真實地圖投影)</h3>
+                            <TaiwanCcusMap mode="capture" captureData={fCapture} />
+                        </div>
+                        <div className="lg:col-span-7 bg-white p-4 rounded-xl border border-slate-200 shadow-sm h-[650px] flex flex-col">
+                            <h3 className="font-bold text-slate-700 text-sm mb-4 border-b pb-2 flex items-center gap-2"><Activity size={16} className="text-blue-500"/> 技術解析：總捕捉量 vs 設備耗能</h3>
+                            <div className="flex-1 w-full min-h-0 relative">
+                                <ErrorBoundary>
+                                    <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
+                                        <BarChart data={fCapture.sort((a,b) => b.Capture_Volume - a.Capture_Volume)} layout="vertical" margin={{ top: 5, right: 40, left: 40, bottom: 5 }} barGap={2} barSize={26}>
+                                            <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false}/>
+                                            <XAxis type="number" fontSize={10} unit=" 萬噸"/>
+                                            <YAxis dataKey="Label" type="category" width={140} tick={{fontSize: 11, fill: '#475569', fontWeight: 'bold'}} interval={0}/>
+                                            <Tooltip content={<CaptureTooltip />}/>
+                                            <Legend wrapperStyle={{fontSize:'11px'}} verticalAlign="top"/>
+                                            <Bar dataKey="Net_Capture_Volume" name="淨捕捉量" stackId="capture">
+                                                {fCapture.map((entry, index) => <Cell key={`cell-${index}`} fill={stringToColor(entry.Capture_Tech)} />)}
+                                                <LabelList dataKey="TRL" position="insideLeft" fill="white" fontSize={10} fontWeight="bold" formatter={(v) => `TRL ${v}`} style={{textShadow: '0px 0px 2px rgba(0,0,0,0.5)'}} />
+                                            </Bar>
+                                            <Bar dataKey="Captur_energy" name="設備耗能碳排" stackId="capture" fill="#ef4444" fillOpacity={0.8} radius={[0, 4, 4, 0]}>
+                                                <LabelList dataKey="Capture_Volume" position="right" fill="#475569" fontSize={10} fontWeight="bold" formatter={(v) => `總 ${v.toFixed(1)}`} />
+                                            </Bar>
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                </ErrorBoundary>
                             </div>
                         </div>
-                        
-                        {captureViewMode === 'map' && (
-                            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-[650px]">
-                                <div className="lg:col-span-5 relative"><TaiwanCcusMap mode="capture" captureData={fCapture} /></div>
-                                <div className="lg:col-span-7 flex flex-col">
-                                    <h3 className="font-bold text-slate-700 text-xs mb-2 flex items-center gap-1 text-center justify-center bg-slate-50 py-2 rounded"><Activity size={14} className="text-blue-500"/> 技術解析：總捕捉量 vs 設備耗能</h3>
-                                    <div className="flex-1 w-full min-h-0 relative">
-                                        <ErrorBoundary>
-                                            <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
-                                                <BarChart data={fCapture.sort((a,b) => b.Capture_Volume - a.Capture_Volume)} layout="vertical" margin={{ top: 5, right: 40, left: 40, bottom: 5 }} barGap={2} barSize={26}>
-                                                    <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false}/>
-                                                    <XAxis type="number" fontSize={10} unit=" 萬噸"/>
-                                                    <YAxis dataKey="Label" type="category" width={140} tick={{fontSize: 11, fill: '#475569', fontWeight: 'bold'}} interval={0}/>
-                                                    <Tooltip content={<CaptureTooltip />}/>
-                                                    <Legend wrapperStyle={{fontSize:'11px'}} verticalAlign="top"/>
-                                                    <Bar dataKey="Net_Capture_Volume" name="淨捕捉量" stackId="capture">
-                                                        {fCapture.map((entry, index) => <Cell key={`cell-${index}`} fill={stringToColor(entry.Capture_Tech)} />)}
-                                                        <LabelList dataKey="TRL" position="insideLeft" fill="white" fontSize={10} fontWeight="bold" formatter={(v) => `TRL ${v}`} style={{textShadow: '0px 0px 2px rgba(0,0,0,0.5)'}} />
-                                                    </Bar>
-                                                    <Bar dataKey="Captur_energy" name="設備耗能碳排" stackId="capture" fill="#ef4444" fillOpacity={0.8} radius={[0, 4, 4, 0]}>
-                                                        <LabelList dataKey="Capture_Volume" position="right" fill="#475569" fontSize={10} fontWeight="bold" formatter={(v) => `總 ${v.toFixed(1)}`} />
-                                                    </Bar>
-                                                </BarChart>
-                                            </ResponsiveContainer>
-                                        </ErrorBoundary>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        {captureViewMode === 'table_current' && (
-                            <div className="overflow-x-auto h-[650px] custom-scrollbar">
-                                <table className="w-full text-xs text-left whitespace-nowrap">
-                                    <thead className="bg-slate-100 text-slate-600 sticky top-0 shadow-sm z-10">
-                                        <tr>
-                                            <th className="p-3">公司廠區</th><th className="p-3">捕捉來源</th><th className="p-3">捕捉技術</th><th className="p-3">分離技術</th>
-                                            <th className="p-3">TRL</th><th className="p-3">溫度(℃)</th><th className="p-3">壓力(bar)</th><th className="p-3">濃度(vol%)</th>
-                                            <th className="p-3 text-right bg-blue-50">總捕捉量</th><th className="p-3 text-right bg-rose-50">設備耗能碳排</th><th className="p-3 text-right bg-emerald-50">淨捕捉量</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-slate-100">
-                                        {fCapture.map((row, i) => (
-                                            <tr key={i} className="hover:bg-slate-50 transition-colors">
-                                                <td className="p-3 font-bold text-slate-700">{row.Label}</td><td className="p-3">{row.Capture_Source}</td>
-                                                <td className="p-3"><span className="px-2 py-1 bg-blue-50 text-blue-700 rounded-lg">{row.Capture_Tech}</span></td>
-                                                <td className="p-3 text-slate-500">{row.Separation_Tech}</td><td className="p-3 font-mono">{row.TRL}</td>
-                                                <td className="p-3 font-mono">{row.Temperature}</td><td className="p-3 font-mono">{row.Pressure}</td><td className="p-3 font-mono">{row.Concentration}</td>
-                                                <td className="p-3 text-right font-mono font-bold text-blue-600">{row.Capture_Volume.toFixed(1)}</td>
-                                                <td className="p-3 text-right font-mono text-rose-500">{row.Captur_energy.toFixed(1)}</td>
-                                                <td className="p-3 text-right font-mono font-bold text-emerald-600">{row.Net_Capture_Volume.toFixed(1)}</td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        )}
-
-                        {captureViewMode === 'table_future' && (
-                            <div className="overflow-x-auto h-[650px] custom-scrollbar">
-                                <table className="w-full text-xs text-left whitespace-nowrap">
-                                    <thead className="bg-amber-50 text-amber-800 sticky top-0 shadow-sm z-10 border-b border-amber-200">
-                                        <tr>
-                                            <th className="p-3">公司廠區</th><th className="p-3">潛在安裝來源</th>
-                                            <th className="p-3 text-right">潛在排放量 (萬噸/年)</th><th className="p-3">溫度(℃)</th><th className="p-3">壓力(bar)</th><th className="p-3">濃度(vol%)</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-amber-100">
-                                        {fCapture.filter(r => r.Potential_Source || r.Future_Emission_Volume > 0).map((row, i) => (
-                                            <tr key={i} className="hover:bg-amber-50/50 transition-colors">
-                                                <td className="p-3 font-bold text-slate-700">{row.Label}</td>
-                                                <td className="p-3 font-medium text-amber-700">{row.Potential_Source}</td>
-                                                <td className="p-3 text-right font-mono font-black text-rose-600 text-sm">{row.Future_Emission_Volume.toFixed(1)}</td>
-                                                <td className="p-3 font-mono text-slate-600">{row.Future_Temperature}</td>
-                                                <td className="p-3 font-mono text-slate-600">{row.Future_Pressure}</td>
-                                                <td className="p-3 font-mono text-slate-600">{row.Future_Concentration}</td>
-                                            </tr>
-                                        ))}
-                                        {fCapture.filter(r => r.Potential_Source || r.Future_Emission_Volume > 0).length === 0 && <tr><td colSpan={6} className="p-8 text-center text-slate-400">目前尚無未來展望數據</td></tr>}
-                                    </tbody>
-                                </table>
-                            </div>
-                        )}
                     </div>
                 </div>
             )}
@@ -584,7 +523,6 @@ const CcusDashboard = () => {
                         <h3 className="font-bold text-slate-700 text-sm mb-4 border-b pb-2 flex items-center gap-2"><FlaskConical size={16} className="text-purple-500"/> 碳再利用製程清單與需求明細</h3>
                         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
                             {fUtil.map((item, idx) => {
-                                // 判斷是否為開發中技術
                                 const trlNum = parseInt(String(item.TRL).split('-')[0]) || 0;
                                 const isDeveloping = trlNum < 6 || item.Current_Demand === 0;
 

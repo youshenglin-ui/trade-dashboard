@@ -95,6 +95,7 @@ const getApproximateCoordinates = (plant, company) => {
 
 const stringToColor = (str) => {
     const COLORS_POOL = ['#2563eb', '#3b82f6', '#60a5fa', '#059669', '#10b981', '#34d399', '#d97706', '#f59e0b', '#7c3aed', '#8b5cf6', '#dc2626', '#ef4444'];
+    if (!str) return COLORS_POOL[0];
     let hash = 0; for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
     return COLORS_POOL[Math.abs(hash) % COLORS_POOL.length];
 };
@@ -128,7 +129,7 @@ const cleanNumber = (val) => {
 };
 
 // ==========================================
-// 地理地圖模組
+// 地理地圖模組 (Crash Proof)
 // ==========================================
 const TaiwanH2Map = ({ supplyData = [], demandData = [] }) => {
     const mapRef = useRef(null);
@@ -142,7 +143,11 @@ const TaiwanH2Map = ({ supplyData = [], demandData = [] }) => {
     const [hoveredNode, setHoveredNode] = useState(null);
 
     const baseWidth = 800, baseHeight = 900, centerLon = 120.9, centerLat = 23.7, baseScale = 380; 
-    const projectBase = (lon, lat) => [(lon - centerLon) * baseScale, -(lat - centerLat) * baseScale * 1.1];
+    
+    const projectBase = (lon, lat) => {
+        if (!lon || !lat || isNaN(lon) || isNaN(lat)) return [-9999, -9999];
+        return [(lon - centerLon) * baseScale, -(lat - centerLat) * baseScale * 1.1];
+    };
 
     useEffect(() => {
         fetch('https://raw.githubusercontent.com/g0v/twgeojson/master/json/twCounty2010.geo.json')
@@ -150,7 +155,7 @@ const TaiwanH2Map = ({ supplyData = [], demandData = [] }) => {
             .then(data => {
                 const paths = data.features.map(f => {
                     let d = '';
-                    const pr = (ring) => { if(!ring||ring.length===0)return; const [x,y]=projectBase(ring[0][0],ring[0][1]); d+=`M${x},${y} `; for(let i=1;i<ring.length;i++){const [lx,ly]=projectBase(ring[i][0],ring[i][1]); d+=`L${lx},${ly} `;} d+='Z '; };
+                    const pr = (ring) => { if(!ring||ring.length===0)return; const [x,y]=projectBase(ring[0][0],ring[0][1]); if (x === -9999) return; d+=`M${x},${y} `; for(let i=1;i<ring.length;i++){const [lx,ly]=projectBase(ring[i][0],ring[i][1]); d+=`L${lx},${ly} `;} d+='Z '; };
                     if(f.geometry.type==='Polygon') f.geometry.coordinates.forEach(pr); else if(f.geometry.type==='MultiPolygon') f.geometry.coordinates.forEach(p=>p.forEach(pr));
                     return { d, region: getRegionByCounty(f.properties.COUNTYNAME) };
                 });
@@ -173,11 +178,11 @@ const TaiwanH2Map = ({ supplyData = [], demandData = [] }) => {
     const { finalNodes, flows } = useMemo(() => {
         const plantMap = {};
         const addToMap = (d, isSupply) => {
-            const label = d.label;
+            const label = d.label || '未知廠區';
             if (!plantMap[label]) {
                 const coords = (d.Longitude && d.Latitude) ? { lat: d.Latitude, lon: d.Longitude } : getApproximateCoordinates(d.Plant, d.Company);
                 plantMap[label] = {
-                    label, Company: d.Company, Plant: d.Plant, Region: d.Region, 
+                    label, Company: d.Company || '', Plant: d.Plant || '', Region: d.Region, 
                     zone: getIndustrialZone(d.Plant, d.Company),
                     baseLat: coords.lat, baseLon: coords.lon,
                     supply: 0, demand: 0, supply_sold: 0, demand_purchased: 0,
@@ -185,16 +190,16 @@ const TaiwanH2Map = ({ supplyData = [], demandData = [] }) => {
                 };
             }
             if (isSupply) {
-                plantMap[label].supply += d.Output_Tons || 0;
-                plantMap[label].supply_sold += d.Trade_Vol || 0;
+                plantMap[label].supply += cleanNumber(d.Output_Tons);
+                plantMap[label].supply_sold += cleanNumber(d.Trade_Vol);
                 if (d.Process) plantMap[label].processes.add(d.Process);
                 if (d.Carbon_Intensity) plantMap[label].intensities.add(d.Carbon_Intensity);
                 if (d.Trade_Target) plantMap[label].targets.add(d.Trade_Target);
             } else {
-                plantMap[label].demand += d.Demand_Tons || 0;
-                plantMap[label].demand_purchased += d.Trade_Vol || 0;
+                plantMap[label].demand += cleanNumber(d.Demand_Tons);
+                plantMap[label].demand_purchased += cleanNumber(d.Trade_Vol);
                 if (d.Usage_Type) plantMap[label].usages.add(d.Usage_Type);
-                if (d.Source_Company) plantMap[label].sources.add(`${d.Source_Company} ${d.Source_Plant}`.trim());
+                if (d.Source_Company) plantMap[label].sources.add(`${d.Source_Company} ${d.Source_Plant || ''}`.trim());
             }
         };
 
@@ -289,13 +294,13 @@ const TaiwanH2Map = ({ supplyData = [], demandData = [] }) => {
 
                             <div className="text-[10px] text-slate-500 font-bold mb-1 flex items-center gap-1"><Activity size={12}/> 該廠總量獨立供需 (萬噸)</div>
                             <ResponsiveContainer width="100%" height={160} minWidth={1} minHeight={1}>
-                                <BarChart data={[{name: '總產量', value: activeSelection.data.supply, fill: '#3b82f6'}, {name: '總用量', value: activeSelection.data.demand, fill: '#f59e0b'}]} margin={{top: 20, right: 10, bottom: 0, left: -20}}>
+                                <BarChart data={[{name: '總產能/量', value: activeSelection.data.supply, fill: '#3b82f6'}, {name: '總氫氣用量', value: activeSelection.data.demand, fill: '#f59e0b'}]} margin={{top: 20, right: 10, bottom: 0, left: -20}}>
                                     <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.5}/>
                                     <XAxis dataKey="name" tick={{fontSize: 11, fontWeight: 'bold'}} axisLine={false} tickLine={false}/>
                                     <YAxis tick={{fontSize: 10}} axisLine={false} tickLine={false}/>
                                     <Tooltip cursor={{fill: 'transparent'}} contentStyle={{fontSize: '12px', borderRadius: '8px'}} formatter={(val) => val.toFixed(2)}/>
                                     <Bar dataKey="value" radius={[4, 4, 0, 0]} barSize={40}>
-                                        {[{name: '總產量', value: activeSelection.data.supply, fill: '#3b82f6'}, {name: '總用量', value: activeSelection.data.demand, fill: '#f59e0b'}].map((entry, index) => <Cell key={`cell-${index}`} fill={entry.fill} />)}
+                                        {[{name: '總產能/量', value: activeSelection.data.supply, fill: '#3b82f6'}, {name: '總氫氣用量', value: activeSelection.data.demand, fill: '#f59e0b'}].map((entry, index) => <Cell key={`cell-${index}`} fill={entry.fill} />)}
                                         <LabelList dataKey="value" position="top" fontSize={11} fontWeight="bold" fill="#475569" formatter={v => v > 0 ? v.toFixed(1) : ''} />
                                     </Bar>
                                 </BarChart>
@@ -347,6 +352,7 @@ const TaiwanH2Map = ({ supplyData = [], demandData = [] }) => {
                     {mapPaths.map((p, i) => <path key={`map-${i}`} d={p.d} fill={REGION_COLORS[p.region] || '#f8fafc'} stroke="#cbd5e1" strokeWidth={1.5 / zoom} className="transition-colors hover:fill-slate-200" />)}
                     {INDUSTRIAL_ZONES_COORDS.map((zone, idx) => {
                         const [cx, cy] = projectBase(zone.lon, zone.lat);
+                        if (cx === -9999) return null;
                         const isSelected = activeSelection?.type === 'zone' && activeSelection?.name === zone.name;
                         return (
                             <g key={`zone-${idx}`} className="cursor-pointer group" onClick={() => handleZoneClick(zone.name)}>
@@ -358,6 +364,7 @@ const TaiwanH2Map = ({ supplyData = [], demandData = [] }) => {
                     {flows.map((f, i) => {
                         const [x1, y1] = projectBase(f.source.lon, f.source.lat);
                         const [x2, y2] = projectBase(f.target.lon, f.target.lat);
+                        if (x1 === -9999 || x2 === -9999) return null;
                         const isPipe = f.method.includes('管線');
                         let opacity = 0.35;
                         if (activeSelection?.type === 'plant' && (activeSelection.data.label === f.source.label || activeSelection.data.label === f.target.label)) opacity = 1;
@@ -373,6 +380,7 @@ const TaiwanH2Map = ({ supplyData = [], demandData = [] }) => {
                     })}
                     {finalNodes.map((n, i) => {
                         const [cx, cy] = projectBase(n.lon, n.lat);
+                        if (cx === -9999) return null;
                         const maxVal = Math.max(n.supply, n.demand, 0.1);
                         const r = Math.max(6, Math.min(22, Math.sqrt(maxVal) * 1.5)) / zoom;
                         const isSupplyDominant = n.supply >= n.demand;
@@ -531,7 +539,7 @@ const RegionalDeepDive = ({ supplyData, demandData, globalYear }) => {
             
             const name = d.label || getDashboardPlantName(d.Company, d.Plant);
             const zone = getIndustrialZone(d.Plant, d.Company);
-            // 修正：純產量與純用量，不再加上 Trade_Vol
+            // 只加原本的產能與需求
             const val = isSupply ? (d.Output_Tons || 0) : (d.Demand_Tons || 0);
 
             const y = d.Year;
@@ -567,11 +575,8 @@ const RegionalDeepDive = ({ supplyData, demandData, globalYear }) => {
         demandData.forEach(d => processRow(d, false));
 
         Object.values(plantMap).forEach(p => {
-            // 修正：產量 (supply) 就是底圖長度，外售 (supply_sold) 只是其中一部分
             p.supply_self = Math.max(0, p.supply - p.supply_sold);
             p.demand_self = Math.max(0, p.demand - p.demand_purchased);
-            
-            // 自動計算防呆
             if (p.supply_sold === 0 && p.supply > p.demand && p.demand > 0) p.supply_sold = p.supply - p.demand;
             if (p.demand_purchased === 0 && p.demand > p.supply && p.supply > 0) p.demand_purchased = p.demand - p.supply;
         });
@@ -739,7 +744,7 @@ const TechBalanceChart = ({ supplyData, demandData }) => {
         const map = { '北區': 0, '中區': 0, '南區': 0, '東區': 0 };
         data.forEach(d => {
             const r = d.Region || '其他';
-            if (map[r] !== undefined) map[r] += (d[valueKey] || 0);
+            if (map[r] !== undefined) map[r] += (cleanNumber(d[valueKey]) || 0);
         });
         return Object.entries(map).map(([name, value]) => ({ name, value })).filter(d => d.value > 0);
     };
@@ -756,15 +761,15 @@ const TechBalanceChart = ({ supplyData, demandData }) => {
             <div className="relative w-full flex-1 min-h-[140px] z-10 flex items-end justify-center -mb-2">
                 <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                     <PieChart margin={{top: 20, bottom: 0}}>
-                        <Pie data={sData} cx="50%" cy="100%" startAngle={180} endAngle={0} innerRadius="55%" outerRadius="90%" dataKey="value" stroke="white" strokeWidth={2}>
-                            {sData.map((entry, index) => <Cell key={`cell-${index}`} fill={SOLID_REGION_COLORS[entry.name] || '#3b82f6'} />)}
-                            <LabelList dataKey="name" position="outside" offset={10} fill="#475569" fontSize={11} fontWeight="bold" stroke="none" />
+                        <Pie data={sData.length > 0 ? sData : [{name: '無資料', value: 1}]} cx="50%" cy="100%" startAngle={180} endAngle={0} innerRadius="55%" outerRadius="90%" dataKey="value" stroke="white" strokeWidth={2}>
+                            {(sData.length > 0 ? sData : [{name: '無資料', value: 1}]).map((entry, index) => <Cell key={`cell-${index}`} fill={sData.length > 0 ? (SOLID_REGION_COLORS[entry.name] || '#3b82f6') : '#cbd5e1'} />)}
+                            {sData.length > 0 && <LabelList dataKey="name" position="outside" offset={10} fill="#475569" fontSize={11} fontWeight="bold" stroke="none" />}
                         </Pie>
                         <Tooltip formatter={(val) => val.toFixed(1) + ' 萬噸'} />
                     </PieChart>
                 </ResponsiveContainer>
                 <div className="absolute bottom-1 left-0 w-full text-center pointer-events-none">
-                    <span className="bg-white/90 backdrop-blur px-2 py-0.5 rounded text-blue-700 font-bold text-xs shadow-sm">總原產量 {totalS.toFixed(1)}</span>
+                    <span className="bg-white/90 backdrop-blur px-2 py-0.5 rounded text-blue-700 font-bold text-xs shadow-sm">總產量 {totalS.toFixed(1)}</span>
                 </div>
             </div>
             <div className="z-20 bg-white/95 backdrop-blur-md px-6 py-2 rounded-2xl shadow-lg border border-slate-100 text-center relative mx-auto my-1">
@@ -776,15 +781,15 @@ const TechBalanceChart = ({ supplyData, demandData }) => {
             <div className="relative w-full flex-1 min-h-[140px] mt-2">
                 <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                     <PieChart margin={{top: 0, bottom: 20}}>
-                        <Pie data={dData} cx="50%" cy="0%" startAngle={180} endAngle={360} innerRadius="55%" outerRadius="90%" dataKey="value" stroke="white" strokeWidth={2}>
-                            {dData.map((entry, index) => <Cell key={`cell-${index}`} fill={SOLID_REGION_COLORS[entry.name] || '#f59e0b'} />)}
-                            <LabelList dataKey="name" position="outside" offset={10} fill="#475569" fontSize={11} fontWeight="bold" stroke="none" />
+                        <Pie data={dData.length > 0 ? dData : [{name: '無資料', value: 1}]} cx="50%" cy="0%" startAngle={180} endAngle={360} innerRadius="55%" outerRadius="90%" dataKey="value" stroke="white" strokeWidth={2}>
+                            {(dData.length > 0 ? dData : [{name: '無資料', value: 1}]).map((entry, index) => <Cell key={`cell-${index}`} fill={dData.length > 0 ? (SOLID_REGION_COLORS[entry.name] || '#f59e0b') : '#cbd5e1'} />)}
+                            {dData.length > 0 && <LabelList dataKey="name" position="outside" offset={10} fill="#475569" fontSize={11} fontWeight="bold" stroke="none" />}
                         </Pie>
                         <Tooltip formatter={(val) => val.toFixed(1) + ' 萬噸'} />
                     </PieChart>
                 </ResponsiveContainer>
                 <div className="absolute top-1 left-0 w-full text-center pointer-events-none">
-                    <span className="bg-white/90 backdrop-blur px-2 py-0.5 rounded text-amber-700 font-bold text-xs shadow-sm">總原需求 {totalD.toFixed(1)}</span>
+                    <span className="bg-white/90 backdrop-blur px-2 py-0.5 rounded text-amber-700 font-bold text-xs shadow-sm">總需求 {totalD.toFixed(1)}</span>
                 </div>
             </div>
         </div>
@@ -793,7 +798,7 @@ const TechBalanceChart = ({ supplyData, demandData }) => {
 
 const StructureAnalysis = ({ data, typeField, valueField, categoryFn, colorMap }) => {
     const { l1, l2, total } = useMemo(() => {
-        const totalVal = data.reduce((acc, curr) => acc + (curr[valueField] || 0), 0);
+        const totalVal = data.reduce((acc, curr) => acc + (cleanNumber(curr[valueField]) || 0), 0);
         const l1Map = {};
         const l2Map = {};
 
@@ -801,7 +806,7 @@ const StructureAnalysis = ({ data, typeField, valueField, categoryFn, colorMap }
             const name = d[typeField] || 'Unknown';
             const identifiedName = typeField === 'Process' ? identifyProcess(name) : identifyUsage(name);
             const category = categoryFn(identifiedName);
-            const val = d[valueField] || 0;
+            const val = cleanNumber(d[valueField]) || 0;
             if(!l1Map[category]) l1Map[category] = 0;
             l1Map[category] += val;
             if(!l2Map[identifiedName]) l2Map[identifiedName] = { name: identifiedName, value: 0, category };
@@ -827,6 +832,8 @@ const StructureAnalysis = ({ data, typeField, valueField, categoryFn, colorMap }
             </text>
         );
     };
+
+    if (total === 0) return <div className="h-full flex items-center justify-center text-slate-400 text-sm">無足夠數據進行結構分析</div>;
 
     return (
         <div className="flex h-full gap-4 pb-2">
@@ -912,7 +919,6 @@ const HydrogenDashboard = () => {
         const txtP = await resP.text();
         const txtU = await resU.text();
         
-        // 台灣化纖強迫清洗
         const fixTaihua = (r) => {
             if (r['公司']?.includes('化纖') && r['廠區']?.includes('台北')) {
                 r['廠區'] = '麥寮廠'; r['區域'] = '中區';
@@ -930,7 +936,6 @@ const HydrogenDashboard = () => {
 
         if (normP.length === 0 && normU.length === 0) throw new Error("Normalization Empty");
 
-        // 完美整合外售/外購與廠區名稱 (修正雙重計算問題)
         const extractExtraFields = (normalizedArr, rawArr, type) => {
             return normalizedArr.map(n => {
                 const match = rawArr.find(r => simplifyCompanyName(r['Company'] || r['公司'] || r['廠商']) === simplifyCompanyName(n.Company) && 
@@ -940,18 +945,16 @@ const HydrogenDashboard = () => {
                 const targetKey = type === 'supply' ? `${n.Year}_外售對象` : `${n.Year}_外購對象`;
                 const baseKey = type === 'supply' ? `${n.Year}_產量` : `${n.Year}_用量`;
                 
-                const baseVol = match ? cleanNumber(match[baseKey]) : (type === 'supply' ? n.Output_Tons : n.Demand_Tons);
+                const baseVol = match ? cleanNumber(match[baseKey]) : cleanNumber(type === 'supply' ? n.Output_Tons : n.Demand_Tons);
                 const tradeVol = match ? cleanNumber(match[volKey]) : 0;
                 let tradeTarget = match ? (match[targetKey] || '') : '';
                 
-                if (tradeVol > 0 && !tradeTarget) tradeTarget = '公用網路(鄰近廠區)';
-
                 if (type === 'supply') {
-                    n.Output_Tons = baseVol; // 不再疊加，產量歸產量
+                    n.Output_Tons = baseVol; 
                     n.Trade_Vol = tradeVol;
                     n.Trade_Target = tradeTarget;
                 } else {
-                    n.Demand_Tons = baseVol; // 不再疊加，用量歸用量
+                    n.Demand_Tons = baseVol; 
                     n.Trade_Vol = tradeVol;
                     n.Trade_Target = tradeTarget;
                 }
@@ -969,9 +972,8 @@ const HydrogenDashboard = () => {
                     } : {})
                 };
             }).map(n => {
-                // 如果外購有量，但沒來源，自動補成公用網路以利畫圖
                 if (type === 'demand' && n.Trade_Vol > 0 && !n.Source_Company) {
-                    n.Source_Company = '公用網路(鄰近廠區)';
+                    n.Source_Company = '公用網路';
                 }
                 return n;
             });
@@ -1015,9 +1017,9 @@ const HydrogenDashboard = () => {
           const keysSet = new Set();
           data.forEach(d => {
               const y = d.Year;
-              let k = labelFn(d);
+              let k = labelFn(d) || '未知';
               if(!map[y]) map[y] = { year: y };
-              map[y][k] = (map[y][k] || 0) + (d[valueKey] || 0);
+              map[y][k] = (map[y][k] || 0) + (cleanNumber(d[valueKey]) || 0);
               keysSet.add(k);
           });
           return { data: Object.values(map).sort((a,b)=>a.year-b.year), keys: Array.from(keysSet) };
@@ -1034,10 +1036,10 @@ const HydrogenDashboard = () => {
       filteredSupply.forEach(d => {
           const key = d.label;
           if(!plantMap[key]) plantMap[key] = { name: key, output: 0, total_emission: 0, intensity: 0 };
-          plantMap[key].output += d.Output_Tons || 0;
-          const currentIntensity = d.Carbon_Intensity || 0;
+          plantMap[key].output += (cleanNumber(d.Output_Tons) || 0);
+          const currentIntensity = cleanNumber(d.Carbon_Intensity) || 0;
           if (currentIntensity > 0) plantMap[key].intensity = currentIntensity; 
-          plantMap[key].total_emission += (d.Output_Tons || 0) * (d.Carbon_Intensity || 0);
+          plantMap[key].total_emission += (cleanNumber(d.Output_Tons) || 0) * currentIntensity;
       });
       return Object.values(plantMap).filter(d => d.output > 0 && d.intensity > 0);
   }, [filteredSupply]);
@@ -1111,40 +1113,44 @@ const HydrogenDashboard = () => {
                          
                          <div className="flex-1 h-full relative border border-slate-100 rounded-lg p-2 bg-slate-50/50 min-h-0">
                             <div className="absolute top-2 right-4 text-[10px] text-slate-400 bg-white/80 px-2 rounded z-10">圓點大小 = 總碳排量</div>
-                            <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
-                                <ScatterChart margin={{top:20, right:20, bottom:30, left:20}}>
-                                    <CartesianGrid strokeDasharray="3 3"/>
-                                    <XAxis type="number" dataKey="output" name="產量" unit="萬噸" scale="log" domain={['auto', 'auto']} tick={{fontSize:10, fill:'#64748b'}}>
-                                        <Label value="產量 (萬噸) - 指數級距" offset={-20} position="insideBottom" fontSize={11} fill="#475569" fontWeight="bold"/>
-                                    </XAxis>
-                                    <YAxis type="number" dataKey="intensity" name="強度" unit="kg/kg" domain={[0, 'auto']} tick={{fontSize:10, fill:'#64748b'}}>
-                                        <Label value="碳排強度 (kg CO2e / kg H2)" angle={-90} position="insideLeft" style={{ textAnchor: 'middle' }} offset={10} fontSize={11} fill="#475569" fontWeight="bold"/>
-                                    </YAxis>
-                                    <ZAxis type="number" dataKey="total_emission" range={[50, 600]} />
-                                    <Tooltip cursor={{strokeDasharray:'3 3'}} formatter={(v, n) => [v.toLocaleString(), n === 'output' ? '產量(萬噸)' : n === 'intensity' ? '強度' : '總碳排']} contentStyle={{fontSize:'12px', borderRadius:'8px'}}/>
-                                    <Scatter name="廠區" data={efficiencyChartData}>
-                                        <LabelList dataKey="name" position="top" style={{fontSize:10, fill:'#475569', fontWeight: 'bold'}} />
-                                        {efficiencyChartData.map((entry, index) => (
-                                            <Cell key={`cell-${index}`} fill={entry.intensity > 15 ? '#ef4444' : entry.intensity > 8 ? '#f59e0b' : '#10b981'} fillOpacity={0.7} stroke="white" strokeWidth={1}/>
-                                        ))}
-                                    </Scatter>
-                                </ScatterChart>
-                            </ResponsiveContainer>
+                            <ErrorBoundary>
+                                <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
+                                    <ScatterChart margin={{top:20, right:20, bottom:30, left:20}}>
+                                        <CartesianGrid strokeDasharray="3 3"/>
+                                        <XAxis type="number" dataKey="output" name="產量" unit="萬噸" scale="log" domain={['auto', 'auto']} tick={{fontSize:10, fill:'#64748b'}}>
+                                            <Label value="產量 (萬噸) - 指數級距" offset={-20} position="insideBottom" fontSize={11} fill="#475569" fontWeight="bold"/>
+                                        </XAxis>
+                                        <YAxis type="number" dataKey="intensity" name="強度" unit="kg/kg" domain={[0, 'auto']} tick={{fontSize:10, fill:'#64748b'}}>
+                                            <Label value="碳排強度 (kg CO2e / kg H2)" angle={-90} position="insideLeft" style={{ textAnchor: 'middle' }} offset={10} fontSize={11} fill="#475569" fontWeight="bold"/>
+                                        </YAxis>
+                                        <ZAxis type="number" dataKey="total_emission" range={[50, 600]} />
+                                        <Tooltip cursor={{strokeDasharray:'3 3'}} formatter={(v, n) => [v.toLocaleString(), n === 'output' ? '產量(萬噸)' : n === 'intensity' ? '強度' : '總碳排']} contentStyle={{fontSize:'12px', borderRadius:'8px'}}/>
+                                        <Scatter name="廠區" data={efficiencyChartData}>
+                                            <LabelList dataKey="name" position="top" style={{fontSize:10, fill:'#475569', fontWeight: 'bold'}} />
+                                            {efficiencyChartData.map((entry, index) => (
+                                                <Cell key={`cell-${index}`} fill={entry.intensity > 15 ? '#ef4444' : entry.intensity > 8 ? '#f59e0b' : '#10b981'} fillOpacity={0.7} stroke="white" strokeWidth={1}/>
+                                            ))}
+                                        </Scatter>
+                                    </ScatterChart>
+                                </ResponsiveContainer>
+                            </ErrorBoundary>
                          </div>
                          
                          <div className="flex-1 h-full border border-slate-100 rounded-lg p-2 min-h-0 relative">
-                            <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
-                                 <ComposedChart data={efficiencyChartData} margin={{top:20, right:20, bottom:40, left:0}}>
-                                     <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                                     <XAxis dataKey="name" angle={-35} textAnchor="end" height={60} tick={{fontSize:10, fill:'#64748b'}} interval={0}/>
-                                     <YAxis yAxisId="left" tick={{fontSize:10, fill:'#64748b'}}/>
-                                     <YAxis yAxisId="right" orientation="right" tick={{fontSize:10, fill:'#64748b'}}/>
-                                     <Tooltip contentStyle={{fontSize:'12px', borderRadius:'8px'}}/>
-                                     <Legend wrapperStyle={{fontSize:'11px'}} verticalAlign="top"/>
-                                     <Bar yAxisId="left" dataKey="output" name="產量 (萬噸)" fill="#3b82f6" barSize={20} radius={[2,2,0,0]}/>
-                                     <Line yAxisId="right" type="monotone" dataKey="intensity" name="碳排強度" stroke="#ef4444" strokeWidth={3} dot={{r:4, fill:'#ef4444', stroke:'white'}}/>
-                                 </ComposedChart>
-                            </ResponsiveContainer>
+                            <ErrorBoundary>
+                                <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
+                                     <ComposedChart data={efficiencyChartData} margin={{top:20, right:20, bottom:40, left:0}}>
+                                         <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                                         <XAxis dataKey="name" angle={-35} textAnchor="end" height={60} tick={{fontSize:10, fill:'#64748b'}} interval={0}/>
+                                         <YAxis yAxisId="left" tick={{fontSize:10, fill:'#64748b'}}/>
+                                         <YAxis yAxisId="right" orientation="right" tick={{fontSize:10, fill:'#64748b'}}/>
+                                         <Tooltip contentStyle={{fontSize:'12px', borderRadius:'8px'}}/>
+                                         <Legend wrapperStyle={{fontSize:'11px'}} verticalAlign="top"/>
+                                         <Bar yAxisId="left" dataKey="output" name="產量 (萬噸)" fill="#3b82f6" barSize={20} radius={[2,2,0,0]}/>
+                                         <Line yAxisId="right" type="monotone" dataKey="intensity" name="碳排強度" stroke="#ef4444" strokeWidth={3} dot={{r:4, fill:'#ef4444', stroke:'white'}}/>
+                                     </ComposedChart>
+                                </ResponsiveContainer>
+                            </ErrorBoundary>
                          </div>
 
                      </div>
