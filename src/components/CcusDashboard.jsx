@@ -5,7 +5,7 @@ import {
 } from 'recharts';
 import { 
   Leaf, RefreshCw, Target, Activity, MapPin, DollarSign, Box, AlertTriangle, 
-  Truck, Ship, GripHorizontal, FlaskConical, Plus, ZoomIn, ZoomOut, Maximize, Hand, Factory
+  Truck, Ship, GripHorizontal, FlaskConical, Plus, ZoomIn, ZoomOut, Maximize, Hand, Factory, CheckCircle2, List
 } from 'lucide-react';
 
 const CCUS_DATA_SOURCES = {
@@ -303,7 +303,7 @@ const CaptureTooltip = ({ active, payload, label }) => {
                    <div className="col-span-2">濃度: <span className="font-mono font-bold">{data.Concentration || '-'}</span></div>
                 </div>
                 <p className="text-slate-600 mb-0.5 flex justify-between"><span className="text-slate-400">總捕捉量:</span> <span className="font-bold">{data.Capture_Volume.toFixed(2)} 萬噸</span></p>
-                <p className="text-rose-500 mb-0.5 flex justify-between"><span className="text-slate-400">設備碳排:</span> <span className="font-bold">-{data.Unit_Emissions.toFixed(2)} 萬噸</span></p>
+                <p className="text-rose-500 mb-0.5 flex justify-between"><span className="text-slate-400">設備耗能(碳排):</span> <span className="font-bold">-{data.Captur_energy.toFixed(2)} 萬噸</span></p>
                 <p className="text-emerald-600 font-bold font-mono mt-1 pt-1 border-t border-slate-100 flex justify-between"><span className="text-slate-500 font-sans font-normal">淨捕捉量:</span> <span>{data.Net_Capture_Volume.toFixed(2)} 萬噸</span></p>
                 
                 {data.Potential_Source && (
@@ -321,6 +321,7 @@ const CaptureTooltip = ({ active, payload, label }) => {
 
 const CcusDashboard = () => {
     const [activeTab, setActiveTab] = useState('capture');
+    const [captureViewMode, setCaptureViewMode] = useState('map'); // 'map' | 'table_current' | 'table_future'
     const [captureData, setCaptureData] = useState([]);
     const [utilizationData, setUtilizationData] = useState([]);
     const [storageData, setStorageData] = useState([]);
@@ -346,25 +347,32 @@ const CcusDashboard = () => {
                 const rawUtil = parseHydrogenCSV(txtUtil);
                 const rawStore = parseHydrogenCSV(txtStore);
 
-                setCaptureData(rawCap.map(d => ({
-                    ...d,
-                    Year: String(d.Year || '2025'),
-                    Label: `${simplifyCompanyName(d.Company)} ${d.Plant}`,
-                    Latitude: cleanNumber(d.Latitude),
-                    Longitude: cleanNumber(d.Longitude),
-                    Capture_Tech: d.Capture_Tech || '未知技術',
-                    Capture_Volume: cleanNumber(d.Capture_Volume),
-                    Unit_Emissions: cleanNumber(d.Emission_Per_Ton),
-                    Net_Capture_Volume: Math.max(0, cleanNumber(d.Capture_Volume) - cleanNumber(d.Emission_Per_Ton)),
-                    TRL: String(d.TRL || '-'), 
-                    Capture_Source: d.Capture_Source || '',
-                    Separation_Tech: d.Separation_Tech || '',
-                    Temperature: d.Temperature || '',
-                    Pressure: d.Pressure || '',
-                    Concentration: d.Concentration || '',
-                    Potential_Source: d.Potential_Source || '',
-                    Future_Emission_Volume: cleanNumber(d.Future_Emission_Volume)
-                })));
+                setCaptureData(rawCap.map(d => {
+                    const capVol = cleanNumber(d.Capture_Volume);
+                    const capEng = cleanNumber(d.Captur_energy || d.Emission_Per_Ton); // 向後相容
+                    return {
+                        ...d,
+                        Year: String(d.Year || '2025'),
+                        Label: `${simplifyCompanyName(d.Company)} ${d.Plant}`,
+                        Latitude: cleanNumber(d.Latitude),
+                        Longitude: cleanNumber(d.Longitude),
+                        Capture_Tech: d.Capture_Tech || '未知技術',
+                        Capture_Volume: capVol,
+                        Captur_energy: capEng,
+                        Net_Capture_Volume: Math.max(0, capVol - capEng),
+                        TRL: String(d.TRL || '-'), 
+                        Capture_Source: d.Capture_Source || '',
+                        Separation_Tech: d.Separation_Tech || '',
+                        Temperature: d.Temperature || '',
+                        Pressure: d.Pressure || '',
+                        Concentration: d.Concentration || '',
+                        Potential_Source: d.Potential_Source || '',
+                        Future_Emission_Volume: cleanNumber(d.Future_Emission_Volume),
+                        Future_Temperature: d.Future_Temperature || '',
+                        Future_Pressure: d.Future_Pressure || '',
+                        Future_Concentration: d.Future_Concentration || ''
+                    };
+                }));
 
                 setUtilizationData(rawUtil.map(d => {
                     const expDemand = cleanNumber(d.Expected_Demand);
@@ -452,41 +460,111 @@ const CcusDashboard = () => {
                             <div className="w-14 h-14 rounded-full bg-slate-100 flex items-center justify-center text-slate-600"><MapPin size={28}/></div>
                         </div>
                     </div>
-                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                        <div className="lg:col-span-5 bg-white p-4 rounded-xl border border-slate-200 shadow-sm h-[650px] flex flex-col">
-                            <h3 className="font-bold text-slate-700 text-sm mb-4 border-b pb-2 flex items-center gap-2"><MapPin size={16} className="text-blue-500"/> 潛在碳捕捉點分佈 (真實地圖投影)</h3>
-                            <TaiwanCcusMap mode="capture" captureData={fCapture} />
-                        </div>
-                        <div className="lg:col-span-7 bg-white p-4 rounded-xl border border-slate-200 shadow-sm h-[650px] flex flex-col">
-                            <h3 className="font-bold text-slate-700 text-sm mb-4 border-b pb-2 flex items-center gap-2"><Activity size={16} className="text-blue-500"/> 技術解析：總捕捉量 vs 設備耗能</h3>
-                            <div className="flex-1 w-full min-h-0 relative">
-                                <ErrorBoundary>
-                                    <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
-                                        <BarChart data={fCapture.sort((a,b) => b.Capture_Volume - a.Capture_Volume)} layout="vertical" margin={{ top: 5, right: 40, left: 40, bottom: 5 }} barGap={2} barSize={26}>
-                                            <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false}/>
-                                            <XAxis type="number" fontSize={10} unit=" 萬噸"/>
-                                            {/* 修正為顯示 公司+廠區 名稱 */}
-                                            <YAxis dataKey="Label" type="category" width={140} tick={{fontSize: 11, fill: '#475569', fontWeight: 'bold'}} interval={0}/>
-                                            <Tooltip content={<CaptureTooltip />}/>
-                                            <Legend wrapperStyle={{fontSize:'11px'}} verticalAlign="top"/>
-                                            <Bar dataKey="Net_Capture_Volume" name="淨捕捉量" stackId="capture">
-                                                {fCapture.map((entry, index) => <Cell key={`cell-${index}`} fill={stringToColor(entry.Capture_Tech)} />)}
-                                                <LabelList dataKey="TRL" position="insideLeft" fill="white" fontSize={10} fontWeight="bold" formatter={(v) => `TRL ${v}`} style={{textShadow: '0px 0px 2px rgba(0,0,0,0.5)'}} />
-                                            </Bar>
-                                            <Bar dataKey="Unit_Emissions" name="設備耗能碳排" stackId="capture" fill="#ef4444" fillOpacity={0.8} radius={[0, 4, 4, 0]}>
-                                                <LabelList dataKey="Capture_Volume" position="right" fill="#475569" fontSize={10} fontWeight="bold" formatter={(v) => `總 ${v.toFixed(1)}`} />
-                                            </Bar>
-                                        </BarChart>
-                                    </ResponsiveContainer>
-                                </ErrorBoundary>
+                    
+                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col">
+                        <div className="flex justify-between items-center mb-4 border-b pb-2">
+                            <h3 className="font-bold text-slate-700 text-sm flex items-center gap-2"><MapPin size={16} className="text-blue-500"/> 潛在碳捕捉點分佈與工程清單</h3>
+                            <div className="flex bg-slate-100 p-1 rounded-lg text-xs font-bold shadow-inner">
+                                <button onClick={() => setCaptureViewMode('map')} className={`px-3 py-1.5 rounded-md flex items-center gap-1 ${captureViewMode === 'map' ? 'bg-white shadow text-blue-600' : 'text-slate-500'}`}><MapPin size={14}/> 地圖分佈</button>
+                                <button onClick={() => setCaptureViewMode('table_current')} className={`px-3 py-1.5 rounded-md flex items-center gap-1 ${captureViewMode === 'table_current' ? 'bg-white shadow text-blue-600' : 'text-slate-500'}`}><List size={14}/> 現有設備清單</button>
+                                <button onClick={() => setCaptureViewMode('table_future')} className={`px-3 py-1.5 rounded-md flex items-center gap-1 ${captureViewMode === 'table_future' ? 'bg-white shadow text-blue-600' : 'text-slate-500'}`}><AlertTriangle size={14}/> 未來展望清單</button>
                             </div>
                         </div>
+                        
+                        {captureViewMode === 'map' && (
+                            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-[650px]">
+                                <div className="lg:col-span-5 relative"><TaiwanCcusMap mode="capture" captureData={fCapture} /></div>
+                                <div className="lg:col-span-7 flex flex-col">
+                                    <h3 className="font-bold text-slate-700 text-xs mb-2 flex items-center gap-1 text-center justify-center bg-slate-50 py-2 rounded"><Activity size={14} className="text-blue-500"/> 技術解析：總捕捉量 vs 設備耗能</h3>
+                                    <div className="flex-1 w-full min-h-0 relative">
+                                        <ErrorBoundary>
+                                            <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
+                                                <BarChart data={fCapture.sort((a,b) => b.Capture_Volume - a.Capture_Volume)} layout="vertical" margin={{ top: 5, right: 40, left: 40, bottom: 5 }} barGap={2} barSize={26}>
+                                                    <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false}/>
+                                                    <XAxis type="number" fontSize={10} unit=" 萬噸"/>
+                                                    <YAxis dataKey="Label" type="category" width={140} tick={{fontSize: 11, fill: '#475569', fontWeight: 'bold'}} interval={0}/>
+                                                    <Tooltip content={<CaptureTooltip />}/>
+                                                    <Legend wrapperStyle={{fontSize:'11px'}} verticalAlign="top"/>
+                                                    <Bar dataKey="Net_Capture_Volume" name="淨捕捉量" stackId="capture">
+                                                        {fCapture.map((entry, index) => <Cell key={`cell-${index}`} fill={stringToColor(entry.Capture_Tech)} />)}
+                                                        <LabelList dataKey="TRL" position="insideLeft" fill="white" fontSize={10} fontWeight="bold" formatter={(v) => `TRL ${v}`} style={{textShadow: '0px 0px 2px rgba(0,0,0,0.5)'}} />
+                                                    </Bar>
+                                                    <Bar dataKey="Captur_energy" name="設備耗能碳排" stackId="capture" fill="#ef4444" fillOpacity={0.8} radius={[0, 4, 4, 0]}>
+                                                        <LabelList dataKey="Capture_Volume" position="right" fill="#475569" fontSize={10} fontWeight="bold" formatter={(v) => `總 ${v.toFixed(1)}`} />
+                                                    </Bar>
+                                                </BarChart>
+                                            </ResponsiveContainer>
+                                        </ErrorBoundary>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {captureViewMode === 'table_current' && (
+                            <div className="overflow-x-auto h-[650px] custom-scrollbar">
+                                <table className="w-full text-xs text-left whitespace-nowrap">
+                                    <thead className="bg-slate-100 text-slate-600 sticky top-0 shadow-sm z-10">
+                                        <tr>
+                                            <th className="p-3">公司廠區</th><th className="p-3">捕捉來源</th><th className="p-3">捕捉技術</th><th className="p-3">分離技術</th>
+                                            <th className="p-3">TRL</th><th className="p-3">溫度(℃)</th><th className="p-3">壓力(bar)</th><th className="p-3">濃度(vol%)</th>
+                                            <th className="p-3 text-right bg-blue-50">總捕捉量</th><th className="p-3 text-right bg-rose-50">設備耗能碳排</th><th className="p-3 text-right bg-emerald-50">淨捕捉量</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {fCapture.map((row, i) => (
+                                            <tr key={i} className="hover:bg-slate-50 transition-colors">
+                                                <td className="p-3 font-bold text-slate-700">{row.Label}</td><td className="p-3">{row.Capture_Source}</td>
+                                                <td className="p-3"><span className="px-2 py-1 bg-blue-50 text-blue-700 rounded-lg">{row.Capture_Tech}</span></td>
+                                                <td className="p-3 text-slate-500">{row.Separation_Tech}</td><td className="p-3 font-mono">{row.TRL}</td>
+                                                <td className="p-3 font-mono">{row.Temperature}</td><td className="p-3 font-mono">{row.Pressure}</td><td className="p-3 font-mono">{row.Concentration}</td>
+                                                <td className="p-3 text-right font-mono font-bold text-blue-600">{row.Capture_Volume.toFixed(1)}</td>
+                                                <td className="p-3 text-right font-mono text-rose-500">{row.Captur_energy.toFixed(1)}</td>
+                                                <td className="p-3 text-right font-mono font-bold text-emerald-600">{row.Net_Capture_Volume.toFixed(1)}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+
+                        {captureViewMode === 'table_future' && (
+                            <div className="overflow-x-auto h-[650px] custom-scrollbar">
+                                <table className="w-full text-xs text-left whitespace-nowrap">
+                                    <thead className="bg-amber-50 text-amber-800 sticky top-0 shadow-sm z-10 border-b border-amber-200">
+                                        <tr>
+                                            <th className="p-3">公司廠區</th><th className="p-3">潛在安裝來源</th>
+                                            <th className="p-3 text-right">潛在排放量 (萬噸/年)</th><th className="p-3">溫度(℃)</th><th className="p-3">壓力(bar)</th><th className="p-3">濃度(vol%)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-amber-100">
+                                        {fCapture.filter(r => r.Potential_Source || r.Future_Emission_Volume > 0).map((row, i) => (
+                                            <tr key={i} className="hover:bg-amber-50/50 transition-colors">
+                                                <td className="p-3 font-bold text-slate-700">{row.Label}</td>
+                                                <td className="p-3 font-medium text-amber-700">{row.Potential_Source}</td>
+                                                <td className="p-3 text-right font-mono font-black text-rose-600 text-sm">{row.Future_Emission_Volume.toFixed(1)}</td>
+                                                <td className="p-3 font-mono text-slate-600">{row.Future_Temperature}</td>
+                                                <td className="p-3 font-mono text-slate-600">{row.Future_Pressure}</td>
+                                                <td className="p-3 font-mono text-slate-600">{row.Future_Concentration}</td>
+                                            </tr>
+                                        ))}
+                                        {fCapture.filter(r => r.Potential_Source || r.Future_Emission_Volume > 0).length === 0 && <tr><td colSpan={6} className="p-8 text-center text-slate-400">目前尚無未來展望數據</td></tr>}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
                     </div>
                 </div>
             )}
 
             {activeTab === 'utilization' && (
                 <div className="space-y-6 animate-fade-in">
+                    <div className="grid grid-cols-1 lg:grid-cols-1 gap-6">
+                        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm h-[500px] flex flex-col">
+                            <h3 className="font-bold text-slate-700 text-sm mb-4 border-b pb-2 flex items-center gap-2"><MapPin size={16} className="text-emerald-500"/> 碳再利用需求廠區分佈</h3>
+                            <TaiwanCcusMap mode="utilization" utilData={fUtil} captureData={fCapture} />
+                        </div>
+                    </div>
+
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                         <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between">
                             <div><p className="text-xs text-slate-500 font-bold mb-1 uppercase tracking-wider">預期再利用 CO₂ 總需求</p><h3 className="text-2xl font-black text-slate-800">{totalExpectedDemand.toFixed(1)} <span className="text-sm font-medium text-slate-500">萬噸/年</span></h3></div>
@@ -502,49 +580,48 @@ const CcusDashboard = () => {
                         </div>
                     </div>
                     
-                    {/* 修正再利用排版過於擁擠問題，改為 Grid 呈現 */}
                     <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col">
                         <h3 className="font-bold text-slate-700 text-sm mb-4 border-b pb-2 flex items-center gap-2"><FlaskConical size={16} className="text-purple-500"/> 碳再利用製程清單與需求明細</h3>
                         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                            {fUtil.map((item, idx) => (
-                                <div key={idx} className="flex flex-col sm:flex-row items-stretch w-full bg-slate-50/80 rounded-xl border border-slate-200 shadow-sm overflow-hidden relative">
-                                    <div className="flex-1 p-4 bg-white flex flex-col items-center justify-center border-b sm:border-b-0 sm:border-r border-dashed border-slate-200 relative">
-                                        <div className="absolute top-2 left-2 text-[9px] text-slate-400 font-bold">需求端</div>
-                                        <div className="font-bold text-slate-700 mb-2 text-center text-sm">{item.Target_Company} <br/> {item.Target_Plant}</div>
-                                        <div className="flex gap-2">
-                                            <div className="bg-emerald-50 border border-emerald-100 rounded-lg py-1 px-3 text-center">
-                                                <div className="text-lg font-mono font-black text-emerald-600">{item.Expected_Demand.toFixed(1)}</div>
-                                                <div className="text-[9px] text-emerald-500 font-bold">預期 CO₂ 萬噸</div>
-                                            </div>
-                                            <div className="bg-slate-50 border border-slate-100 rounded-lg py-1 px-3 text-center">
-                                                <div className="text-lg font-mono font-black text-slate-600">{item.Current_Demand.toFixed(1)}</div>
-                                                <div className="text-[9px] text-slate-500 font-bold">當前 CO₂ 萬噸</div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div className="w-full sm:w-36 bg-slate-800 text-white flex flex-col items-center justify-center p-3 relative shadow-inner">
-                                        <div className="text-[10px] text-slate-300 font-bold mb-1">轉化技術</div>
-                                        <div className="text-sm font-bold text-center leading-tight text-amber-300 mb-1">{item.Conversion_Tech}</div>
-                                        <div className="text-[10px] bg-slate-700 px-2 py-0.5 rounded text-amber-100 border border-slate-600">TRL {item.TRL}</div>
-                                    </div>
-                                    <div className="flex-1 p-4 bg-white flex flex-col items-center justify-center relative">
-                                        <div className="absolute top-2 left-2 text-[9px] text-slate-400 font-bold">產出估算</div>
-                                        <div className="font-bold text-slate-700 mb-2 text-center text-sm">{String(item.Conversion_Tech).split('轉')[1] || '高階化學品'}</div>
-                                        <div className="bg-purple-50 border border-purple-100 rounded-lg py-2 px-4 text-center shadow-sm">
-                                            <div className="text-xl font-mono font-black text-purple-600">{item.Product_Generated.toFixed(1)}</div>
-                                            <div className="text-[10px] text-purple-500 font-bold">萬噸 產品/年</div>
-                                        </div>
-                                    </div>
-                                </div>
-                            ))}
-                            {fUtil.length === 0 && <div className="text-slate-400 text-sm py-10 text-center col-span-2">無再利用轉化數據</div>}
-                        </div>
-                    </div>
+                            {fUtil.map((item, idx) => {
+                                // 判斷是否為開發中技術
+                                const trlNum = parseInt(String(item.TRL).split('-')[0]) || 0;
+                                const isDeveloping = trlNum < 6 || item.Current_Demand === 0;
 
-                    <div className="grid grid-cols-1 lg:grid-cols-1 gap-6">
-                        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm h-[500px] flex flex-col">
-                            <h3 className="font-bold text-slate-700 text-sm mb-4 border-b pb-2 flex items-center gap-2"><MapPin size={16} className="text-emerald-500"/> 碳再利用需求廠區分佈</h3>
-                            <TaiwanCcusMap mode="utilization" utilData={fUtil} captureData={fCapture} />
+                                return (
+                                    <div key={idx} className={`flex flex-col sm:flex-row items-stretch w-full rounded-xl border shadow-sm overflow-hidden relative ${isDeveloping ? 'bg-slate-100 border-dashed border-slate-300 opacity-80' : 'bg-slate-50/80 border-slate-200'}`}>
+                                        <div className="flex-1 p-4 bg-white flex flex-col items-center justify-center border-b sm:border-b-0 sm:border-r border-dashed border-slate-200 relative">
+                                            {isDeveloping && <div className="absolute top-0 right-0 bg-amber-500 text-white text-[9px] font-bold px-2 py-1 rounded-bl-lg shadow-sm">🧪 開發中技術</div>}
+                                            <div className="absolute top-2 left-2 text-[9px] text-slate-400 font-bold">需求端</div>
+                                            <div className="font-bold text-slate-700 mb-2 text-center text-sm mt-3">{item.Target_Company} <br/> {item.Target_Plant}</div>
+                                            <div className="flex gap-2">
+                                                <div className="bg-emerald-50 border border-emerald-100 rounded-lg py-1 px-3 text-center">
+                                                    <div className="text-lg font-mono font-black text-emerald-600">{item.Expected_Demand.toFixed(1)}</div>
+                                                    <div className="text-[9px] text-emerald-500 font-bold">預期 CO₂ 萬噸</div>
+                                                </div>
+                                                <div className="bg-slate-50 border border-slate-100 rounded-lg py-1 px-3 text-center">
+                                                    <div className={`text-lg font-mono font-black ${item.Current_Demand > 0 ? 'text-slate-600' : 'text-slate-300'}`}>{item.Current_Demand.toFixed(1)}</div>
+                                                    <div className="text-[9px] text-slate-500 font-bold">當前 CO₂ 萬噸</div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className={`w-full sm:w-36 text-white flex flex-col items-center justify-center p-3 relative shadow-inner ${isDeveloping ? 'bg-slate-600' : 'bg-slate-800'}`}>
+                                            <div className="text-[10px] text-slate-300 font-bold mb-1">轉化技術</div>
+                                            <div className="text-sm font-bold text-center leading-tight text-amber-300 mb-1">{item.Conversion_Tech}</div>
+                                            <div className={`text-[10px] px-2 py-0.5 rounded border ${isDeveloping ? 'bg-rose-900 border-rose-700 text-rose-200' : 'bg-slate-700 border-slate-600 text-amber-100'}`}>TRL {item.TRL}</div>
+                                        </div>
+                                        <div className="flex-1 p-4 bg-white flex flex-col items-center justify-center relative">
+                                            <div className="absolute top-2 left-2 text-[9px] text-slate-400 font-bold">產出估算</div>
+                                            <div className="font-bold text-slate-700 mb-2 text-center text-sm">{String(item.Conversion_Tech).split('轉')[1] || '高階化學品'}</div>
+                                            <div className="bg-purple-50 border border-purple-100 rounded-lg py-2 px-4 text-center shadow-sm">
+                                                <div className="text-xl font-mono font-black text-purple-600">{item.Product_Generated.toFixed(1)}</div>
+                                                <div className="text-[10px] text-purple-500 font-bold">萬噸 產品/年</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                            {fUtil.length === 0 && <div className="text-slate-400 text-sm py-10 text-center col-span-2">無再利用轉化數據</div>}
                         </div>
                     </div>
                 </div>

@@ -7,13 +7,6 @@ import {
   Database, Calendar, AlertCircle, Activity, Factory, Leaf, Zap, MapPin, 
   FileText, ZoomIn, ZoomOut, List, Maximize, Hand, Truck, GripHorizontal, RefreshCw, Layers, X
 } from 'lucide-react';
-import { 
-  normalizeHydrogenData, parseHydrogenCSV, getRegion as getBasicRegion, 
-  simplifyCompanyName, getSimplePlantName, getProcessType, identifyProcess, 
-  identifyUsage, getUsageCategory, stringToColor, cleanNumber
-} from '../utils/helpers';
-import { H2_DATA_SOURCES, MOCK_SUPPLY_MATRIX, MOCK_DEMAND_MATRIX, COLORS_PROCESS, COLORS_USAGE } from '../utils/constants';
-import { ErrorBoundary } from './SharedComponents';
 
 const REGION_COLORS = { '北區': '#e0f2fe', '中區': '#d1fae5', '南區': '#fffbeb', '東區': '#f5f3ff', '其他': '#f1f5f9' };
 const SOLID_REGION_COLORS = { '北區': '#2563eb', '中區': '#059669', '南區': '#ea580c', '東區': '#7c3aed', '其他': '#475569' };
@@ -24,6 +17,25 @@ const REGION_COUNTIES = {
     '東區': ['花蓮縣', '臺東縣']
 };
 
+export const simplifyCompanyName = (name) => {
+  if (!name) return '未知廠商';
+  let n = name.trim().replace(/股份有限公司|工業|企業/g, '').trim();
+  const mapping = {
+      '台灣化學纖維': '台化', '台化': '台化',
+      '台灣苯乙烯': '台苯', '台苯': '台苯',
+      '中國石油化學': '中石化', '中石化': '中石化',
+      '台灣中油': '中油', '中油': '中油',
+      '台塑石化': '台塑化', '台塑化': '台塑化',
+      '台灣積體電路製造': '台積電', '台積電': '台積電',
+      '中國鋼鐵': '中鋼', '中鋼': '中鋼',
+      '長春人造樹脂': '長春樹脂', '長春石油化學': '長春石化'
+  };
+  for (const [full, short] of Object.entries(mapping)) {
+      if (n.includes(full)) return short;
+  }
+  return n;
+};
+
 const getRegionByCounty = (countyName) => {
     const n = String(countyName || '');
     if (n.match(/(基隆|臺北|台北|新北|桃園|新竹|宜蘭)/)) return '北區';
@@ -31,24 +43,6 @@ const getRegionByCounty = (countyName) => {
     if (n.match(/(嘉義|臺南|台南|高雄|屏東)/)) return '南區';
     if (n.match(/(花蓮|臺東|台東)/)) return '東區';
     return '其他';
-};
-
-const getRefinedRegion = (plantName, companyName) => {
-    const p = String(plantName || '').trim();
-    const c = String(companyName || '').trim();
-    const full = `${c} ${p}`;
-    if (full.includes('長春') && (p.includes('二廠') || p.includes('苗栗二'))) return '北區';
-    if (c.includes('台灣化纖') || c.includes('台化') || c.includes('台塑科騰')) return '中區';
-    if (p.match(/(仁武|大社|林園|小港|大發|大林|高雄|屏東|台南|嘉義|南科|善化)/)) return '南區';
-    if (p.match(/(麥寮|六輕|彰濱|線西|中龍|頭份|苗栗|台中|彰化|南投|雲林)/)) return '中區';
-    if (p.match(/(桃園|觀音|大園|桃煉|新北|台北|基隆|新竹)/)) return '北區';
-    if (c.includes('大連') && p.includes('大發')) return '南區'; 
-    if (c.includes('李長榮') && p.includes('高雄')) return '南區'; 
-    if (c.includes('國喬') && p.includes('高雄')) return '南區'; 
-    if (c.includes('中油') && (p.includes('大林') || p.includes('石化') || p.includes('林園'))) return '南區'; 
-    if (c.includes('中油') && p.includes('桃園')) return '北區';
-    if (c.includes('台灣石化') || c.includes('台苯')) return '南區';
-    return getBasicRegion(plantName);
 };
 
 const getDashboardPlantName = (company, plant) => {
@@ -99,18 +93,43 @@ const getApproximateCoordinates = (plant, company) => {
     return { lat: 23.6, lon: 120.9 }; 
 };
 
-const INDUSTRIAL_ZONES_COORDS = [
-    { name: '雲林-麥寮工業區', lat: 23.78, lon: 120.18, radius: 24 },
-    { name: '高雄-林園工業區', lat: 22.50, lon: 120.38, radius: 18 },
-    { name: '高雄-小港工業區', lat: 22.54, lon: 120.34, radius: 18 },
-    { name: '高雄-大發工業區', lat: 22.58, lon: 120.40, radius: 16 },
-    { name: '高雄-仁武工業區', lat: 22.70, lon: 120.34, radius: 18 },
-    { name: '彰化-彰濱工業區', lat: 24.07, lon: 120.42, radius: 20 },
-    { name: '苗栗-頭份工業區', lat: 24.68, lon: 120.91, radius: 16 },
-    { name: '桃園工業區(含桃煉)', lat: 25.03, lon: 121.12, radius: 26 },
-    { name: '台南-南部科學園區', lat: 23.10, lon: 120.27, radius: 16 }
-];
+const stringToColor = (str) => {
+    const COLORS_POOL = ['#2563eb', '#3b82f6', '#60a5fa', '#059669', '#10b981', '#34d399', '#d97706', '#f59e0b', '#7c3aed', '#8b5cf6', '#dc2626', '#ef4444'];
+    let hash = 0; for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
+    return COLORS_POOL[Math.abs(hash) % COLORS_POOL.length];
+};
 
+const parseHydrogenCSV = (text) => {
+    if (!text || text.includes('<!DOCTYPE html>')) return [];
+    const lines = text.split(/\r\n|\n/).filter(l => l.trim());
+    if (lines.length < 2) return [];
+    const parseLine = (line) => {
+        const res = []; let current = ''; let inQuote = false;
+        for (let c of line) {
+            if (c === '"') { inQuote = !inQuote; continue; }
+            if (c === ',' && !inQuote) { res.push(current.trim()); current = ''; continue; }
+            current += c;
+        }
+        res.push(current.trim()); return res;
+    };
+    const headers = parseLine(lines[0]);
+    return lines.slice(1).map(line => {
+        const row = parseLine(line); const obj = {};
+        headers.forEach((h, i) => { obj[h.replace(/^[\uFEFF\s]+|[\s]+$/g, '')] = row[i]; });
+        return obj;
+    });
+};
+
+const cleanNumber = (val) => {
+  if (val === undefined || val === null || val === '') return 0;
+  if (typeof val === 'number') return isFinite(val) ? val : 0;
+  const num = parseFloat(String(val).replace(/[,%\s]/g, ''));
+  return isFinite(num) ? num : 0;
+};
+
+// ==========================================
+// 地理地圖模組
+// ==========================================
 const TaiwanH2Map = ({ supplyData = [], demandData = [] }) => {
     const mapRef = useRef(null);
     const [zoom, setZoom] = useState(1);
@@ -231,6 +250,18 @@ const TaiwanH2Map = ({ supplyData = [], demandData = [] }) => {
     const textScale = Math.pow(zoom, 0.7); 
     const zoneOpacity = zoom > 1.5 ? 0.7 : (zoom < 1 ? 0.2 : 0.4); 
 
+    const INDUSTRIAL_ZONES_COORDS = [
+        { name: '雲林-麥寮工業區', lat: 23.78, lon: 120.18, radius: 24 },
+        { name: '高雄-林園工業區', lat: 22.50, lon: 120.38, radius: 18 },
+        { name: '高雄-小港工業區', lat: 22.54, lon: 120.34, radius: 18 },
+        { name: '高雄-大發工業區', lat: 22.58, lon: 120.40, radius: 16 },
+        { name: '高雄-仁武工業區', lat: 22.70, lon: 120.34, radius: 18 },
+        { name: '彰化-彰濱工業區', lat: 24.07, lon: 120.42, radius: 20 },
+        { name: '苗栗-頭份工業區', lat: 24.68, lon: 120.91, radius: 16 },
+        { name: '桃園工業區(含桃煉)', lat: 25.03, lon: 121.12, radius: 26 },
+        { name: '台南-南部科學園區', lat: 23.10, lon: 120.27, radius: 16 }
+    ];
+
     return (
         <div className="w-full h-full relative bg-slate-100/80 rounded-xl overflow-hidden border border-slate-200">
             {activeSelection && (
@@ -239,7 +270,7 @@ const TaiwanH2Map = ({ supplyData = [], demandData = [] }) => {
                     {activeSelection.type === 'plant' && (
                         <div>
                             <div className="flex items-center gap-2 mb-3 border-b border-slate-100 pb-2 pr-6">
-                                <div className={`w-3 h-3 rounded-full shadow-sm ${activeSelection.data.supply > activeSelection.data.demand ? 'bg-blue-500' : 'bg-amber-500'}`}></div>
+                                <div className={`w-3 h-3 rounded-full shadow-sm ${activeSelection.data.supply >= activeSelection.data.demand ? 'bg-blue-500' : 'bg-amber-500'}`}></div>
                                 <h3 className="font-bold text-slate-800 text-sm truncate">{activeSelection.data.Company} <span className="text-slate-500 font-medium">{activeSelection.data.Plant}</span></h3>
                             </div>
                             <div className="space-y-1.5 text-xs text-slate-600 mb-3">
@@ -251,20 +282,20 @@ const TaiwanH2Map = ({ supplyData = [], demandData = [] }) => {
                             
                             {(activeSelection.data.supply_sold > 0 || activeSelection.data.demand_purchased > 0) && (
                                 <div className="mb-3 pt-2 border-t border-dashed border-slate-200 text-[11px] space-y-1 bg-slate-50 p-2 rounded">
-                                    {activeSelection.data.supply_sold > 0 && <div className="flex justify-between"><span className="text-blue-600 font-bold">對外銷售: {activeSelection.data.supply_sold.toFixed(1)} 萬噸</span> <span className="truncate max-w-[120px] text-slate-500" title={Array.from(activeSelection.data.targets).join(', ')}>{Array.from(activeSelection.data.targets).join(', ') || '多個對象'}</span></div>}
-                                    {activeSelection.data.demand_purchased > 0 && <div className="flex justify-between"><span className="text-amber-600 font-bold">向外採購: {activeSelection.data.demand_purchased.toFixed(1)} 萬噸</span> <span className="truncate max-w-[120px] text-slate-500" title={Array.from(activeSelection.data.sources).join(', ')}>{Array.from(activeSelection.data.sources).join(', ') || '多個來源'}</span></div>}
+                                    {activeSelection.data.supply_sold > 0 && <div className="flex justify-between"><span className="text-blue-600 font-bold">對外銷售: {activeSelection.data.supply_sold.toFixed(1)} 萬噸</span> <span className="truncate max-w-[120px] text-slate-500" title={Array.from(activeSelection.data.targets).join(', ')}>{Array.from(activeSelection.data.targets).join(', ') || '公用網路'}</span></div>}
+                                    {activeSelection.data.demand_purchased > 0 && <div className="flex justify-between"><span className="text-amber-600 font-bold">向外採購: {activeSelection.data.demand_purchased.toFixed(1)} 萬噸</span> <span className="truncate max-w-[120px] text-slate-500" title={Array.from(activeSelection.data.sources).join(', ')}>{Array.from(activeSelection.data.sources).join(', ') || '公用網路'}</span></div>}
                                 </div>
                             )}
 
                             <div className="text-[10px] text-slate-500 font-bold mb-1 flex items-center gap-1"><Activity size={12}/> 該廠總量獨立供需 (萬噸)</div>
                             <ResponsiveContainer width="100%" height={160} minWidth={1} minHeight={1}>
-                                <BarChart data={[{name: '總供給量', value: activeSelection.data.supply, fill: '#3b82f6'}, {name: '總需求量', value: activeSelection.data.demand, fill: '#f59e0b'}]} margin={{top: 20, right: 10, bottom: 0, left: -20}}>
+                                <BarChart data={[{name: '總產量', value: activeSelection.data.supply, fill: '#3b82f6'}, {name: '總用量', value: activeSelection.data.demand, fill: '#f59e0b'}]} margin={{top: 20, right: 10, bottom: 0, left: -20}}>
                                     <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.5}/>
                                     <XAxis dataKey="name" tick={{fontSize: 11, fontWeight: 'bold'}} axisLine={false} tickLine={false}/>
                                     <YAxis tick={{fontSize: 10}} axisLine={false} tickLine={false}/>
                                     <Tooltip cursor={{fill: 'transparent'}} contentStyle={{fontSize: '12px', borderRadius: '8px'}} formatter={(val) => val.toFixed(2)}/>
                                     <Bar dataKey="value" radius={[4, 4, 0, 0]} barSize={40}>
-                                        {[{name: '總供給量', value: activeSelection.data.supply, fill: '#3b82f6'}, {name: '總需求量', value: activeSelection.data.demand, fill: '#f59e0b'}].map((entry, index) => <Cell key={`cell-${index}`} fill={entry.fill} />)}
+                                        {[{name: '總產量', value: activeSelection.data.supply, fill: '#3b82f6'}, {name: '總用量', value: activeSelection.data.demand, fill: '#f59e0b'}].map((entry, index) => <Cell key={`cell-${index}`} fill={entry.fill} />)}
                                         <LabelList dataKey="value" position="top" fontSize={11} fontWeight="bold" fill="#475569" formatter={v => v > 0 ? v.toFixed(1) : ''} />
                                     </Bar>
                                 </BarChart>
@@ -286,10 +317,10 @@ const TaiwanH2Map = ({ supplyData = [], demandData = [] }) => {
                                     <YAxis tick={{fontSize: 10}} axisLine={false} tickLine={false}/>
                                     <Tooltip cursor={{fill: '#f1f5f9'}} contentStyle={{fontSize: '12px', borderRadius: '8px'}} formatter={(val) => val.toFixed(2)}/>
                                     <Legend wrapperStyle={{fontSize: '10px'}}/>
-                                    <Bar dataKey="supply" name="總供給" fill="#3b82f6" radius={[2, 2, 0, 0]} barSize={16}>
+                                    <Bar dataKey="supply" name="總產量" fill="#3b82f6" radius={[2, 2, 0, 0]} barSize={16}>
                                         <LabelList dataKey="supply" position="top" fontSize={9} fill="#3b82f6" formatter={v => v > 0 ? v.toFixed(1) : ''} />
                                     </Bar>
-                                    <Bar dataKey="demand" name="總需求" fill="#f59e0b" radius={[2, 2, 0, 0]} barSize={16}>
+                                    <Bar dataKey="demand" name="總用量" fill="#f59e0b" radius={[2, 2, 0, 0]} barSize={16}>
                                         <LabelList dataKey="demand" position="top" fontSize={9} fill="#f59e0b" formatter={v => v > 0 ? v.toFixed(1) : ''} />
                                     </Bar>
                                 </BarChart>
@@ -365,8 +396,8 @@ const TaiwanH2Map = ({ supplyData = [], demandData = [] }) => {
             </svg>
             <div className="absolute bottom-4 right-4 bg-white/95 p-3 rounded-lg shadow-sm border border-slate-200 text-[10px] text-slate-700 pointer-events-none backdrop-blur">
                 <div className="space-y-1.5">
-                    <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-blue-500 border border-white shadow"></div> 淨產出廠區 (供給≥需求)</div>
-                    <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-amber-500 border border-white shadow"></div> 淨消耗廠區 (需求&gt;供給)</div>
+                    <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-blue-500 border border-white shadow"></div> 淨產出廠區 (產量≥用量)</div>
+                    <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-amber-500 border border-white shadow"></div> 淨消耗廠區 (用量&gt;產量)</div>
                     <div className="flex items-center gap-2"><div className="w-6 h-1.5 bg-blue-500"></div> 外購流向 (管線)</div>
                     <div className="flex items-center gap-2"><div className="w-6 h-0 border-t-4 border-amber-500 border-dashed"></div> 外購流向 (槽車)</div>
                 </div>
@@ -474,8 +505,8 @@ const renderTrendLegend = (props) => {
                 ))}
             </div>
             <div className="flex justify-center gap-6 text-slate-500 border-t border-slate-200 pt-2 w-full mt-1">
-                <span className="flex items-center gap-1.5 font-bold"><div className="w-3 h-3 bg-slate-500 rounded-sm"></div>深色：供給量</span>
-                <span className="flex items-center gap-1.5 font-bold"><div className="w-3 h-3 bg-slate-500/30 border border-slate-500 rounded-sm"></div>淺色：需求量</span>
+                <span className="flex items-center gap-1.5 font-bold"><div className="w-3 h-3 bg-slate-500 rounded-sm"></div>深色：原產量/原用量</span>
+                <span className="flex items-center gap-1.5 font-bold"><div className="w-3 h-3 bg-slate-500/30 border border-slate-500 rounded-sm"></div>淺色：可外售/需外購</span>
             </div>
         </div>
     );
@@ -500,6 +531,7 @@ const RegionalDeepDive = ({ supplyData, demandData, globalYear }) => {
             
             const name = d.label || getDashboardPlantName(d.Company, d.Plant);
             const zone = getIndustrialZone(d.Plant, d.Company);
+            // 修正：純產量與純用量，不再加上 Trade_Vol
             const val = isSupply ? (d.Output_Tons || 0) : (d.Demand_Tons || 0);
 
             const y = d.Year;
@@ -535,8 +567,11 @@ const RegionalDeepDive = ({ supplyData, demandData, globalYear }) => {
         demandData.forEach(d => processRow(d, false));
 
         Object.values(plantMap).forEach(p => {
+            // 修正：產量 (supply) 就是底圖長度，外售 (supply_sold) 只是其中一部分
             p.supply_self = Math.max(0, p.supply - p.supply_sold);
             p.demand_self = Math.max(0, p.demand - p.demand_purchased);
+            
+            // 自動計算防呆
             if (p.supply_sold === 0 && p.supply > p.demand && p.demand > 0) p.supply_sold = p.supply - p.demand;
             if (p.demand_purchased === 0 && p.demand > p.supply && p.supply > 0) p.demand_purchased = p.demand - p.supply;
         });
@@ -569,10 +604,10 @@ const RegionalDeepDive = ({ supplyData, demandData, globalYear }) => {
                     <p className="font-bold text-slate-800 mb-2 border-b pb-1">{label}</p>
                     {payload.map((entry, index) => {
                         let nameLabel = ''; let isDashed = false;
-                        if (entry.dataKey === 'supply_self') nameLabel = '自產自用 (供給)';
-                        if (entry.dataKey === 'supply_sold') { nameLabel = '多餘產能外售'; isDashed = true; }
-                        if (entry.dataKey === 'demand_self') nameLabel = '消耗自有產能';
-                        if (entry.dataKey === 'demand_purchased') { nameLabel = '向外採購需求'; isDashed = true; }
+                        if (entry.dataKey === 'supply_self') nameLabel = '廠內保留/自用產量';
+                        if (entry.dataKey === 'supply_sold') { nameLabel = '對外銷售產量'; isDashed = true; }
+                        if (entry.dataKey === 'demand_self') nameLabel = '廠內自產自用消耗';
+                        if (entry.dataKey === 'demand_purchased') { nameLabel = '外部採購需求'; isDashed = true; }
                         if (entry.value === 0) return null;
                         return (
                             <div key={index} className="flex justify-between gap-4 mb-1">
@@ -636,11 +671,13 @@ const RegionalDeepDive = ({ supplyData, demandData, globalYear }) => {
                                             <YAxis tick={{fontSize: 10}} axisLine={false} tickLine={false}/>
                                             <Tooltip wrapperStyle={{fontSize: '11px'}} cursor={{fill: '#e2e8f0', opacity: 0.4}} formatter={(val, name) => [val.toFixed(2), name]}/>
                                             <Legend content={renderTrendLegend}/>
+                                            
                                             {activeSupplyZones.map(zone => (
                                                 <Bar key={`${zone}_supply`} dataKey={`${zone}_supply`} name={`${zone} (供給)`} stackId="supply" fill={stringToColor(zone)} barSize={22}>
                                                     <LabelList dataKey={`${zone}_supply`} position="center" fill="white" fontSize={9} formatter={v => v >= 0.5 ? v.toFixed(1) : ''} style={{ textShadow: '0px 0px 2px rgba(0,0,0,0.5)' }} />
                                                 </Bar>
                                             ))}
+                                            
                                             {activeDemandZones.map(zone => (
                                                 <Bar key={`${zone}_demand`} dataKey={`${zone}_demand`} name={`${zone} (需求)`} stackId="demand" fill={stringToColor(zone)} fillOpacity={0.35} stroke={stringToColor(zone)} strokeWidth={1} barSize={22}>
                                                     <LabelList dataKey={`${zone}_demand`} position="center" fill="#1e293b" fontSize={9} fontWeight="bold" formatter={v => v >= 0.5 ? v.toFixed(1) : ''} />
@@ -654,7 +691,7 @@ const RegionalDeepDive = ({ supplyData, demandData, globalYear }) => {
 
                         <div className="lg:w-7/12 flex flex-col border border-slate-100 rounded-lg p-2 min-h-[300px]">
                             <div className="text-xs font-bold text-slate-500 mb-2 text-center flex items-center justify-center gap-1">
-                                <List size={12}/> {globalYear} 重點廠區：自用、外購(透明虛線)、外售(淺藍虛線) 評估
+                                <List size={12}/> {globalYear} 重點廠區：保留產量、外購(透明虛線)、外售(淺藍虛線) 評估
                             </div>
                             <div className="flex-1 min-h-0 w-full h-full relative">
                                 {plantDetails.length > 0 ? (
@@ -665,16 +702,18 @@ const RegionalDeepDive = ({ supplyData, demandData, globalYear }) => {
                                             <YAxis dataKey="name" type="category" width={130} interval={0} tick={<PlantYAxisTick data={plantDetails} />} />
                                             <Tooltip cursor={{fill: '#f8fafc'}} content={<DeepDiveTooltip />} />
                                             <Legend wrapperStyle={{fontSize: '10px'}} verticalAlign="top" formatter={(value) => {
-                                                if (value === 'supply_self') return '供給 (自用)';
-                                                if (value === 'supply_sold') return '供給 (可外售)';
-                                                if (value === 'demand_self') return '需求 (消耗自產)';
-                                                if (value === 'demand_purchased') return '需求 (需外購)';
+                                                if (value === 'supply_self') return '保留產量 (自用)';
+                                                if (value === 'supply_sold') return '外售產量';
+                                                if (value === 'demand_self') return '廠內消耗需求';
+                                                if (value === 'demand_purchased') return '外購氫氣需求';
                                                 return value;
                                             }}/>
+                                            
                                             <Bar dataKey="supply_self" name="supply_self" stackId="supply" fill="#3b82f6" barSize={12} />
                                             <Bar dataKey="supply_sold" name="supply_sold" stackId="supply" fill="#bfdbfe" stroke="#3b82f6" strokeDasharray="2 2" barSize={12} radius={[0, 4, 4, 0]}>
                                                 <LabelList position="right" fill="#2563eb" fontSize={9} fontWeight="bold" formatter={v => v > 0 ? `售 ${v.toFixed(1)}` : ''} />
                                             </Bar>
+
                                             <Bar dataKey="demand_self" name="demand_self" stackId="demand" fill="#f59e0b" barSize={12} />
                                             <Bar dataKey="demand_purchased" name="demand_purchased" stackId="demand" fill="transparent" stroke="#f59e0b" strokeWidth={1.5} strokeDasharray="4 4" barSize={12} radius={[0, 4, 4, 0]}>
                                                 <LabelList position="right" fill="#d97706" fontSize={9} fontWeight="bold" formatter={v => v > 0 ? `購 ${v.toFixed(1)}` : ''} />
@@ -725,7 +764,7 @@ const TechBalanceChart = ({ supplyData, demandData }) => {
                     </PieChart>
                 </ResponsiveContainer>
                 <div className="absolute bottom-1 left-0 w-full text-center pointer-events-none">
-                    <span className="bg-white/90 backdrop-blur px-2 py-0.5 rounded text-blue-700 font-bold text-xs shadow-sm">總供給 {totalS.toFixed(1)}</span>
+                    <span className="bg-white/90 backdrop-blur px-2 py-0.5 rounded text-blue-700 font-bold text-xs shadow-sm">總原產量 {totalS.toFixed(1)}</span>
                 </div>
             </div>
             <div className="z-20 bg-white/95 backdrop-blur-md px-6 py-2 rounded-2xl shadow-lg border border-slate-100 text-center relative mx-auto my-1">
@@ -745,7 +784,7 @@ const TechBalanceChart = ({ supplyData, demandData }) => {
                     </PieChart>
                 </ResponsiveContainer>
                 <div className="absolute top-1 left-0 w-full text-center pointer-events-none">
-                    <span className="bg-white/90 backdrop-blur px-2 py-0.5 rounded text-amber-700 font-bold text-xs shadow-sm">總需求 {totalD.toFixed(1)}</span>
+                    <span className="bg-white/90 backdrop-blur px-2 py-0.5 rounded text-amber-700 font-bold text-xs shadow-sm">總原需求 {totalD.toFixed(1)}</span>
                 </div>
             </div>
         </div>
@@ -891,7 +930,7 @@ const HydrogenDashboard = () => {
 
         if (normP.length === 0 && normU.length === 0) throw new Error("Normalization Empty");
 
-        // 完美整合外售/外購與廠區名稱
+        // 完美整合外售/外購與廠區名稱 (修正雙重計算問題)
         const extractExtraFields = (normalizedArr, rawArr, type) => {
             return normalizedArr.map(n => {
                 const match = rawArr.find(r => simplifyCompanyName(r['Company'] || r['公司'] || r['廠商']) === simplifyCompanyName(n.Company) && 
@@ -903,14 +942,16 @@ const HydrogenDashboard = () => {
                 
                 const baseVol = match ? cleanNumber(match[baseKey]) : (type === 'supply' ? n.Output_Tons : n.Demand_Tons);
                 const tradeVol = match ? cleanNumber(match[volKey]) : 0;
-                const tradeTarget = match ? (match[targetKey] || '') : '';
+                let tradeTarget = match ? (match[targetKey] || '') : '';
+                
+                if (tradeVol > 0 && !tradeTarget) tradeTarget = '公用網路(鄰近廠區)';
 
                 if (type === 'supply') {
-                    n.Output_Tons = baseVol + tradeVol;
+                    n.Output_Tons = baseVol; // 不再疊加，產量歸產量
                     n.Trade_Vol = tradeVol;
                     n.Trade_Target = tradeTarget;
                 } else {
-                    n.Demand_Tons = baseVol + tradeVol;
+                    n.Demand_Tons = baseVol; // 不再疊加，用量歸用量
                     n.Trade_Vol = tradeVol;
                     n.Trade_Target = tradeTarget;
                 }
@@ -927,6 +968,12 @@ const HydrogenDashboard = () => {
                         Transport_Method: match ? (match['運輸方式'] || match.Transport_Method || '') : ''
                     } : {})
                 };
+            }).map(n => {
+                // 如果外購有量，但沒來源，自動補成公用網路以利畫圖
+                if (type === 'demand' && n.Trade_Vol > 0 && !n.Source_Company) {
+                    n.Source_Company = '公用網路(鄰近廠區)';
+                }
+                return n;
             });
         };
 
@@ -937,8 +984,8 @@ const HydrogenDashboard = () => {
 
       } catch (e) {
         console.error("Using Mock Data", e);
-        setSupplyData(normalizeHydrogenData(MOCK_SUPPLY_MATRIX, 'supply').map(d => ({...d, Region: getRefinedRegion(d.Plant, d.Company)})));
-        setDemandData(normalizeHydrogenData(MOCK_DEMAND_MATRIX, 'demand').map(d => ({...d, Region: getRefinedRegion(d.Plant, d.Company)})));
+        setSupplyData(normalizeHydrogenData(MOCK_SUPPLY_MATRIX, 'supply').map(d => ({...d, Region: getRefinedRegion(d.Plant, d.Company), label: getDashboardPlantName(d.Company, d.Plant)})));
+        setDemandData(normalizeHydrogenData(MOCK_DEMAND_MATRIX, 'demand').map(d => ({...d, Region: getRefinedRegion(d.Plant, d.Company), label: getDashboardPlantName(d.Company, d.Plant)})));
         setIsFallback(true);
         setStatusMsg(`使用備用資料 (原因: ${e.message})`);
       } finally {
@@ -1024,7 +1071,7 @@ const HydrogenDashboard = () => {
              {/* Row 1: Supply/Demand Trends & Balance */}
              <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
                  <div className="lg:col-span-2 min-h-[400px] w-full relative">
-                     <StackedTrendChart data={supplyTrend.data} keys={supplyTrend.keys} title="歷年供給來源 (包含外售)" icon={Database} />
+                     <StackedTrendChart data={supplyTrend.data} keys={supplyTrend.keys} title="歷年產量來源 (公司廠區)" icon={Database} />
                  </div>
                  
                  <div className="lg:col-span-1 bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col items-center h-[400px]">
@@ -1035,7 +1082,7 @@ const HydrogenDashboard = () => {
                  </div>
 
                  <div className="lg:col-span-2 min-h-[400px] w-full relative">
-                     <StackedTrendChart data={demandTrend.data} keys={demandTrend.keys} title="歷年需求流向 (包含外購)" icon={Activity} />
+                     <StackedTrendChart data={demandTrend.data} keys={demandTrend.keys} title="歷年用量流向 (公司廠區)" icon={Activity} />
                  </div>
              </div>
 
