@@ -337,6 +337,18 @@ const TaiwanCcusMap = ({ mode = 'capture', captureData = [], utilData = [], stor
     );
 };
 
+// 捕捉端專用 Y 軸標籤 (顯示廠區與技術)
+const CaptureYAxisTick = ({ x, y, payload, data }) => {
+    const item = data && data.find(d => d.Label === payload.value);
+    const tech = item ? item.Capture_Tech : '';
+    return (
+        <g transform={`translate(${x},${y})`}>
+            <text x={-5} y={-6} textAnchor="end" fill="#334155" fontSize={11} fontWeight="bold">{payload.value}</text>
+            <text x={-5} y={8} textAnchor="end" fill="#0284c7" fontSize={9} fontWeight="bold">{tech ? `[${tech}]` : ''}</text>
+        </g>
+    );
+};
+
 // 捕捉專用 Tooltip (公式清楚化)
 const CaptureTooltip = ({ active, payload, label }) => {
     if (active && payload && payload.length) {
@@ -344,7 +356,7 @@ const CaptureTooltip = ({ active, payload, label }) => {
         return (
             <div className="bg-white/95 backdrop-blur border border-slate-200 p-3 rounded-lg shadow-xl text-xs w-64 pointer-events-auto">
                 <p className="font-bold text-slate-800 mb-2 border-b pb-1 flex items-center gap-1"><Factory size={14} className="text-blue-600"/> {data.Label}</p>
-                <p className="mb-1 font-bold" style={{color: stringToColor(data.Capture_Tech)}}>技術: {data.Capture_Tech} (TRL {data.TRL})</p>
+                <p className="mb-1 font-bold text-blue-600">技術: {data.Capture_Tech} (TRL {data.TRL})</p>
                 <div className="text-slate-600 mb-2 grid grid-cols-2 gap-x-2 gap-y-1 bg-slate-50 p-1.5 rounded">
                    <div>溫度: <span className="font-mono font-bold">{data.Temperature || '-'}</span></div>
                    <div>壓力: <span className="font-mono font-bold">{data.Pressure || '-'}</span></div>
@@ -354,7 +366,7 @@ const CaptureTooltip = ({ active, payload, label }) => {
                 <div className="bg-blue-50/50 p-2 border border-blue-100 rounded space-y-1">
                     <div className="flex justify-between text-slate-600"><span className="text-slate-500">總捕捉量 (A):</span> <span className="font-mono font-bold">{data.Capture_Volume.toFixed(2)} 萬噸</span></div>
                     <div className="flex justify-between text-rose-600"><span className="text-rose-500">設備耗能 (B):</span> <span className="font-mono font-bold">-{data.Captur_energy.toFixed(2)} 萬噸</span></div>
-                    <div className="flex justify-between pt-1 border-t border-blue-200 text-blue-700 font-bold"><span className="text-blue-800">淨捕捉量 (=A-B):</span> <span className="font-mono font-black">{data.Net_Capture_Volume.toFixed(2)} 萬噸</span></div>
+                    <div className="flex justify-between pt-1 border-t border-blue-200 text-emerald-700 font-bold"><span className="text-emerald-800">淨捕捉量 (=A-B):</span> <span className="font-mono font-black">{data.Net_Capture_Volume.toFixed(2)} 萬噸</span></div>
                 </div>
             </div>
         );
@@ -523,17 +535,16 @@ const CcusDashboard = () => {
                                     <div className="flex-1 w-full min-h-0 relative">
                                         <ErrorBoundary>
                                             <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
-                                                <BarChart data={fCapture.filter(r => r.Capture_Volume > 0).sort((a,b) => b.Capture_Volume - a.Capture_Volume)} layout="vertical" margin={{ top: 5, right: 40, left: 40, bottom: 5 }} barGap={2} barSize={26}>
+                                                <BarChart data={fCapture.filter(r => r.Capture_Volume > 0).sort((a,b) => b.Capture_Volume - a.Capture_Volume)} layout="vertical" margin={{ top: 5, right: 50, left: 20, bottom: 5 }} barGap={2} barSize={26}>
                                                     <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false}/>
                                                     <XAxis type="number" fontSize={10} unit=" 萬噸"/>
-                                                    <YAxis dataKey="Label" type="category" width={140} tick={{fontSize: 11, fill: '#475569', fontWeight: 'bold'}} interval={0}/>
+                                                    <YAxis dataKey="Label" type="category" width={130} interval={0} tick={<CaptureYAxisTick data={fCapture.filter(r => r.Capture_Volume > 0)} />}/>
                                                     <Tooltip content={<CaptureTooltip />}/>
                                                     <Legend wrapperStyle={{fontSize:'11px'}} verticalAlign="top"/>
-                                                    <Bar dataKey="Net_Capture_Volume" name="淨捕捉量" stackId="capture">
-                                                        {fCapture.filter(r => r.Capture_Volume > 0).map((entry, index) => <Cell key={`cell-${index}`} fill={stringToColor(entry.Capture_Tech)} />)}
-                                                        <LabelList dataKey="TRL" position="insideLeft" fill="white" fontSize={10} fontWeight="bold" formatter={(v) => `TRL ${v}`} style={{textShadow: '0px 0px 2px rgba(0,0,0,0.5)'}} />
+                                                    <Bar dataKey="Net_Capture_Volume" name="淨捕捉量" stackId="capture" fill="#10b981">
+                                                        <LabelList dataKey="Net_Capture_Volume" position="insideLeft" fill="white" fontSize={10} fontWeight="bold" formatter={(v) => v > 0 ? `淨 ${Number(v).toFixed(1)}` : ''} style={{textShadow: '0px 0px 2px rgba(0,0,0,0.5)'}} />
                                                     </Bar>
-                                                    <Bar dataKey="Captur_energy" name="設備耗能碳排" stackId="capture" fill="#ef4444" fillOpacity={0.8} radius={[0, 4, 4, 0]}>
+                                                    <Bar dataKey="Captur_energy" name="設備耗能" stackId="capture" fill="#ef4444" radius={[0, 4, 4, 0]}>
                                                         <LabelList dataKey="Capture_Volume" position="right" fill="#475569" fontSize={10} fontWeight="bold" formatter={(v) => `總 ${Number(v).toFixed(1)}`} />
                                                     </Bar>
                                                 </BarChart>
