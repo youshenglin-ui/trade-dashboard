@@ -402,7 +402,9 @@ export const normalizeHydrogenData = (rawData, type = 'supply') => {
         Object.keys(row).forEach(key => {
             const cleanKey = key.trim();
             const yearMatch = cleanKey.match(/(\d{2,4})/);
-            const typeMatch = cleanKey.match(/(產量|Output|用量|Demand|產能|Capacity)/i);
+            
+            // 修正：加入「外售量」與「外購量」的正規表達式攔截
+            const typeMatch = cleanKey.match(/(產量|Output|用量|Demand|產能|Capacity|外售量|外購量)/i);
             
             if (yearMatch) {
                 let yearStr = yearMatch[1];
@@ -418,8 +420,10 @@ export const normalizeHydrogenData = (rawData, type = 'supply') => {
                 if (typeMatch) {
                     const dataType = typeMatch[1];
                     isCapacity = dataType.includes('產能') || dataType.includes('Capacity');
-                    isOutput = dataType.includes('產量') || dataType.includes('Output');
-                    isDemand = dataType.includes('用量') || dataType.includes('Demand');
+                    // 只要包含「產量」或「外售量」，都算入 Output (總供給)
+                    isOutput = dataType.includes('產量') || dataType.includes('Output') || dataType.includes('外售量');
+                    // 只要包含「用量」或「外購量」，都算入 Demand (總需求)
+                    isDemand = dataType.includes('用量') || dataType.includes('Demand') || dataType.includes('外購量');
                 } else {
                     if (type === 'supply') isOutput = true; 
                     if (type === 'demand') isDemand = true; 
@@ -448,6 +452,7 @@ export const normalizeHydrogenData = (rawData, type = 'supply') => {
         });
     });
     
+    // 將同廠區、同年度的「產量+外售量」與「用量+外購量」進行疊加
     const mergedMap = {};
     normalized.forEach(item => {
         const id = `${item.Company}_${item.Plant}_${item.Year}_${item.Process || item.Usage_Type}`;
