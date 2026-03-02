@@ -105,7 +105,14 @@ const strictParseHydrogen = (rawArr, type) => {
         let plant = String(row['廠區'] || row['Plant'] || '').trim();
         if (company.includes('台化') && plant.includes('台北')) plant = '麥寮廠';
 
-        const region = String(row['區域'] || row['Region'] || getRefinedRegion(plant, company)).replace('部', '區');
+        // 強制區域防呆：無論 CSV 寫什麼，以我們的判斷邏輯為最高準則，避免麥寮跑到北區
+        let region = String(row['區域'] || row['Region'] || '').replace('部', '區');
+        const correctRegion = getRefinedRegion(plant, company);
+        if (correctRegion !== '其他') {
+            region = correctRegion;
+        }
+        if (!region) region = '其他';
+
         const processOrUsage = String(row[type === 'supply' ? '製程' : '用途'] || '').trim();
         const intensity = cleanNumber(row['單位碳排'] || row['Carbon_Intensity'] || 0);
         
@@ -476,6 +483,14 @@ const TaiwanH2Map = ({ supplyData = [], demandData = [] }) => {
                     })}
                 </g>
             </svg>
+            <div className="absolute bottom-4 right-4 bg-white/95 p-3 rounded-lg shadow-sm border border-slate-200 text-[10px] text-slate-700 pointer-events-none backdrop-blur">
+                <div className="space-y-1.5">
+                    <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-blue-500 border border-white shadow"></div> 淨產出廠區 (產量≥用量)</div>
+                    <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-amber-500 border border-white shadow"></div> 淨消耗廠區 (用量&gt;產量)</div>
+                    <div className="flex items-center gap-2"><div className="w-6 h-1.5 bg-blue-500"></div> 明確跨區外購流向 (管線)</div>
+                    <div className="flex items-center gap-2"><div className="w-6 h-0 border-t-4 border-amber-500 border-dashed"></div> 明確跨區外購流向 (槽車)</div>
+                </div>
+            </div>
         </div>
     );
 };
@@ -744,9 +759,17 @@ const RegionalDeepDive = ({ supplyData, demandData, globalYear }) => {
 
 const TechBalanceChart = ({ supplyData, demandData }) => {
     const groupByRegion = (data, valueKey) => {
+        const getCleanRegion = (reg) => {
+            const s = String(reg || '');
+            if (s.includes('南')) return '南區';
+            if (s.includes('中')) return '中區';
+            if (s.includes('北')) return '北區';
+            if (s.includes('東')) return '東區';
+            return '其他';
+        };
         const map = { '北區': 0, '中區': 0, '南區': 0, '東區': 0 };
         data.forEach(d => {
-            const r = String(d.Region || '').replace('部', '區'); 
+            const r = getCleanRegion(d.Region);
             if (map[r] !== undefined) map[r] += (cleanNumber(d[valueKey]) || 0);
         });
         return Object.entries(map).map(([name, value]) => ({ name, value })).filter(d => d.value > 0);
@@ -883,17 +906,6 @@ const PlantYAxisTick = ({ x, y, payload, data }) => {
     );
 };
 
-const renderTrendLegend = (props) => {
-    return (
-        <div className="flex flex-col items-center gap-1 text-[10px] pt-3">
-            <div className="flex justify-center gap-6 text-slate-500 border-t border-slate-200 pt-2 w-full mt-1">
-                <span className="flex items-center gap-1.5 font-bold"><div className="w-3 h-3 bg-blue-500 rounded-sm"></div>總產量</span>
-                <span className="flex items-center gap-1.5 font-bold"><div className="w-3 h-3 bg-amber-500 rounded-sm"></div>總用量</span>
-            </div>
-        </div>
-    );
-};
-
 const StructureAnalysis = ({ data, typeField, valueField, categoryFn, colorMap }) => {
     const { l1, l2, total } = useMemo(() => {
         const totalVal = data.reduce((acc, curr) => acc + (cleanNumber(curr[valueField]) || 0), 0);
@@ -1022,7 +1034,6 @@ const HydrogenDashboard = () => {
         
         setRawData({ supply: parsedP, demand: parsedU });
 
-        // 使用嚴格本地解析引擎，杜絕重複加總
         const localSupply = strictParseHydrogen(parsedP, 'supply');
         const localDemand = strictParseHydrogen(parsedU, 'demand');
 
@@ -1074,11 +1085,16 @@ const HydrogenDashboard = () => {
       };
   }, [supplyData, demandData]);
 
+  // 加入主產/副產的定義判斷
   const efficiencyChartData = useMemo(() => {
       const plantMap = {};
       filteredSupply.forEach(d => {
           const key = d.label;
-          if(!plantMap[key]) plantMap[key] = { name: key, output: 0, total_emission: 0, intensity: 0 };
+          if(!plantMap[key]) plantMap[key] = { 
+              name: key, output: 0, total_emission: 0, intensity: 0,
+              process: String(d.Process || '未知').trim(),
+              processType: getProcessType(d.Process || '未知')
+          };
           plantMap[key].output += (cleanNumber(d.Output_Tons) || 0);
           const currentIntensity = cleanNumber(d.Carbon_Intensity) || 0;
           if (currentIntensity > 0) plantMap[key].intensity = currentIntensity; 
@@ -1155,7 +1171,12 @@ const HydrogenDashboard = () => {
                      <div className="flex-1 min-h-0 flex gap-4 w-full relative">
                          
                          <div className="flex-1 h-full relative border border-slate-100 rounded-lg p-2 bg-slate-50/50 min-h-0">
-                            <div className="absolute top-2 right-4 text-[10px] text-slate-400 bg-white/80 px-2 rounded z-10">圓點大小 = 總碳排量</div>
+                            {/* 左側散點圖提示框 */}
+                            <div className="absolute top-2 right-4 flex flex-col gap-1 text-[10px] text-slate-500 bg-white/80 p-2 rounded z-10 border border-slate-100 shadow-sm">
+                                <div className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-500"></span>主產氫</div>
+                                <div className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-purple-500"></span>副產氫</div>
+                                <div className="mt-1 pt-1 border-t border-slate-200">圓點大小 = 總碳排量</div>
+                            </div>
                             <ErrorBoundary>
                                 <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                                     <ScatterChart margin={{top:20, right:30, bottom:30, left:20}}>
@@ -1164,22 +1185,37 @@ const HydrogenDashboard = () => {
                                             <Label value="產量 (萬噸) - 指數級距" offset={-20} position="insideBottom" fontSize={11} fill="#475569" fontWeight="bold"/>
                                         </XAxis>
                                         <YAxis type="number" dataKey="intensity" name="強度" unit="kg/kg" domain={[0, 'auto']} tick={{fontSize:10, fill:'#64748b'}}>
-                                            <Label value="碳排強度 (kg CO2e / kg H2)" angle={-90} position="insideLeft" style={{ textAnchor: 'middle' }} offset={10} fontSize={11} fill="#475569" fontWeight="bold"/>
+                                            <Label value="碳排強度 (kg CO₂e / kg H₂)" angle={-90} position="insideLeft" style={{ textAnchor: 'middle' }} offset={10} fontSize={11} fill="#475569" fontWeight="bold"/>
                                         </YAxis>
                                         
-                                        {/* 新增的碳排放基準線 */}
+                                        {/* 左側僅保留製程碳排基準線 */}
                                         <ReferenceLine y={12.5} stroke="#94a3b8" strokeDasharray="3 3" label={{ position: 'insideTopRight', value: '天然氣重組 (12-13)', fill: '#64748b', fontSize: 10, fontWeight: 'bold' }} />
                                         <ReferenceLine y={11.5} stroke="#94a3b8" strokeDasharray="3 3" label={{ position: 'insideBottomRight', value: '甲醇裂解 (11-12)', fill: '#64748b', fontSize: 10, fontWeight: 'bold' }} />
                                         <ReferenceLine y={6.9} stroke="#64748b" strokeDasharray="3 3" label={{ position: 'insideTopRight', value: '天然氣重組+PSA (6.9)', fill: '#475569', fontSize: 10, fontWeight: 'bold' }} />
-                                        <ReferenceLine y={4} stroke="#10b981" strokeDasharray="3 3" label={{ position: 'insideTopRight', value: '美/韓 低碳基準 (4.0)', fill: '#059669', fontSize: 10, fontWeight: 'bold' }} />
-                                        <ReferenceLine y={3.4} stroke="#059669" strokeDasharray="3 3" label={{ position: 'insideBottomRight', value: '日(3.4)/歐(3.38) 低碳基準', fill: '#047857', fontSize: 10, fontWeight: 'bold' }} />
 
                                         <ZAxis type="number" dataKey="total_emission" range={[50, 600]} />
-                                        <Tooltip cursor={{strokeDasharray:'3 3'}} formatter={(v, n) => [Number(v).toLocaleString(), n === 'output' ? '產量(萬噸)' : n === 'intensity' ? '強度' : '總碳排']} contentStyle={{fontSize:'12px', borderRadius:'8px'}}/>
+                                        <Tooltip 
+                                            cursor={{strokeDasharray:'3 3'}} 
+                                            content={({ active, payload }) => {
+                                                if (active && payload && payload.length) {
+                                                    const data = payload[0].payload;
+                                                    return (
+                                                        <div className="bg-white/95 backdrop-blur border border-slate-200 p-3 rounded-lg shadow-xl text-xs">
+                                                            <p className="font-bold text-slate-800 mb-1 border-b pb-1">{data.name}</p>
+                                                            <p className="text-slate-600 mb-1 flex items-center justify-between gap-3">來源: <span className="font-bold px-1.5 py-0.5 rounded" style={{color: data.processType === '主產' ? '#0284c7' : '#7c3aed', backgroundColor: data.processType === '主產' ? '#e0f2fe' : '#f3e8ff'}}>{data.processType}氫</span></p>
+                                                            <p className="text-slate-500 mb-2 font-medium">製程: {data.process}</p>
+                                                            <p className="text-slate-600 flex justify-between gap-3">產量: <span className="font-mono font-bold text-blue-600">{Number(data.output).toLocaleString()} 萬噸</span></p>
+                                                            <p className="text-slate-600 flex justify-between gap-3">強度: <span className="font-mono font-bold text-rose-600">{Number(data.intensity).toFixed(2)} kg</span></p>
+                                                        </div>
+                                                    );
+                                                }
+                                                return null;
+                                            }}
+                                        />
                                         <Scatter name="廠區" data={efficiencyChartData}>
                                             <LabelList dataKey="name" position="top" style={{fontSize:10, fill:'#475569', fontWeight: 'bold'}} />
                                             {efficiencyChartData.map((entry, index) => (
-                                                <Cell key={`cell-${index}`} fill={entry.intensity > 15 ? '#ef4444' : entry.intensity > 8 ? '#f59e0b' : '#10b981'} fillOpacity={0.7} stroke="white" strokeWidth={1}/>
+                                                <Cell key={`cell-${index}`} fill={entry.processType === '主產' ? '#3b82f6' : '#a855f7'} fillOpacity={0.7} stroke="white" strokeWidth={1}/>
                                             ))}
                                         </Scatter>
                                     </ScatterChart>
@@ -1198,10 +1234,12 @@ const HydrogenDashboard = () => {
                                          <Tooltip contentStyle={{fontSize:'12px', borderRadius:'8px'}}/>
                                          <Legend wrapperStyle={{fontSize:'11px'}} verticalAlign="top"/>
                                          
-                                         {/* 新增的碳排放基準線 (對齊右側 Y 軸) */}
-                                         <ReferenceLine yAxisId="right" y={12.5} stroke="#cbd5e1" strokeDasharray="3 3" />
-                                         <ReferenceLine yAxisId="right" y={6.9} stroke="#94a3b8" strokeDasharray="3 3" />
-                                         <ReferenceLine yAxisId="right" y={4} stroke="#34d399" strokeDasharray="3 3" />
+                                         {/* 右側同時包含製程與國家標準基準線 */}
+                                         <ReferenceLine yAxisId="right" y={12.5} stroke="#94a3b8" strokeDasharray="3 3" label={{ position: 'insideTopLeft', value: '天然氣重組 (12-13)', fill: '#64748b', fontSize: 9 }} />
+                                         <ReferenceLine yAxisId="right" y={11.5} stroke="#94a3b8" strokeDasharray="3 3" label={{ position: 'insideBottomLeft', value: '甲醇裂解 (11-12)', fill: '#64748b', fontSize: 9 }} />
+                                         <ReferenceLine yAxisId="right" y={6.9} stroke="#64748b" strokeDasharray="3 3" label={{ position: 'insideTopLeft', value: 'NG+PSA (6.9)', fill: '#475569', fontSize: 9 }} />
+                                         <ReferenceLine yAxisId="right" y={4.0} stroke="#10b981" strokeDasharray="3 3" label={{ position: 'insideTopLeft', value: '美/韓標準 (4.0)', fill: '#059669', fontSize: 9 }} />
+                                         <ReferenceLine yAxisId="right" y={3.4} stroke="#059669" strokeDasharray="3 3" label={{ position: 'insideBottomLeft', value: '日(3.4)/歐(3.38)', fill: '#047857', fontSize: 9 }} />
 
                                          <Bar yAxisId="left" dataKey="output" name="產量 (萬噸)" fill="#3b82f6" barSize={20} radius={[2,2,0,0]}/>
                                          <Line yAxisId="right" type="monotone" dataKey="intensity" name="碳排強度" stroke="#ef4444" strokeWidth={3} dot={{r:4, fill:'#ef4444', stroke:'white'}}/>
