@@ -213,7 +213,6 @@ const getApproximateCoordinates = (plant, company, county) => {
     return { lat: 23.6 + offsetLat, lon: 119.9 + offsetLon }; 
 };
 
-// 五大封存與接收樞紐 (加入鐵砧山陸地封存)
 const CCS_HUBS = {
     'NORTH_HUB': { id: 'NORTH_HUB', name: '林口外海 (封存樞紐)', type: '🛢️ 本土外海封存', lat: 25.12, lon: 121.28, region: '北區' },
     'CENTRAL_HUB_1': { id: 'CENTRAL_HUB_1', name: '台中港外海 (封存樞紐)', type: '🛢️ 本土外海封存', lat: 24.25, lon: 120.45, region: '中區' },
@@ -658,8 +657,6 @@ const CcusDashboard = () => {
     // 清單表格篩選狀態
     const [listRegion, setListRegion] = useState('ALL');
     const [listIndustry, setListIndustry] = useState('ALL');
-    const [listMode, setListMode] = useState('all'); // 'all' 或 'hub'
-    const [selectedHubId, setSelectedHubId] = useState('NORTH_HUB');
 
     useEffect(() => {
         const fetchAllData = async () => {
@@ -914,6 +911,7 @@ const CcusDashboard = () => {
         Object.values(zoneMap).forEach(z => {
             let targetHub = null;
             
+            // 修正南區一律往高雄港，不再出現往北的陸路管線
             if (z.Region === '南區') targetHub = CCS_HUBS['SOUTH_HUB'];
             else if (z.Region === '北區') targetHub = CCS_HUBS['NORTH_HUB'];
             else if (z.Region === '東區') targetHub = CCS_HUBS['EAST_HUB'];
@@ -988,6 +986,18 @@ const CcusDashboard = () => {
             (listIndustry === 'ALL' || d.Industry === listIndustry)
         );
     }, [scope1Data, listRegion, listIndustry]);
+
+    // 新增：目前選定樞紐的關聯碳源資料
+    const [selectedHubId, setSelectedHubId] = useState('NORTH_HUB');
+    const selectedHubSources = useMemo(() => {
+        if (!ccsTopology || !ccsTopology.hubSources[selectedHubId]) return [];
+        return ccsTopology.hubSources[selectedHubId].sort((a,b) => b.Scope1 - a.Scope1);
+    }, [ccsTopology, selectedHubId]);
+
+    const selectedHubTotalEmissions = useMemo(() => {
+        if (!ccsTopology || !ccsTopology.hubEmissions[selectedHubId]) return 0;
+        return ccsTopology.hubEmissions[selectedHubId];
+    }, [ccsTopology, selectedHubId]);
 
     if (loading) return <div className="p-10 text-center animate-pulse text-teal-600 flex flex-col items-center"><RefreshCw className="animate-spin mb-2"/> CCUS 地理資料建構中...</div>;
 
@@ -1085,105 +1095,111 @@ const CcusDashboard = () => {
                         </div>
                     </div>
 
-                    {/* 下方完整寬度：雙模式清單 (點源總表 / 樞紐配對分析) */}
-                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col mt-4">
-                        <div className="flex flex-wrap justify-between items-center mb-3 border-b pb-2 gap-4">
-                            <h3 className="font-bold text-slate-700 text-sm flex items-center gap-2">
-                                <List size={16} className={listMode === 'hub' ? "text-blue-500" : "text-rose-500"}/> 
-                                {listMode === 'all' ? '排放點源清單 (擷取自最新上傳資料)' : '封存點位之可能碳源對照分析'}
-                            </h3>
-                            <div className="flex bg-slate-100 p-1 rounded-lg text-xs font-bold shadow-inner">
-                                <button onClick={() => setListMode('all')} className={`px-3 py-1.5 rounded-md flex items-center gap-1 transition-all ${listMode === 'all' ? 'bg-white shadow text-rose-600' : 'text-slate-500'}`}><List size={14}/> 點源總表</button>
-                                <button onClick={() => setListMode('hub')} className={`px-3 py-1.5 rounded-md flex items-center gap-1 transition-all ${listMode === 'hub' ? 'bg-white shadow text-blue-600' : 'text-slate-500'}`}><Anchor size={14}/> 樞紐配對分析</button>
+                    {/* 下方完整寬度：新增「封存點位可能碳源」與「排放點源清單」 */}
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        
+                        {/* 左側區塊：封存點位可能碳源 */}
+                        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col">
+                            <div className="flex justify-between items-center mb-3 border-b pb-2">
+                                <h3 className="font-bold text-slate-700 text-sm flex items-center gap-2">
+                                    <Anchor size={16} className="text-blue-500"/> 封存點位可能碳源分析
+                                </h3>
+                                <select 
+                                    value={selectedHubId} 
+                                    onChange={e => setSelectedHubId(e.target.value)} 
+                                    className="bg-slate-50 border border-slate-200 text-slate-700 font-bold px-3 py-1 rounded-lg outline-none cursor-pointer hover:bg-slate-100 text-xs"
+                                >
+                                    {Object.values(CCS_HUBS).map(hub => (
+                                        <option key={hub.id} value={hub.id}>{hub.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            
+                            <div className="flex justify-between items-center bg-blue-50 p-3 rounded-lg border border-blue-100 mb-3">
+                                <div>
+                                    <div className="text-[10px] text-blue-600 font-bold uppercase mb-0.5">涵蓋排放點數量</div>
+                                    <div className="text-xl font-black text-blue-800">{selectedHubSources.length} <span className="text-xs font-normal">家</span></div>
+                                </div>
+                                <div className="text-right">
+                                    <div className="text-[10px] text-blue-600 font-bold uppercase mb-0.5">總涵蓋排放量 (範疇一)</div>
+                                    <div className="text-xl font-black text-blue-800">{(selectedHubTotalEmissions / 10000).toFixed(1)} <span className="text-xs font-normal">萬噸</span></div>
+                                </div>
+                            </div>
+
+                            <div className="overflow-y-auto custom-scrollbar max-h-[350px] border border-slate-100 rounded-lg">
+                                <table className="w-full text-xs text-left relative">
+                                    <thead className="bg-blue-50/50 sticky top-0 shadow-sm z-10">
+                                        <tr>
+                                            <th className="p-3 text-blue-800">事業名稱</th>
+                                            <th className="p-3 text-blue-800">縣市</th>
+                                            <th className="p-3 text-right text-blue-800">預估距離(km)</th>
+                                            <th className="p-3 text-right text-blue-800">範疇一(噸)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-blue-50">
+                                        {selectedHubSources.map((row, i) => (
+                                            <tr key={i} className="hover:bg-blue-50/30 transition-colors">
+                                                <td className="p-3 font-bold text-slate-700 truncate max-w-[150px]" title={row.Plant}>{row.Plant}</td>
+                                                <td className="p-3 text-slate-500">{row.County}</td>
+                                                <td className="p-3 text-right font-mono text-slate-500">{row.distanceToHub.toFixed(1)}</td>
+                                                <td className="p-3 text-right font-mono font-bold text-rose-600">{row.Scope1.toLocaleString()}</td>
+                                            </tr>
+                                        ))}
+                                        {selectedHubSources.length === 0 && <tr><td colSpan={4} className="p-8 text-center text-slate-400">此樞紐目前未分配到任何碳源廠區。</td></tr>}
+                                    </tbody>
+                                </table>
                             </div>
                         </div>
 
-                        {/* 工具列：依據模式切換 */}
-                        {listMode === 'all' ? (
-                            <div className="flex gap-2 mb-3">
-                                <div className="flex items-center gap-2 bg-slate-50 px-2 py-1 rounded border border-slate-200 text-xs">
-                                    <Filter size={12} className="text-slate-400"/>
-                                    <select value={listRegion} onChange={e => setListRegion(e.target.value)} className="bg-transparent font-bold text-slate-600 outline-none">
-                                        <option value="ALL">全台區域</option><option value="北區">北區</option><option value="中區">中區</option><option value="南區">南區</option><option value="東區">東區</option>
-                                    </select>
-                                </div>
-                                <div className="flex items-center gap-2 bg-slate-50 px-2 py-1 rounded border border-slate-200 text-xs">
-                                    <Filter size={12} className="text-slate-400"/>
-                                    <select value={listIndustry} onChange={e => setListIndustry(e.target.value)} className="bg-transparent font-bold text-slate-600 outline-none max-w-[120px]">
-                                        {availableIndustries.map(ind => <option key={ind} value={ind}>{ind === 'ALL' ? '所有產業' : ind}</option>)}
-                                    </select>
-                                </div>
-                            </div>
-                        ) : (
-                            <div className="flex flex-wrap items-center gap-4 mb-3 bg-blue-50 p-2 rounded-lg border border-blue-100">
-                                <div className="flex items-center gap-2 text-xs font-bold text-blue-800">
-                                    <Target size={14}/> 選擇目標樞紐：
-                                </div>
-                                <div className="flex flex-wrap gap-2">
-                                    {Object.values(CCS_HUBS).map(hub => {
-                                        const hasSources = ccsTopology.hubSources[hub.id] && ccsTopology.hubSources[hub.id].length > 0;
-                                        if (!hasSources) return null;
-                                        return (
-                                            <button 
-                                                key={hub.id} 
-                                                onClick={() => setSelectedHubId(hub.id)}
-                                                className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all border ${selectedHubId === hub.id ? 'bg-blue-600 text-white border-blue-600 shadow' : 'bg-white text-slate-600 border-slate-300 hover:bg-blue-100'}`}
-                                            >
-                                                {hub.name}
-                                            </button>
-                                        )
-                                    })}
+                        {/* 右側區塊：全台排放點源總表 */}
+                        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col">
+                            <div className="flex flex-wrap justify-between items-center mb-3 border-b pb-2 gap-2">
+                                <h3 className="font-bold text-slate-700 text-sm flex items-center gap-2">
+                                    <List size={16} className="text-rose-500"/> 排放點源總表
+                                </h3>
+                                <div className="flex gap-2">
+                                    <div className="flex items-center gap-1 bg-slate-50 px-2 py-1 rounded border border-slate-200 text-xs">
+                                        <Filter size={12} className="text-slate-400"/>
+                                        <select value={listRegion} onChange={e => setListRegion(e.target.value)} className="bg-transparent font-bold text-slate-600 outline-none max-w-[70px]">
+                                            <option value="ALL">全區域</option><option value="北區">北區</option><option value="中區">中區</option><option value="南區">南區</option><option value="東區">東區</option>
+                                        </select>
+                                    </div>
+                                    <div className="flex items-center gap-1 bg-slate-50 px-2 py-1 rounded border border-slate-200 text-xs">
+                                        <Filter size={12} className="text-slate-400"/>
+                                        <select value={listIndustry} onChange={e => setListIndustry(e.target.value)} className="bg-transparent font-bold text-slate-600 outline-none max-w-[80px]">
+                                            {availableIndustries.map(ind => <option key={ind} value={ind}>{ind === 'ALL' ? '所有產業' : ind}</option>)}
+                                        </select>
+                                    </div>
                                 </div>
                             </div>
-                        )}
-
-                        <div className="overflow-y-auto custom-scrollbar max-h-[400px]">
-                            {listMode === 'all' ? (
+                            
+                            <div className="overflow-y-auto custom-scrollbar max-h-[425px] border border-slate-100 rounded-lg">
                                 <table className="w-full text-xs text-left relative">
-                                    <thead className="bg-slate-100 sticky top-0 shadow-sm z-10">
+                                    <thead className="bg-slate-50 sticky top-0 shadow-sm z-10">
                                         <tr>
-                                            <th className="p-3">事業名稱</th><th className="p-3">縣市</th><th className="p-3">行業</th><th className="p-3">所屬聚落</th>
-                                            <th className="p-3 text-right text-rose-600">範疇一(噸)</th><th className="p-3 text-right text-slate-500">範疇二(噸)</th><th className="p-3 text-right font-bold">總計(噸)</th>
+                                            <th className="p-3">事業名稱</th>
+                                            <th className="p-3">縣市</th>
+                                            <th className="p-3">所屬聚落</th>
+                                            <th className="p-3 text-right text-rose-600">範疇一(噸)</th>
+                                            <th className="p-3 text-right font-bold">總計(噸)</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
                                         {filteredScope1Data.map((row, i) => (
                                             <tr key={i} className="hover:bg-rose-50 transition-colors">
-                                                <td className="p-3 font-bold text-slate-700">{row.Plant}</td>
+                                                <td className="p-3 font-bold text-slate-700 truncate max-w-[150px]" title={row.Plant}>{row.Plant}</td>
                                                 <td className="p-3">{row.County}</td>
-                                                <td className="p-3 text-slate-500">{row.Industry}</td>
-                                                <td className="p-3 text-blue-600">{row.zone}</td>
+                                                <td className="p-3 text-blue-600 text-[10px]">{row.zone}</td>
                                                 <td className="p-3 text-right font-mono text-rose-600">{row.Scope1.toLocaleString()}</td>
-                                                <td className="p-3 text-right font-mono text-slate-400">{row.Scope2.toLocaleString()}</td>
-                                                <td className="p-3 text-right font-mono font-bold text-rose-800">{row.TotalScope.toLocaleString()}</td>
+                                                <td className="p-3 text-right font-mono font-bold text-slate-800">{row.TotalScope.toLocaleString()}</td>
                                             </tr>
                                         ))}
-                                        {filteredScope1Data.length === 0 && <tr><td colSpan={7} className="p-8 text-center text-slate-400">找不到符合條件的點源資料，請調整篩選器或確認資料來源。</td></tr>}
+                                        {filteredScope1Data.length === 0 && <tr><td colSpan={5} className="p-8 text-center text-slate-400">找不到符合條件的點源資料。</td></tr>}
                                     </tbody>
                                 </table>
-                            ) : (
-                                <table className="w-full text-xs text-left relative">
-                                    <thead className="bg-blue-50 sticky top-0 shadow-sm z-10">
-                                        <tr>
-                                            <th className="p-3 text-blue-800">對應碳源廠區</th><th className="p-3 text-blue-800">縣市</th><th className="p-3 text-blue-800">行業</th>
-                                            <th className="p-3 text-right text-blue-800">預估管線距離(km)</th><th className="p-3 text-right text-blue-800">預估可捕捉碳源 (範疇一 噸)</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-blue-50">
-                                        {ccsTopology.hubSources[selectedHubId]?.sort((a,b) => b.Scope1 - a.Scope1).map((row, i) => (
-                                            <tr key={i} className="hover:bg-blue-50/50 transition-colors">
-                                                <td className="p-3 font-bold text-slate-700">{row.Plant}</td>
-                                                <td className="p-3">{row.County}</td>
-                                                <td className="p-3 text-slate-500">{row.Industry}</td>
-                                                <td className="p-3 text-right font-mono text-slate-600">{row.distanceToHub.toFixed(1)} km</td>
-                                                <td className="p-3 text-right font-mono font-bold text-blue-600">{row.Scope1.toLocaleString()}</td>
-                                            </tr>
-                                        ))}
-                                        {(!ccsTopology.hubSources[selectedHubId] || ccsTopology.hubSources[selectedHubId].length === 0) && <tr><td colSpan={5} className="p-8 text-center text-slate-400">此樞紐目前未分配到任何碳源廠區。</td></tr>}
-                                    </tbody>
-                                </table>
-                            )}
+                            </div>
                         </div>
+
                     </div>
                 </div>
             )}
