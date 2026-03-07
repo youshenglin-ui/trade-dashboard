@@ -28,19 +28,19 @@ export const simplifyCompanyName = (name) => {
   if (!name) return '';
   let n = name.trim().replace(/股份有限公司|工業|企業|分公司/g, '').trim();
   const mapping = {
-      '台灣化學纖維': '台化', '台化': '台化',
-      '台灣苯乙烯': '台苯', '台苯': '台苯',
+      '臺灣化學纖維': '台化', '台灣化學纖維': '台化', '台化': '台化',
+      '臺灣苯乙烯': '台苯', '台灣苯乙烯': '台苯', '台苯': '台苯',
       '中國石油化學': '中石化', '中石化': '中石化',
-      '台灣中油': '中油', '中油': '中油',
-      '台塑石化': '台塑化', '台塑化': '台塑化',
-      '台灣積體電路製造': '台積電', '台積電': '台積電',
+      '臺灣中油': '中油', '台灣中油': '中油', '中油': '中油',
+      '臺塑石化': '台塑化', '台塑石化': '台塑化', '台塑化': '台塑化',
+      '臺灣積體電路製造': '台積電', '台灣積體電路製造': '台積電', '台積電': '台積電',
       '中國鋼鐵': '中鋼', '中鋼': '中鋼',
       '長春人造樹脂': '長春樹脂', '長春石油化學': '長春石化',
       '大連化學工業': '大連化學',
       '李長榮化學工業': '李長榮',
       '國喬石油化學': '國喬',
       '南亞塑膠工業': '南亞塑膠',
-      '台鹽實業': '台鹽'
+      '臺鹽實業': '台鹽', '台鹽實業': '台鹽'
   };
   for (const [full, short] of Object.entries(mapping)) {
       if (n.includes(full)) return short;
@@ -128,6 +128,9 @@ const getRefinedRegion = (plantName, companyName, county) => {
     if (full.match(/(苗栗|台中|彰化|雲林|南投)/)) return '中區';
     if (full.match(/(嘉義|台南|高雄|屏東)/)) return '南區';
     
+    // 額外確保台鹽在苗栗(中區)
+    if (c.includes('台鹽') || c.includes('臺鹽') || p.includes('通霄')) return '中區';
+
     return '其他';
 };
 
@@ -148,6 +151,8 @@ const getIndustrialZone = (plant, company, county) => {
     if (full.includes('仁武') || full.includes('大社')) return '高雄-仁武工業區';
     if (full.includes('彰濱') || full.includes('線西') || full.includes('中龍')) return '彰化-彰濱工業區';
     if (full.includes('桃園') || p.includes('桃煉') || full.includes('觀音') || full.includes('工三')) return '桃園工業區';
+    
+    if (c.includes('台鹽') || c.includes('臺鹽') || p.includes('通霄')) return '苗栗-通霄工業聚落';
     if (p.includes('頭份') || (c.includes('長春') && p.includes('苗栗'))) return '苗栗-頭份工業區';
     if (full.includes('南科') || full.includes('台積電') || p.includes('18廠')) return '台南-南部科學園區';
     
@@ -160,10 +165,9 @@ const getApproximateCoordinates = (plant, company, county) => {
     const cty = String(county || '');
 
     // 特殊校正：台鹽實業 (通霄廠為主)
-    if (company?.includes('台鹽')) {
-        if (plant.includes('通霄') || cty.includes('苗栗')) return { lat: 24.54, lon: 120.67 };
+    if (company?.includes('台鹽') || company?.includes('臺鹽') || plant?.includes('通霄')) {
         if (cty.includes('台南')) return { lat: 23.14, lon: 120.10 };
-        return { lat: 24.54, lon: 120.67 }; 
+        return { lat: 24.54, lon: 120.67 }; // 預設苗栗通霄
     }
 
     if (company?.includes('台化') && plant?.includes('台北')) return { lat: 23.78, lon: 120.18 };
@@ -196,10 +200,10 @@ const getApproximateCoordinates = (plant, company, county) => {
     return { lat: 23.6, lon: 120.9 }; 
 };
 
-// 四大封存與接收樞紐
+// 四大封存與接收樞紐 (依據陸路起點與海線接收差異設計)
 const CCS_HUBS = {
-    'NORTH_HUB': { name: '林口外海', type: '🛢️ 本土外海封存', lat: 25.12, lon: 121.28, region: '北區' },
-    'CENTRAL_HUB_1': { name: '台中港外海', type: '🛢️ 本土外海封存', lat: 24.25, lon: 120.45, region: '中區' },
+    'NORTH_HUB': { name: '林口外海 (陸路集中轉海管)', type: '🛢️ 本土外海封存', lat: 25.12, lon: 121.28, region: '北區' },
+    'CENTRAL_HUB_1': { name: '台中港接收站', type: '🛢️ 本土外海封存', lat: 24.25, lon: 120.45, region: '中區' },
     'CENTRAL_HUB_2': { name: '麥寮工業區外海', type: '🛢️ 本土外海封存', lat: 23.80, lon: 120.10, region: '中區' },
     'SOUTH_HUB': { name: '高雄港接收站 (往東南亞)', type: '🚢 海洋接收外銷', lat: 22.55, lon: 120.25, region: '南區' } 
 };
@@ -272,7 +276,7 @@ const TaiwanCcusMap = ({ mode = 'capture', captureData = [], utilData = [], stor
         const zoneMap = {};
         scope1Data.forEach(d => {
             if (!zoneMap[d.zone]) zoneMap[d.zone] = { name: d.zone, emissions: 0, lat: 0, lon: 0, count: 0, Region: d.Region };
-            // CCS 管線規劃只考慮範疇一 (Scope 1)
+            // CCS 管線規劃只考慮範疇一 (Scope 1) 且資料已在源頭剃除無效廠區
             zoneMap[d.zone].emissions += d.Scope1; 
             zoneMap[d.zone].lat += d.lat;
             zoneMap[d.zone].lon += d.lon;
@@ -603,7 +607,7 @@ const TaiwanCcusMap = ({ mode = 'capture', captureData = [], utilData = [], stor
                     <div className="space-y-1.5">
                         <div className="flex items-center gap-2"><div className="w-3 h-3 bg-sky-500 border border-white"></div> 海洋接收站 / 本土封存樞紐</div>
                         <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-rose-600 border border-white shadow"></div> 範疇一排碳大戶 (依 Scope1 比例)</div>
-                        <div className="flex items-center gap-2"><div className="w-6 h-0 border-t-2 border-blue-500 border-dashed"></div> 擬真 GoogleMap 主管線預估</div>
+                        <div className="flex items-center gap-2"><div className="w-6 h-0 border-t-2 border-blue-500 border-dashed"></div> 擬真 GoogleMap 主幹管線預估</div>
                         <div className="flex items-center gap-2">
                             <svg width="24" height="6" className="overflow-visible"><path d="M 0 3 Q 12 3, 24 -3" stroke="#94a3b8" strokeWidth="2" fill="none"/></svg> 廠區至聚落中心支線
                         </div>
@@ -674,7 +678,7 @@ const CcusDashboard = () => {
     const [selectedYear, setSelectedYear] = useState('ALL');
     const [transportMode, setTransportMode] = useState('ALL'); 
 
-    // 新增：清單表格篩選狀態
+    // 清單表格篩選狀態
     const [listRegion, setListRegion] = useState('ALL');
     const [listIndustry, setListIndustry] = useState('ALL');
 
@@ -740,7 +744,6 @@ const CcusDashboard = () => {
                     const plantRaw = rawName.replace(d['公司'] || '', '').replace(comp, '').replace(/股份有限公司|工業|企業|分公司/g, '').trim(); 
                     
                     const countyStr = String(d[countyKey] || '');
-                    // 加入 countyStr 輔助判斷，減少「其他獨立廠區」數量
                     const zone = getIndustrialZone(plantRaw, comp, countyStr);
                     const coords = getApproximateCoordinates(plantRaw, comp, countyStr);
                     
@@ -769,7 +772,17 @@ const CcusDashboard = () => {
                         lat: coords.lat,
                         lon: coords.lon
                     };
-                }).filter(d => d && d.TotalScope > 0).sort((a,b) => b.TotalScope - a.TotalScope));
+                }).filter(d => {
+                    // 剃除無效或不值得評估的資料
+                    if (!d || d.TotalScope <= 0) return false;
+                    // 剃除 Scope 2 (電力間接排放) 佔比超過 70% 的廠商 (對建立 CCS 幫助不大)
+                    const scope2Ratio = d.Scope2 / d.TotalScope;
+                    if (scope2Ratio > 0.7) return false;
+                    // 至少要有一萬噸以上的直接排放才納入 CCS 決策考量
+                    if (d.Scope1 < 10000) return false;
+                    
+                    return true;
+                }).sort((a,b) => b.Scope1 - a.Scope1)); // 依據範疇一排放量排序
 
                 setCaptureData(rawCap.map(d => {
                     const capVol = cleanNumber(d.Capture_Volume);
@@ -936,9 +949,10 @@ const CcusDashboard = () => {
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch min-h-[850px]">
+                    {/* 移除 min-h 限制，讓版面自然適應，消除不必要的空白 */}
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
                         {/* 左側地圖 (加大空間) */}
-                        <div className="lg:col-span-7 bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col h-[650px]">
+                        <div className="lg:col-span-7 bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col h-[600px]">
                             <h3 className="font-bold text-slate-700 text-sm mb-4 border-b pb-2 flex items-center gap-2"><Map size={16} className="text-indigo-500"/> CCS 案場與共通管線拓樸分析</h3>
                             <div className="flex-1 w-full h-full relative min-h-0">
                                 <ErrorBoundary>
@@ -948,21 +962,21 @@ const CcusDashboard = () => {
                         </div>
 
                         {/* 右側分析 (文字與圖表) */}
-                        <div className="lg:col-span-5 flex flex-col gap-6 h-[650px]">
+                        <div className="lg:col-span-5 flex flex-col gap-6 h-[600px]">
                             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col">
                                 <h3 className="font-bold text-slate-700 text-sm mb-3 border-b pb-2 flex items-center gap-2"><Route size={16} className="text-sky-500"/> 區域管線佈建可行性分析</h3>
-                                <div className="flex flex-col gap-2 overflow-y-auto pr-2 custom-scrollbar max-h-[200px]">
+                                <div className="flex flex-col gap-2 overflow-y-auto pr-2 custom-scrollbar max-h-[220px]">
                                     <div className="bg-slate-50 p-3 rounded border border-slate-200">
-                                        <div className="text-xs font-bold text-slate-500 mb-1">【南區】海運接收站 (外銷)</div>
-                                        <div className="text-xs text-slate-600 leading-relaxed">缺乏合適本土封存場址。建議將大發、林園等高排碳區透過陸運/管線集中至高雄港，再以船運送往東南亞 (如印尼/馬來西亞) 進行跨國封存。</div>
+                                        <div className="text-xs font-bold text-slate-500 mb-1">【南區】陸路集中 ➔ 高雄港海運外銷</div>
+                                        <div className="text-xs text-slate-600 leading-relaxed">缺乏合適本土封存場址。建議以陸路支線將大發、林園等高排碳區收集至聚落中心，再以主管線送往高雄港接收站，轉由船運送往東南亞 (如印尼/馬來西亞) 進行跨國封存。</div>
                                     </div>
                                     <div className="bg-slate-50 p-3 rounded border border-slate-200">
-                                        <div className="text-xs font-bold text-slate-500 mb-1">【中區】本土封存示範區</div>
-                                        <div className="text-xs text-slate-600 leading-relaxed">具備本土封存優勢。台中與彰化區域可就近利用「台中港外海」；雲林麥寮等超大排放源可直接利用「麥寮工業區外海」發展本土海域 CCS 封存示範場域。</div>
+                                        <div className="text-xs font-bold text-slate-500 mb-1">【中區】陸路集中 ➔ 本土外海封存</div>
+                                        <div className="text-xs text-slate-600 leading-relaxed">具備本土封存優勢。雲林麥寮超大排放源可直接利用周邊外海；台中與彰化區域則以陸地管線匯集至台中港接收站，向海管輸送至本土外海封存示範場域。</div>
                                     </div>
                                     <div className="bg-slate-50 p-3 rounded border border-slate-200">
-                                        <div className="text-xs font-bold text-slate-500 mb-1">【北區】林口外海封存</div>
-                                        <div className="text-xs text-slate-600 leading-relaxed">排放源相對分散。主要集中於桃園/新竹，可評估建立管線將捕捉到的 CO₂ 往北輸送至「林口外海」進行封存。</div>
+                                        <div className="text-xs font-bold text-slate-500 mb-1">【北區】陸路集中 ➔ 林口外海封存</div>
+                                        <div className="text-xs text-slate-600 leading-relaxed">排放源較分散。主要集中於桃園與新竹，需評估建立較長的陸地管線往北延伸，集中至林口沿岸，轉由海管輸送至林口外海封存。</div>
                                     </div>
                                 </div>
                             </div>
@@ -992,7 +1006,7 @@ const CcusDashboard = () => {
                     </div>
 
                     {/* 下方完整寬度：排放點源清單 */}
-                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col mt-6">
+                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col mt-4">
                         <div className="flex flex-wrap justify-between items-center mb-3 border-b pb-2 gap-4">
                             <h3 className="font-bold text-slate-700 text-sm flex items-center gap-2"><List size={16} className="text-rose-500"/> 排放點源清單 (擷取自最新上傳資料)</h3>
                             <div className="flex gap-2">
@@ -1010,7 +1024,7 @@ const CcusDashboard = () => {
                                 </div>
                             </div>
                         </div>
-                        <div className="overflow-y-auto custom-scrollbar max-h-[500px]">
+                        <div className="overflow-y-auto custom-scrollbar max-h-[400px]">
                             <table className="w-full text-xs text-left relative">
                                 <thead className="bg-slate-100 sticky top-0 shadow-sm z-10">
                                     <tr>
