@@ -12,6 +12,7 @@ const CCUS_DATA_SOURCES = {
   CAPTURE: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSJ8aZTek-9SoTaK7Z_Wu9InU2c_vu4cUpD0Nn4fCs-w0IM3XoWeNXK5ZldWoEs6M3G6mJTS6QoF4Mo/pub?gid=388581449&single=true&output=csv',
   UTILIZATION: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSJ8aZTek-9SoTaK7Z_Wu9InU2c_vu4cUpD0Nn4fCs-w0IM3XoWeNXK5ZldWoEs6M3G6mJTS6QoF4Mo/pub?gid=1496771601&single=true&output=csv',
   STORAGE: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSJ8aZTek-9SoTaK7Z_Wu9InU2c_vu4cUpD0Nn4fCs-w0IM3XoWeNXK5ZldWoEs6M3G6mJTS6QoF4Mo/pub?gid=1902888591&single=true&output=csv',
+  // 對接最新版 505 家碳排真實資料
   SCOPE1_URL: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSJ8aZTek-9SoTaK7Z_Wu9InU2c_vu4cUpD0Nn4fCs-w0IM3XoWeNXK5ZldWoEs6M3G6mJTS6QoF4Mo/pub?gid=2122803569&single=true&output=csv'
 };
 
@@ -26,7 +27,7 @@ const cleanNumber = (val) => {
 
 export const simplifyCompanyName = (name) => {
   if (!name) return '';
-  let n = name.trim().replace(/股份有限公司|工業|企業/g, '').trim();
+  let n = name.trim().replace(/股份有限公司|工業|企業|分公司/g, '').trim();
   const mapping = {
       '台灣化學纖維': '台化', '台化': '台化',
       '台灣苯乙烯': '台苯', '台苯': '台苯',
@@ -55,23 +56,52 @@ const stringToColor = (str) => {
     return COLORS_POOL[Math.abs(hash) % COLORS_POOL.length];
 };
 
+// 升級版 CSV 解析器，完美支援包含換行與引號的 Google Sheets 匯出格式
 const parseCSV = (text) => {
     if (!text || text.includes('<!DOCTYPE html>')) return [];
-    const lines = text.split(/\r\n|\n/).filter(l => l.trim());
-    if (lines.length < 2) return [];
-    const parseLine = (line) => {
-        const res = []; let current = ''; let inQuote = false;
-        for (let c of line) {
-            if (c === '"') { inQuote = !inQuote; continue; }
-            if (c === ',' && !inQuote) { res.push(current.trim()); current = ''; continue; }
-            current += c;
+    
+    const result = [];
+    let row = [];
+    let current = '';
+    let inQuotes = false;
+    
+    for (let i = 0; i < text.length; i++) {
+        const char = text[i];
+        const nextChar = text[i + 1];
+        
+        if (char === '"') {
+            if (inQuotes && nextChar === '"') {
+                current += '"';
+                i++; 
+            } else {
+                inQuotes = !inQuotes;
+            }
+        } else if (char === ',' && !inQuotes) {
+            row.push(current.trim());
+            current = '';
+        } else if ((char === '\n' || (char === '\r' && nextChar === '\n')) && !inQuotes) {
+            if (char === '\r') i++; 
+            row.push(current.trim());
+            result.push(row);
+            row = [];
+            current = '';
+        } else {
+            current += char;
         }
-        res.push(current.trim()); return res;
-    };
-    const headers = parseLine(lines[0]);
-    return lines.slice(1).map(line => {
-        const row = parseLine(line); const obj = {};
-        headers.forEach((h, i) => { obj[h.replace(/^[\uFEFF\s]+|[\s]+$/g, '')] = row[i]; });
+    }
+    if (current || row.length > 0) {
+        row.push(current.trim());
+        result.push(row);
+    }
+    
+    if (result.length < 2) return [];
+    
+    const headers = result[0].map(h => h.replace(/^[\uFEFF\s]+|[\s]+$/g, ''));
+    return result.slice(1).map(rowArray => {
+        const obj = {};
+        headers.forEach((h, i) => {
+            obj[h] = rowArray[i] !== undefined ? rowArray[i] : '';
+        });
         return obj;
     });
 };
@@ -163,7 +193,7 @@ class ErrorBoundary extends React.Component {
 }
 
 // ==========================================
-// 地圖常數與共用轉換函數 (提昇至全域以優化效能)
+// 地圖常數與共用轉換函數
 // ==========================================
 const MAP_CONSTANTS = {
     baseWidth: 800,
@@ -182,7 +212,7 @@ export const projectBase = (lon, lat) => {
 };
 
 // ==========================================
-// 台灣地圖核心模組 (移除內部的 GeoJSON 請求)
+// 台灣地圖核心模組
 // ==========================================
 const TaiwanCcusMap = ({ mode = 'capture', captureData = [], utilData = [], storageData = [], scope1Data = [], mapPaths = [] }) => {
     const mapRef = useRef(null);
@@ -560,7 +590,7 @@ const CcusDashboard = () => {
     const [utilizationData, setUtilizationData] = useState([]);
     const [storageData, setStorageData] = useState([]);
     const [scope1Data, setScope1Data] = useState([]); 
-    const [mapPaths, setMapPaths] = useState([]); // 新增：全域地圖快取狀態
+    const [mapPaths, setMapPaths] = useState([]); 
     const [loading, setLoading] = useState(true);
     const [selectedYear, setSelectedYear] = useState('ALL');
     const [transportMode, setTransportMode] = useState('ALL'); 
@@ -569,7 +599,6 @@ const CcusDashboard = () => {
         const fetchAllData = async () => {
             setLoading(true);
             try {
-                // 將地圖的 GeoJSON 請求一併加入 Promise.all，實現資料與地圖同步預載
                 const [resCap, resUtil, resStore, resScope1, resGeo] = await Promise.all([
                     fetch(CCUS_DATA_SOURCES.CAPTURE),
                     fetch(CCUS_DATA_SOURCES.UTILIZATION),
@@ -583,7 +612,6 @@ const CcusDashboard = () => {
                 const txtStore = await resStore.text();
                 const txtScope1 = resScope1 ? await resScope1.text() : '';
 
-                // 解析地圖 SVG 路徑並存入全域狀態
                 if (resGeo) {
                     const geoData = await resGeo.json();
                     const paths = geoData.features.map(f => {
@@ -612,14 +640,23 @@ const CcusDashboard = () => {
                 const rawScope1 = parseCSV(txtScope1);
 
                 setScope1Data(rawScope1.map(d => {
-                    const rawName = String(d['事業名稱'] || '');
+                    // 智慧尋找欄位（適應不同表頭名稱）
+                    const keys = Object.keys(d);
+                    const nameKey = keys.find(k => k.includes('事業名稱') || k.includes('公司名稱') || k.includes('廠區')) || '事業名稱';
+                    const emitKey = keys.find(k => k.includes('直接排放') || k.includes('範疇一') || k.includes('Scope')) || '直接排放量(公噸CO2e)';
+                    const indKey = keys.find(k => k.includes('七大製造業') || k.includes('行業分類')) || '行業分類';
+                    const countyKey = keys.find(k => k.includes('縣市別') || k.includes('地址') || k.includes('所在')) || '縣市別';
+
+                    const rawName = String(d[nameKey] || '').trim();
+                    if (!rawName) return null;
+
                     const comp = simplifyCompanyName(rawName);
-                    const plantRaw = rawName.replace(d['公司'] || '', '').replace(comp, ''); 
+                    const plantRaw = rawName.replace(d['公司'] || '', '').replace(comp, '').replace(/股份有限公司|工業|企業|分公司/g, '').trim(); 
                     const zone = getIndustrialZone(plantRaw, comp);
                     const coords = getApproximateCoordinates(plantRaw, comp);
                     
                     let region = '其他';
-                    const countyStr = String(d['縣市別'] || '');
+                    const countyStr = String(d[countyKey] || '');
                     if (countyStr.match(/(台北|新北|桃園|新竹|基隆)/)) region = '北區';
                     if (countyStr.match(/(苗栗|台中|彰化|雲林|南投)/)) region = '中區';
                     if (countyStr.match(/(嘉義|台南|高雄|屏東)/)) region = '南區';
@@ -630,15 +667,15 @@ const CcusDashboard = () => {
                     return {
                         Company: comp,
                         Plant: rawName,
-                        Scope1: cleanNumber(d['直接排放量(公噸CO2e)']),
-                        Industry: d['七大製造業'] || d['行業分類'],
+                        Scope1: cleanNumber(d[emitKey]),
+                        Industry: d[indKey] || '',
                         County: countyStr,
                         zone: zone,
                         Region: region,
                         lat: coords.lat,
                         lon: coords.lon
                     };
-                }).filter(d => d.Scope1 > 0).sort((a,b) => b.Scope1 - a.Scope1));
+                }).filter(d => d && d.Scope1 > 0).sort((a,b) => b.Scope1 - a.Scope1));
 
                 setCaptureData(rawCap.map(d => {
                     const capVol = cleanNumber(d.Capture_Volume);
@@ -714,7 +751,6 @@ const CcusDashboard = () => {
     const fUtil = useMemo(() => utilizationData.filter(d => selectedYear === 'ALL' || d.Year === selectedYear), [utilizationData, selectedYear]);
     const fStorage = useMemo(() => storageData.filter(d => selectedYear === 'ALL' || d.Year === selectedYear), [storageData, selectedYear]);
 
-    // 計算 Scope 1 區域統計
     const scope1Stats = useMemo(() => {
         let total = 0;
         const zones = {};
@@ -842,6 +878,7 @@ const CcusDashboard = () => {
                                                     <td className="p-2 text-right font-mono font-bold text-rose-600">{row.Scope1.toLocaleString()}</td>
                                                 </tr>
                                             ))}
+                                            {scope1Data.length === 0 && <tr><td colSpan={4} className="p-4 text-center text-slate-400">目前無資料或讀取失敗，請確認 CSV 連結</td></tr>}
                                         </tbody>
                                     </table>
                                 </div>
