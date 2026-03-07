@@ -5,7 +5,7 @@ import {
 } from 'recharts';
 import { 
   Leaf, RefreshCw, Target, Activity, MapPin, DollarSign, Box, AlertTriangle, 
-  Truck, Ship, GripHorizontal, FlaskConical, Plus, ZoomIn, ZoomOut, Maximize, Hand, Factory, List, Rocket, Map, Route, Anchor
+  Truck, Ship, GripHorizontal, FlaskConical, Plus, ZoomIn, ZoomOut, Maximize, Hand, Factory, List, Rocket, Map, Route, Anchor, Layers
 } from 'lucide-react';
 
 const CCUS_DATA_SOURCES = {
@@ -72,7 +72,6 @@ const parseCSV = (text) => {
     });
 };
 
-// 計算兩點之間的 Haversine 直線距離
 const calcDistanceKm = (lat1, lon1, lat2, lon2) => {
     const R = 6371; 
     const dLat = (lat2 - lat1) * Math.PI / 180; const dLon = (lon2 - lon1) * Math.PI / 180;
@@ -80,16 +79,31 @@ const calcDistanceKm = (lat1, lon1, lat2, lon2) => {
     return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
 };
 
-// 模擬 Google Maps 陸運管線與海運路徑的彎曲度加權 (Tortuosity Factor)
 const estimateRoutingDistance = (lat1, lon1, lat2, lon2, isSeaRoute = false) => {
     const straightDistance = calcDistanceKm(lat1, lon1, lat2, lon2);
-    // 陸路管線需避開地形/市區，距離通常是直線的 1.35 倍
-    // 海運航線相對平直，約為直線的 1.1 倍
     const factor = isSeaRoute ? 1.1 : 1.35;
     return straightDistance * factor;
 };
 
 // --- 工業區與地圖座標底層函數 ---
+const getRefinedRegion = (plantName, companyName) => {
+    const p = String(plantName || '').trim();
+    const c = String(companyName || '').trim();
+    const full = `${c} ${p}`;
+    if (full.includes('長春') && (p.includes('二廠') || p.includes('苗栗二'))) return '北區';
+    if (c.includes('台灣化纖') || c.includes('台化') || c.includes('台塑科騰')) return '中區';
+    if (p.match(/(仁武|大社|林園|小港|大發|大林|高雄|屏東|台南|嘉義|南科|善化)/)) return '南區';
+    if (p.match(/(麥寮|六輕|彰濱|線西|中龍|頭份|苗栗|台中|彰化|南投|雲林)/)) return '中區';
+    if (p.match(/(桃園|觀音|大園|桃煉|新北|台北|基隆|新竹)/)) return '北區';
+    if (c.includes('大連') && p.includes('大發')) return '南區'; 
+    if (c.includes('李長榮') && p.includes('高雄')) return '南區'; 
+    if (c.includes('國喬') && p.includes('高雄')) return '南區'; 
+    if (c.includes('中油') && (p.includes('大林') || p.includes('石化') || p.includes('林園'))) return '南區'; 
+    if (c.includes('中油') && p.includes('桃園')) return '北區';
+    if (c.includes('台灣石化') || c.includes('台苯')) return '南區';
+    return '其他';
+};
+
 const getIndustrialZone = (plant, company) => {
     const p = String(plant || '').trim();
     const c = String(company || '').trim();
@@ -130,7 +144,6 @@ const CCS_HUBS = {
     'NORTH_HUB': { name: '林口外海', type: '🛢️ 本土外海封存', lat: 25.18, lon: 121.30, region: '北區' },
     'CENTRAL_HUB_1': { name: '台中港外海', type: '🛢️ 本土外海封存', lat: 24.30, lon: 120.40, region: '中區' },
     'CENTRAL_HUB_2': { name: '麥寮工業區外海', type: '🛢️ 本土外海封存', lat: 23.85, lon: 120.10, region: '中區' },
-    // 將座標設定在西南海域，產生視覺上的向南指引
     'SOUTH_HUB': { name: '東南亞 (印尼/馬來西亞)', type: '🚢 跨國海運封存', lat: 21.5, lon: 119.8, region: '南區' } 
 };
 
@@ -213,13 +226,12 @@ const TaiwanCcusMap = ({ mode = 'capture', captureData = [], utilData = [], stor
             if (z.Region === '南區') targetHub = CCS_HUBS['SOUTH_HUB'];
             else if (z.Region === '北區') targetHub = CCS_HUBS['NORTH_HUB'];
             else if (z.Region === '中區') {
-                if (z.lat > 24.1) targetHub = CCS_HUBS['CENTRAL_HUB_1']; // 台中/彰北
-                else targetHub = CCS_HUBS['CENTRAL_HUB_2']; // 雲林/彰南
+                if (z.lat > 24.1) targetHub = CCS_HUBS['CENTRAL_HUB_1']; 
+                else targetHub = CCS_HUBS['CENTRAL_HUB_2']; 
             }
 
             if (targetHub) {
                 const isSeaRoute = targetHub.name.includes('東南亞');
-                // 加入 Google Map 風格的距離權重計算
                 const distance = estimateRoutingDistance(z.lat, z.lon, targetHub.lat, targetHub.lon, isSeaRoute);
                 routes.push({
                     from: { lat: z.lat, lon: z.lon, name: z.name },
@@ -286,8 +298,6 @@ const TaiwanCcusMap = ({ mode = 'capture', captureData = [], utilData = [], stor
                         </div>
                     </div>
                 )}
-
-                {/* 其他 Tooltips 沿用... */}
             </div>
 
             <div className="absolute top-4 right-4 z-10 flex flex-col gap-2 bg-white/95 p-1.5 rounded-lg shadow-sm border border-slate-200 backdrop-blur">
@@ -308,7 +318,7 @@ const TaiwanCcusMap = ({ mode = 'capture', captureData = [], utilData = [], stor
                             {ccsTopology.routes.map((route, i) => {
                                 const [x1, y1] = projectBase(route.from.lon, route.from.lat);
                                 const [x2, y2] = projectBase(route.to.lon, route.to.lat);
-                                if (x1 === -9999) return null;
+                                if (x1 === -9999 || x2 === -9999) return null;
                                 const midX = (x1 + x2) / 2;
                                 const midY = (y1 + y2) / 2;
                                 return (
@@ -325,7 +335,7 @@ const TaiwanCcusMap = ({ mode = 'capture', captureData = [], utilData = [], stor
                             {/* 2. 畫樞紐接收站 */}
                             {Object.values(CCS_HUBS).map((hub, i) => {
                                 const [cx, cy] = projectBase(hub.lon, hub.lat);
-                                const isHovered = hoveredNode && hoveredNode.name === hub.name;
+                                if (cx === -9999) return null;
                                 return (
                                     <g key={`hub-${i}`} className="cursor-pointer" onMouseEnter={() => setHoveredNode({...hub, type: 'hub', hubType: hub.type})} onMouseLeave={() => setHoveredNode(null)}>
                                         <rect x={cx - 10/zoom} y={cy - 10/zoom} width={20/zoom} height={20/zoom} fill="#0ea5e9" stroke="white" strokeWidth={2/zoom} style={{ filter: 'drop-shadow(0px 3px 4px rgba(0,0,0,0.4))' }} />
@@ -453,26 +463,28 @@ const CcusDashboard = () => {
                 const rawScope1 = parseCSV(txtScope1);
 
                 setScope1Data(rawScope1.map(d => {
-                    const comp = simplifyCompanyName(d['事業名稱']);
-                    const plantRaw = d['事業名稱'].replace(d['公司'] || '', '').replace(comp, ''); 
+                    const rawName = String(d['事業名稱'] || '');
+                    const comp = simplifyCompanyName(rawName);
+                    const plantRaw = rawName.replace(d['公司'] || '', '').replace(comp, ''); 
                     const zone = getIndustrialZone(plantRaw, comp);
                     const coords = getApproximateCoordinates(plantRaw, comp);
                     
                     let region = '其他';
-                    if (d['縣市別'].match(/(台北|新北|桃園|新竹|基隆)/)) region = '北區';
-                    if (d['縣市別'].match(/(苗栗|台中|彰化|雲林|南投)/)) region = '中區';
-                    if (d['縣市別'].match(/(嘉義|台南|高雄|屏東)/)) region = '南區';
+                    const countyStr = String(d['縣市別'] || '');
+                    if (countyStr.match(/(台北|新北|桃園|新竹|基隆)/)) region = '北區';
+                    if (countyStr.match(/(苗栗|台中|彰化|雲林|南投)/)) region = '中區';
+                    if (countyStr.match(/(嘉義|台南|高雄|屏東)/)) region = '南區';
 
-                    // 強制覆寫工業區與區域 (同氫能戰情室防呆)
+                    // 強制覆寫工業區與區域
                     const refinedRegion = getRefinedRegion(plantRaw, comp);
                     if (refinedRegion !== '其他') region = refinedRegion;
 
                     return {
                         Company: comp,
-                        Plant: d['事業名稱'],
+                        Plant: rawName,
                         Scope1: cleanNumber(d['直接排放量(公噸CO2e)']),
                         Industry: d['七大製造業'] || d['行業分類'],
-                        County: d['縣市別'],
+                        County: countyStr,
                         zone: zone,
                         Region: region,
                         lat: coords.lat,
@@ -625,7 +637,7 @@ const CcusDashboard = () => {
                                     </div>
                                 </div>
                                 <div className="flex-1 min-h-0">
-                                    <ResponsiveContainer width="100%" height="100%">
+                                    <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                                         <BarChart data={scope1Stats.topZones.slice(0, 6)} layout="vertical" margin={{top:5, right:40, left:40, bottom:0}}>
                                             <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} />
                                             <XAxis type="number" tickFormatter={v => (v/10000).toFixed(0)} fontSize={10} unit="萬噸"/>
