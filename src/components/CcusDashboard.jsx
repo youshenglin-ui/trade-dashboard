@@ -252,7 +252,7 @@ const TaiwanCcusMap = ({ mode = 'capture', captureData = [], utilData = [], stor
         const zoneMap = {};
         scope1Data.forEach(d => {
             if (!zoneMap[d.zone]) zoneMap[d.zone] = { name: d.zone, emissions: 0, lat: 0, lon: 0, count: 0, Region: d.Region };
-            zoneMap[d.zone].emissions += d.TotalScope; // 改用總排放量
+            zoneMap[d.zone].emissions += d.TotalScope; 
             zoneMap[d.zone].lat += d.lat;
             zoneMap[d.zone].lon += d.lon;
             zoneMap[d.zone].count += 1;
@@ -270,7 +270,6 @@ const TaiwanCcusMap = ({ mode = 'capture', captureData = [], utilData = [], stor
         // 1. 計算支線：各廠區 -> 工業區聚落中心
         scope1Data.forEach(d => {
             const z = zoneMap[d.zone];
-            // 若廠區座標與中心點有點距離才畫線
             if (z && (Math.abs(d.lat - z.lat) > 0.01 || Math.abs(d.lon - z.lon) > 0.01)) {
                 branchRoutes.push({
                     from: { lat: d.lat, lon: d.lon, name: d.Plant },
@@ -898,18 +897,38 @@ const CcusDashboard = () => {
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch min-h-[850px]">
-                        {/* 左側地圖 */}
-                        <div className="lg:col-span-5 bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col h-full">
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                        {/* 左側地圖 (加大空間) */}
+                        <div className="lg:col-span-7 bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col h-[650px]">
                             <h3 className="font-bold text-slate-700 text-sm mb-4 border-b pb-2 flex items-center gap-2"><Map size={16} className="text-indigo-500"/> CCS 案場與共通管線拓樸分析</h3>
-                            <ErrorBoundary>
-                                <TaiwanCcusMap mode="planning" scope1Data={scope1Data} mapPaths={mapPaths} />
-                            </ErrorBoundary>
+                            <div className="flex-1 w-full h-full relative min-h-0">
+                                <ErrorBoundary>
+                                    <TaiwanCcusMap mode="planning" scope1Data={scope1Data} mapPaths={mapPaths} />
+                                </ErrorBoundary>
+                            </div>
                         </div>
 
-                        {/* 右側分析與清單 */}
-                        <div className="lg:col-span-7 flex flex-col gap-6 h-full">
-                            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col h-[350px]">
+                        {/* 右側分析 (文字與圖表) */}
+                        <div className="lg:col-span-5 flex flex-col gap-6 h-[650px]">
+                            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col">
+                                <h3 className="font-bold text-slate-700 text-sm mb-3 border-b pb-2 flex items-center gap-2"><Route size={16} className="text-sky-500"/> 區域管線佈建可行性分析</h3>
+                                <div className="flex flex-col gap-2 overflow-y-auto pr-2 custom-scrollbar max-h-[200px]">
+                                    <div className="bg-slate-50 p-3 rounded border border-slate-200">
+                                        <div className="text-xs font-bold text-slate-500 mb-1">【南區】跨國海運</div>
+                                        <div className="text-xs text-slate-600 leading-relaxed">缺乏合適本土封存場址。建議將大發、林園等高排碳區透過陸運/管線集中至高雄港，再以船運送往東南亞 (如印尼/馬來西亞) 進行跨國封存。</div>
+                                    </div>
+                                    <div className="bg-slate-50 p-3 rounded border border-slate-200">
+                                        <div className="text-xs font-bold text-slate-500 mb-1">【中區】本土封存潛力</div>
+                                        <div className="text-xs text-slate-600 leading-relaxed">具備本土封存優勢。台中與彰化區域可就近利用「台中港外海」；雲林麥寮等超大排放源可直接利用「麥寮工業區外海」發展本土海域 CCS 封存示範場域。</div>
+                                    </div>
+                                    <div className="bg-slate-50 p-3 rounded border border-slate-200">
+                                        <div className="text-xs font-bold text-slate-500 mb-1">【北區】林口封存</div>
+                                        <div className="text-xs text-slate-600 leading-relaxed">排放源相對分散。主要集中於桃園/新竹，可評估向北延伸管線至「林口外海」進行封存。</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex-1 flex flex-col min-h-0">
                                 <h3 className="font-bold text-slate-700 text-sm mb-3 border-b pb-2 flex items-center gap-2"><Layers size={16} className="text-sky-500"/> 工業區/縣市聚落 排放量分析</h3>
                                 <div className="flex-1 min-h-0 w-full relative">
                                     <ErrorBoundary>
@@ -932,50 +951,51 @@ const CcusDashboard = () => {
                                     </ErrorBoundary>
                                 </div>
                             </div>
+                        </div>
+                    </div>
 
-                            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex-1 flex flex-col min-h-0">
-                                <div className="flex flex-wrap justify-between items-center mb-3 border-b pb-2 gap-4">
-                                    <h3 className="font-bold text-slate-700 text-sm flex items-center gap-2"><List size={16} className="text-rose-500"/> 排放點源清單 (擷取自最新上傳資料)</h3>
-                                    <div className="flex gap-2">
-                                        <div className="flex items-center gap-2 bg-slate-50 px-2 py-1 rounded border border-slate-200 text-xs">
-                                            <Filter size={12} className="text-slate-400"/>
-                                            <select value={listRegion} onChange={e => setListRegion(e.target.value)} className="bg-transparent font-bold text-slate-600 outline-none">
-                                                <option value="ALL">全台區域</option><option value="北區">北區</option><option value="中區">中區</option><option value="南區">南區</option>
-                                            </select>
-                                        </div>
-                                        <div className="flex items-center gap-2 bg-slate-50 px-2 py-1 rounded border border-slate-200 text-xs">
-                                            <Filter size={12} className="text-slate-400"/>
-                                            <select value={listIndustry} onChange={e => setListIndustry(e.target.value)} className="bg-transparent font-bold text-slate-600 outline-none max-w-[120px]">
-                                                {availableIndustries.map(ind => <option key={ind} value={ind}>{ind === 'ALL' ? '所有產業' : ind}</option>)}
-                                            </select>
-                                        </div>
-                                    </div>
+                    {/* 下方完整寬度：排放點源清單 */}
+                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col mt-6">
+                        <div className="flex flex-wrap justify-between items-center mb-3 border-b pb-2 gap-4">
+                            <h3 className="font-bold text-slate-700 text-sm flex items-center gap-2"><List size={16} className="text-rose-500"/> 排放點源清單 (擷取自最新上傳資料)</h3>
+                            <div className="flex gap-2">
+                                <div className="flex items-center gap-2 bg-slate-50 px-2 py-1 rounded border border-slate-200 text-xs">
+                                    <Filter size={12} className="text-slate-400"/>
+                                    <select value={listRegion} onChange={e => setListRegion(e.target.value)} className="bg-transparent font-bold text-slate-600 outline-none">
+                                        <option value="ALL">全台區域</option><option value="北區">北區</option><option value="中區">中區</option><option value="南區">南區</option>
+                                    </select>
                                 </div>
-                                <div className="flex-1 overflow-auto custom-scrollbar">
-                                    <table className="w-full text-xs text-left">
-                                        <thead className="bg-slate-100 sticky top-0 shadow-sm z-10">
-                                            <tr>
-                                                <th className="p-3">事業名稱</th><th className="p-3">縣市</th><th className="p-3">行業</th><th className="p-3">所屬聚落</th>
-                                                <th className="p-3 text-right">範疇一(噸)</th><th className="p-3 text-right text-slate-500">範疇二(噸)</th><th className="p-3 text-right font-bold">總計(噸)</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-slate-100">
-                                            {filteredScope1Data.map((row, i) => (
-                                                <tr key={i} className="hover:bg-rose-50 transition-colors">
-                                                    <td className="p-3 font-bold text-slate-700">{row.Plant}</td>
-                                                    <td className="p-3">{row.County}</td>
-                                                    <td className="p-3 text-slate-500">{row.Industry}</td>
-                                                    <td className="p-3 text-blue-600">{row.zone}</td>
-                                                    <td className="p-3 text-right font-mono text-rose-600">{row.Scope1.toLocaleString()}</td>
-                                                    <td className="p-3 text-right font-mono text-slate-400">{row.Scope2.toLocaleString()}</td>
-                                                    <td className="p-3 text-right font-mono font-bold text-rose-800">{row.TotalScope.toLocaleString()}</td>
-                                                </tr>
-                                            ))}
-                                            {filteredScope1Data.length === 0 && <tr><td colSpan={7} className="p-8 text-center text-slate-400">找不到符合條件的點源資料，請調整篩選器或確認資料來源。</td></tr>}
-                                        </tbody>
-                                    </table>
+                                <div className="flex items-center gap-2 bg-slate-50 px-2 py-1 rounded border border-slate-200 text-xs">
+                                    <Filter size={12} className="text-slate-400"/>
+                                    <select value={listIndustry} onChange={e => setListIndustry(e.target.value)} className="bg-transparent font-bold text-slate-600 outline-none max-w-[120px]">
+                                        {availableIndustries.map(ind => <option key={ind} value={ind}>{ind === 'ALL' ? '所有產業' : ind}</option>)}
+                                    </select>
                                 </div>
                             </div>
+                        </div>
+                        <div className="overflow-y-auto custom-scrollbar max-h-[500px]">
+                            <table className="w-full text-xs text-left relative">
+                                <thead className="bg-slate-100 sticky top-0 shadow-sm z-10">
+                                    <tr>
+                                        <th className="p-3">事業名稱</th><th className="p-3">縣市</th><th className="p-3">行業</th><th className="p-3">所屬聚落</th>
+                                        <th className="p-3 text-right">範疇一(噸)</th><th className="p-3 text-right text-slate-500">範疇二(噸)</th><th className="p-3 text-right font-bold">總計(噸)</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {filteredScope1Data.map((row, i) => (
+                                        <tr key={i} className="hover:bg-rose-50 transition-colors">
+                                            <td className="p-3 font-bold text-slate-700">{row.Plant}</td>
+                                            <td className="p-3">{row.County}</td>
+                                            <td className="p-3 text-slate-500">{row.Industry}</td>
+                                            <td className="p-3 text-blue-600">{row.zone}</td>
+                                            <td className="p-3 text-right font-mono text-rose-600">{row.Scope1.toLocaleString()}</td>
+                                            <td className="p-3 text-right font-mono text-slate-400">{row.Scope2.toLocaleString()}</td>
+                                            <td className="p-3 text-right font-mono font-bold text-rose-800">{row.TotalScope.toLocaleString()}</td>
+                                        </tr>
+                                    ))}
+                                    {filteredScope1Data.length === 0 && <tr><td colSpan={7} className="p-8 text-center text-slate-400">找不到符合條件的點源資料，請調整篩選器或確認資料來源。</td></tr>}
+                                </tbody>
+                            </table>
                         </div>
                     </div>
                 </div>
