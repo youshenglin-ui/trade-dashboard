@@ -5,14 +5,13 @@ import {
 } from 'recharts';
 import { 
   Leaf, RefreshCw, Target, Activity, MapPin, DollarSign, Box, AlertTriangle, 
-  Truck, Ship, GripHorizontal, FlaskConical, Plus, ZoomIn, ZoomOut, Maximize, Hand, Factory, List, Rocket, Map, Route, Anchor, Layers, Filter
+  Truck, Ship, GripHorizontal, FlaskConical, Plus, ZoomIn, ZoomOut, Maximize, Hand, Factory, List, Rocket, Map, Route, Anchor, Layers, Filter, PieChart as PieChartIcon
 } from 'lucide-react';
 
 const CCUS_DATA_SOURCES = {
   CAPTURE: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSJ8aZTek-9SoTaK7Z_Wu9InU2c_vu4cUpD0Nn4fCs-w0IM3XoWeNXK5ZldWoEs6M3G6mJTS6QoF4Mo/pub?gid=388581449&single=true&output=csv',
   UTILIZATION: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSJ8aZTek-9SoTaK7Z_Wu9InU2c_vu4cUpD0Nn4fCs-w0IM3XoWeNXK5ZldWoEs6M3G6mJTS6QoF4Mo/pub?gid=1496771601&single=true&output=csv',
   STORAGE: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSJ8aZTek-9SoTaK7Z_Wu9InU2c_vu4cUpD0Nn4fCs-w0IM3XoWeNXK5ZldWoEs6M3G6mJTS6QoF4Mo/pub?gid=1902888591&single=true&output=csv',
-  // 對接最新版 505 家碳排真實資料
   SCOPE1_URL: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSJ8aZTek-9SoTaK7Z_Wu9InU2c_vu4cUpD0Nn4fCs-w0IM3XoWeNXK5ZldWoEs6M3G6mJTS6QoF4Mo/pub?gid=2122803569&single=true&output=csv'
 };
 
@@ -40,7 +39,8 @@ export const simplifyCompanyName = (name) => {
       '大連化學工業': '大連化學',
       '李長榮化學工業': '李長榮',
       '國喬石油化學': '國喬',
-      '南亞塑膠工業': '南亞塑膠'
+      '南亞塑膠工業': '南亞塑膠',
+      '台鹽實業': '台鹽'
   };
   for (const [full, short] of Object.entries(mapping)) {
       if (n.includes(full)) return short;
@@ -56,7 +56,6 @@ const stringToColor = (str) => {
     return COLORS_POOL[Math.abs(hash) % COLORS_POOL.length];
 };
 
-// 升級版 CSV 解析器，完美支援包含換行與引號的 Google Sheets 匯出格式
 const parseCSV = (text) => {
     if (!text || text.includes('<!DOCTYPE html>')) return [];
     
@@ -152,15 +151,21 @@ const getIndustrialZone = (plant, company, county) => {
     if (p.includes('頭份') || (c.includes('長春') && p.includes('苗栗'))) return '苗栗-頭份工業區';
     if (full.includes('南科') || full.includes('台積電') || p.includes('18廠')) return '台南-南部科學園區';
     
-    // 防呆機制：若無特定工業區，以縣市聚落命名，減少「其他獨立廠區」的佔比
     if (cty) return `${cty}工業聚落`;
-    
     return '其他獨立廠區';
 };
 
 const getApproximateCoordinates = (plant, company, county) => {
     const n = `${String(company || '')} ${String(plant || '')}`;
     const cty = String(county || '');
+
+    // 特殊校正：台鹽實業 (通霄廠為主)
+    if (company?.includes('台鹽')) {
+        if (plant.includes('通霄') || cty.includes('苗栗')) return { lat: 24.54, lon: 120.67 };
+        if (cty.includes('台南')) return { lat: 23.14, lon: 120.10 };
+        return { lat: 24.54, lon: 120.67 }; 
+    }
+
     if (company?.includes('台化') && plant?.includes('台北')) return { lat: 23.78, lon: 120.18 };
     if (company?.includes('台塑科騰')) return { lat: 23.783, lon: 120.179 };
     if (company?.includes('李長榮') && plant?.includes('高雄')) return { lat: 22.538, lon: 120.343 }; 
@@ -176,24 +181,27 @@ const getApproximateCoordinates = (plant, company, county) => {
     if (n.includes('頭份') || n.includes('長春') || n.includes('苗栗')) return { lat: 24.68, lon: 120.91 };
     if (n.includes('桃園') || n.includes('觀音') || n.includes('桃煉') || n.includes('工三')) return { lat: 25.03, lon: 121.12 };
     
-    // 若無明確廠區，依據縣市給予概略中心點
-    if (cty.includes('台北') || cty.includes('新北')) return { lat: 25.03, lon: 121.45 };
-    if (cty.includes('桃園')) return { lat: 24.95, lon: 121.20 };
-    if (cty.includes('新竹')) return { lat: 24.80, lon: 121.00 };
-    if (cty.includes('台中')) return { lat: 24.20, lon: 120.60 };
-    if (cty.includes('彰化')) return { lat: 24.00, lon: 120.45 };
-    if (cty.includes('雲林')) return { lat: 23.75, lon: 120.35 };
-    if (cty.includes('台南')) return { lat: 23.15, lon: 120.25 };
-    if (cty.includes('高雄')) return { lat: 22.65, lon: 120.35 };
+    // 微調偏移避免完全重疊
+    const offset = () => (Math.random() - 0.5) * 0.05;
+    if (cty.includes('台北') || cty.includes('新北')) return { lat: 25.03 + offset(), lon: 121.45 + offset() };
+    if (cty.includes('桃園')) return { lat: 24.95 + offset(), lon: 121.20 + offset() };
+    if (cty.includes('新竹')) return { lat: 24.80 + offset(), lon: 121.00 + offset() };
+    if (cty.includes('台中')) return { lat: 24.20 + offset(), lon: 120.60 + offset() };
+    if (cty.includes('彰化')) return { lat: 24.00 + offset(), lon: 120.45 + offset() };
+    if (cty.includes('雲林')) return { lat: 23.75 + offset(), lon: 120.35 + offset() };
+    if (cty.includes('嘉義')) return { lat: 23.45 + offset(), lon: 120.30 + offset() };
+    if (cty.includes('台南')) return { lat: 23.15 + offset(), lon: 120.25 + offset() };
+    if (cty.includes('高雄')) return { lat: 22.65 + offset(), lon: 120.35 + offset() };
     
     return { lat: 23.6, lon: 120.9 }; 
 };
 
+// 四大封存與接收樞紐
 const CCS_HUBS = {
-    'NORTH_HUB': { name: '林口外海', type: '🛢️ 本土外海封存', lat: 25.18, lon: 121.30, region: '北區' },
-    'CENTRAL_HUB_1': { name: '台中港外海', type: '🛢️ 本土外海封存', lat: 24.30, lon: 120.40, region: '中區' },
-    'CENTRAL_HUB_2': { name: '麥寮工業區外海', type: '🛢️ 本土外海封存', lat: 23.85, lon: 120.10, region: '中區' },
-    'SOUTH_HUB': { name: '東南亞 (印尼/馬來西亞)', type: '🚢 跨國海運外銷', lat: 21.8, lon: 119.8, region: '南區' } 
+    'NORTH_HUB': { name: '林口外海', type: '🛢️ 本土外海封存', lat: 25.12, lon: 121.28, region: '北區' },
+    'CENTRAL_HUB_1': { name: '台中港外海', type: '🛢️ 本土外海封存', lat: 24.25, lon: 120.45, region: '中區' },
+    'CENTRAL_HUB_2': { name: '麥寮工業區外海', type: '🛢️ 本土外海封存', lat: 23.80, lon: 120.10, region: '中區' },
+    'SOUTH_HUB': { name: '高雄港接收站 (往東南亞)', type: '🚢 海洋接收外銷', lat: 22.55, lon: 120.25, region: '南區' } 
 };
 
 class ErrorBoundary extends React.Component {
@@ -219,6 +227,18 @@ export const projectBase = (lon, lat) => {
         (lon - MAP_CONSTANTS.centerLon) * MAP_CONSTANTS.baseScale, 
         -(lat - MAP_CONSTANTS.centerLat) * MAP_CONSTANTS.baseScale * 1.1
     ];
+};
+
+// 生成具備樹枝/幹道彎曲視覺的 SVG Path
+const generateTreePath = (x1, y1, x2, y2, isBranch) => {
+    if (isBranch) {
+        // 支線：呈現如市區道路般的彎曲 (Quadratic Bezier)
+        return `M ${x1} ${y1} Q ${x1} ${y2}, ${x2} ${y2}`;
+    } else {
+        // 主管線：呈現長途幹道的平滑曲線 (Cubic Bezier)
+        const midY = (y1 + y2) / 2;
+        return `M ${x1} ${y1} C ${x1} ${midY}, ${x2} ${midY}, ${x2} ${y2}`;
+    }
 };
 
 // ==========================================
@@ -252,13 +272,13 @@ const TaiwanCcusMap = ({ mode = 'capture', captureData = [], utilData = [], stor
         const zoneMap = {};
         scope1Data.forEach(d => {
             if (!zoneMap[d.zone]) zoneMap[d.zone] = { name: d.zone, emissions: 0, lat: 0, lon: 0, count: 0, Region: d.Region };
-            zoneMap[d.zone].emissions += d.TotalScope; 
+            // CCS 管線規劃只考慮範疇一 (Scope 1)
+            zoneMap[d.zone].emissions += d.Scope1; 
             zoneMap[d.zone].lat += d.lat;
             zoneMap[d.zone].lon += d.lon;
             zoneMap[d.zone].count += 1;
         });
 
-        // 計算各聚落的幾何中心點 (Zone Center)
         Object.values(zoneMap).forEach(z => {
             z.lat /= z.count;
             z.lon /= z.count;
@@ -267,10 +287,10 @@ const TaiwanCcusMap = ({ mode = 'capture', captureData = [], utilData = [], stor
         const mainRoutes = [];
         const branchRoutes = [];
 
-        // 1. 計算支線：各廠區 -> 工業區聚落中心
+        // 1. 支線：各廠區 -> 工業區聚落中心
         scope1Data.forEach(d => {
             const z = zoneMap[d.zone];
-            if (z && (Math.abs(d.lat - z.lat) > 0.01 || Math.abs(d.lon - z.lon) > 0.01)) {
+            if (z && (Math.abs(d.lat - z.lat) > 0.002 || Math.abs(d.lon - z.lon) > 0.002)) {
                 branchRoutes.push({
                     from: { lat: d.lat, lon: d.lon, name: d.Plant },
                     to: { lat: z.lat, lon: z.lon, name: z.name }
@@ -278,19 +298,21 @@ const TaiwanCcusMap = ({ mode = 'capture', captureData = [], utilData = [], stor
             }
         });
 
-        // 2. 計算主管線：工業區聚落中心 -> 海岸樞紐
+        // 2. 主管線：工業區聚落中心 -> 最近且同區的海港樞紐
         Object.values(zoneMap).forEach(z => {
             let targetHub = null;
+            
+            // 強制南區往高雄港、北區往林口
             if (z.Region === '南區') targetHub = CCS_HUBS['SOUTH_HUB'];
             else if (z.Region === '北區') targetHub = CCS_HUBS['NORTH_HUB'];
             else if (z.Region === '中區') {
+                // 中區依據緯度分配給台中港或麥寮
                 if (z.lat > 24.1) targetHub = CCS_HUBS['CENTRAL_HUB_1']; 
                 else targetHub = CCS_HUBS['CENTRAL_HUB_2']; 
             }
 
             if (targetHub) {
-                const isSeaRoute = targetHub.name.includes('東南亞');
-                const distance = estimateRoutingDistance(z.lat, z.lon, targetHub.lat, targetHub.lon, isSeaRoute);
+                const distance = estimateRoutingDistance(z.lat, z.lon, targetHub.lat, targetHub.lon, false);
                 mainRoutes.push({
                     from: { lat: z.lat, lon: z.lon, name: z.name },
                     to: { lat: targetHub.lat, lon: targetHub.lon, name: targetHub.name },
@@ -336,12 +358,12 @@ const TaiwanCcusMap = ({ mode = 'capture', captureData = [], utilData = [], stor
                                     <span className="font-mono font-black text-rose-600 text-sm">{(hoveredNode.TotalScope / 10000).toFixed(1)} <span className="text-[10px] font-normal">萬噸</span></span>
                                 </div>
                                 <div className="flex justify-between items-center text-xs mt-1 pt-1 border-t border-rose-200/50">
-                                    <span className="text-rose-600">範疇一 (直接)</span>
-                                    <span className="font-mono text-rose-500">{(hoveredNode.Scope1 / 10000).toFixed(1)} 萬噸</span>
+                                    <span className="text-rose-600 font-bold">範疇一 (可CCS捕捉)</span>
+                                    <span className="font-mono text-rose-600 font-bold">{(hoveredNode.Scope1 / 10000).toFixed(1)} 萬噸</span>
                                 </div>
                                 <div className="flex justify-between items-center text-xs">
-                                    <span className="text-rose-600">範疇二 (間接)</span>
-                                    <span className="font-mono text-rose-500">{(hoveredNode.Scope2 / 10000).toFixed(1)} 萬噸</span>
+                                    <span className="text-slate-500">範疇二 (間接)</span>
+                                    <span className="font-mono text-slate-500">{(hoveredNode.Scope2 / 10000).toFixed(1)} 萬噸</span>
                                 </div>
                             </div>
                         </div>
@@ -444,17 +466,17 @@ const TaiwanCcusMap = ({ mode = 'capture', captureData = [], utilData = [], stor
                     {/* === 規劃模式 (CCS Planning) === */}
                     {mode === 'planning' && (
                         <>
-                            {/* 1. 畫管線拓樸 (支線：細實線) */}
+                            {/* 1. 畫管線拓樸 (支線：樹枝狀貝茲曲線) */}
                             {ccsTopology.branchRoutes.map((route, i) => {
                                 const [x1, y1] = projectBase(route.from.lon, route.from.lat);
                                 const [x2, y2] = projectBase(route.to.lon, route.to.lat);
                                 if (x1 === -9999 || x2 === -9999) return null;
                                 return (
-                                    <line key={`branch-${i}`} x1={x1} y1={y1} x2={x2} y2={y2} stroke="#94a3b8" strokeWidth={1.5/zoom} opacity={0.5} />
+                                    <path key={`branch-${i}`} d={generateTreePath(x1, y1, x2, y2, true)} stroke="#94a3b8" strokeWidth={1.5/zoom} fill="none" opacity={0.6} />
                                 );
                             })}
 
-                            {/* 2. 畫管線拓樸 (主管線：粗虛線) */}
+                            {/* 2. 畫管線拓樸 (主管線：平滑曲線幹道) */}
                             {ccsTopology.mainRoutes.map((route, i) => {
                                 const [x1, y1] = projectBase(route.from.lon, route.from.lat);
                                 const [x2, y2] = projectBase(route.to.lon, route.to.lat);
@@ -463,10 +485,10 @@ const TaiwanCcusMap = ({ mode = 'capture', captureData = [], utilData = [], stor
                                 const midY = (y1 + y2) / 2;
                                 return (
                                     <g key={`main-route-${i}`}>
-                                        <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#3b82f6" strokeWidth={Math.max(2, Math.log10(route.weight/10000))/zoom} strokeDasharray={`${8/zoom} ${6/zoom}`} opacity={0.8}/>
+                                        <path d={generateTreePath(x1, y1, x2, y2, false)} stroke="#3b82f6" strokeWidth={Math.max(2, Math.log10(route.weight/10000))/zoom} strokeDasharray={`${6/zoom} ${4/zoom}`} fill="none" opacity={0.85}/>
                                         <circle cx={x1} cy={y1} r={4/zoom} fill="#3b82f6"/>
                                         <text x={midX} y={midY - (4/zoom)} fontSize={10/zoom} fill="#1e40af" textAnchor="middle" fontWeight="bold" style={{textShadow: '0 0 3px white', pointerEvents: 'none'}}>
-                                            主線預估 {route.distance.toFixed(0)} km
+                                            {route.distance.toFixed(0)} km
                                         </text>
                                     </g>
                                 );
@@ -484,11 +506,11 @@ const TaiwanCcusMap = ({ mode = 'capture', captureData = [], utilData = [], stor
                                 );
                             })}
 
-                            {/* 4. 畫排放源頭 (Scope 1) */}
+                            {/* 4. 畫排放源頭 (限 Scope 1) */}
                             {scope1Data.map((d, i) => {
                                 const [cx, cy] = projectBase(d.lon, d.lat);
                                 if (cx === -9999) return null;
-                                const r = Math.max(5, Math.min(25, Math.sqrt(d.TotalScope / 50000))) / zoom;
+                                const r = Math.max(4, Math.min(20, Math.sqrt(d.Scope1 / 50000))) / zoom;
                                 const isHovered = hoveredNode === d;
                                 return (
                                     <g key={`s1-${i}`} className="cursor-pointer transition-all" onMouseEnter={() => setHoveredNode({...d, type: 'source'})} onMouseLeave={() => setHoveredNode(null)}>
@@ -580,9 +602,11 @@ const TaiwanCcusMap = ({ mode = 'capture', captureData = [], utilData = [], stor
                 {mode === 'planning' && (
                     <div className="space-y-1.5">
                         <div className="flex items-center gap-2"><div className="w-3 h-3 bg-sky-500 border border-white"></div> 海洋接收站 / 本土封存樞紐</div>
-                        <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-rose-600 border border-white shadow"></div> 範疇一+二 列管排碳點源</div>
-                        <div className="flex items-center gap-2"><div className="w-6 h-0 border-t-2 border-blue-500 border-dashed"></div> 擬真 GoogleMap 主管線距離預估</div>
-                        <div className="flex items-center gap-2"><div className="w-6 h-0 border-t border-slate-400"></div> 工廠至區域中心支線</div>
+                        <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-rose-600 border border-white shadow"></div> 範疇一排碳大戶 (依 Scope1 比例)</div>
+                        <div className="flex items-center gap-2"><div className="w-6 h-0 border-t-2 border-blue-500 border-dashed"></div> 擬真 GoogleMap 主管線預估</div>
+                        <div className="flex items-center gap-2">
+                            <svg width="24" height="6" className="overflow-visible"><path d="M 0 3 Q 12 3, 24 -3" stroke="#94a3b8" strokeWidth="2" fill="none"/></svg> 廠區至聚落中心支線
+                        </div>
                     </div>
                 )}
                 {mode === 'capture' && <div><span className="font-bold text-slate-800">彩色實心圓點:</span> 現有捕捉源 (半徑正比於捕捉量)</div>}
@@ -825,18 +849,33 @@ const CcusDashboard = () => {
     const scope1Stats = useMemo(() => {
         let totalS1 = 0, totalS2 = 0, total = 0;
         const zones = {};
+        const industryMap = {};
+        
         scope1Data.forEach(d => {
             totalS1 += d.Scope1;
             totalS2 += d.Scope2;
             total += d.TotalScope;
+            
+            // 計算工業區/聚落
             if(!zones[d.zone]) zones[d.zone] = { name: d.zone, Scope1: 0, Scope2: 0, Total: 0, region: d.Region };
             zones[d.zone].Scope1 += d.Scope1;
             zones[d.zone].Scope2 += d.Scope2;
             zones[d.zone].Total += d.TotalScope;
+            
+            // 計算產業別 (僅計算範疇一)
+            const ind = d.Industry || '其他產業';
+            if(!industryMap[ind]) industryMap[ind] = 0;
+            industryMap[ind] += d.Scope1;
         });
+        
+        const industryStats = Object.keys(industryMap)
+            .map(k => ({ name: k, value: industryMap[k] }))
+            .sort((a,b) => b.value - a.value);
+
         return {
             total, totalS1, totalS2,
-            topZones: Object.values(zones).sort((a,b)=>b.Total - a.Total)
+            topZones: Object.values(zones).sort((a,b)=>b.Total - a.Total),
+            industryStats
         };
     }, [scope1Data]);
 
@@ -897,7 +936,7 @@ const CcusDashboard = () => {
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch min-h-[850px]">
                         {/* 左側地圖 (加大空間) */}
                         <div className="lg:col-span-7 bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col h-[650px]">
                             <h3 className="font-bold text-slate-700 text-sm mb-4 border-b pb-2 flex items-center gap-2"><Map size={16} className="text-indigo-500"/> CCS 案場與共通管線拓樸分析</h3>
@@ -914,37 +953,35 @@ const CcusDashboard = () => {
                                 <h3 className="font-bold text-slate-700 text-sm mb-3 border-b pb-2 flex items-center gap-2"><Route size={16} className="text-sky-500"/> 區域管線佈建可行性分析</h3>
                                 <div className="flex flex-col gap-2 overflow-y-auto pr-2 custom-scrollbar max-h-[200px]">
                                     <div className="bg-slate-50 p-3 rounded border border-slate-200">
-                                        <div className="text-xs font-bold text-slate-500 mb-1">【南區】跨國海運</div>
+                                        <div className="text-xs font-bold text-slate-500 mb-1">【南區】海運接收站 (外銷)</div>
                                         <div className="text-xs text-slate-600 leading-relaxed">缺乏合適本土封存場址。建議將大發、林園等高排碳區透過陸運/管線集中至高雄港，再以船運送往東南亞 (如印尼/馬來西亞) 進行跨國封存。</div>
                                     </div>
                                     <div className="bg-slate-50 p-3 rounded border border-slate-200">
-                                        <div className="text-xs font-bold text-slate-500 mb-1">【中區】本土封存潛力</div>
+                                        <div className="text-xs font-bold text-slate-500 mb-1">【中區】本土封存示範區</div>
                                         <div className="text-xs text-slate-600 leading-relaxed">具備本土封存優勢。台中與彰化區域可就近利用「台中港外海」；雲林麥寮等超大排放源可直接利用「麥寮工業區外海」發展本土海域 CCS 封存示範場域。</div>
                                     </div>
                                     <div className="bg-slate-50 p-3 rounded border border-slate-200">
-                                        <div className="text-xs font-bold text-slate-500 mb-1">【北區】林口封存</div>
-                                        <div className="text-xs text-slate-600 leading-relaxed">排放源相對分散。主要集中於桃園/新竹，可評估向北延伸管線至「林口外海」進行封存。</div>
+                                        <div className="text-xs font-bold text-slate-500 mb-1">【北區】林口外海封存</div>
+                                        <div className="text-xs text-slate-600 leading-relaxed">排放源相對分散。主要集中於桃園/新竹，可評估建立管線將捕捉到的 CO₂ 往北輸送至「林口外海」進行封存。</div>
                                     </div>
                                 </div>
                             </div>
 
                             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex-1 flex flex-col min-h-0">
-                                <h3 className="font-bold text-slate-700 text-sm mb-3 border-b pb-2 flex items-center gap-2"><Layers size={16} className="text-sky-500"/> 工業區/縣市聚落 排放量分析</h3>
+                                <h3 className="font-bold text-slate-700 text-sm mb-3 border-b pb-2 flex items-center gap-2"><PieChartIcon size={16} className="text-rose-500"/> 各產業範疇一 (可CCS捕捉) 絕對量分析</h3>
                                 <div className="flex-1 min-h-0 w-full relative">
                                     <ErrorBoundary>
                                         <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
-                                            <BarChart data={scope1Stats.topZones.slice(0, 10)} layout="vertical" margin={{top:5, right:40, left:40, bottom:0}}>
+                                            <BarChart data={scope1Stats.industryStats.slice(0, 8)} layout="vertical" margin={{top:5, right:40, left:40, bottom:0}}>
                                                 <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} />
                                                 <XAxis type="number" tickFormatter={v => (v/10000).toFixed(0)} fontSize={10} unit="萬噸"/>
-                                                <YAxis dataKey="name" type="category" width={110} tick={{fontSize:11, fontWeight:'bold', fill:'#475569'}} interval={0}/>
+                                                <YAxis dataKey="name" type="category" width={90} tick={{fontSize:11, fontWeight:'bold', fill:'#475569'}} interval={0}/>
                                                 <Tooltip 
-                                                    formatter={(v, name) => [(v/10000).toFixed(1) + ' 萬噸', name === 'Scope1' ? '範疇一 (直接)' : '範疇二 (間接)']} 
+                                                    formatter={(v) => [(v/10000).toFixed(1) + ' 萬噸', '範疇一 (直接排放)']} 
                                                     contentStyle={{borderRadius:'8px'}}
                                                 />
-                                                <Legend wrapperStyle={{fontSize: '11px'}} verticalAlign="top"/>
-                                                <Bar dataKey="Scope1" name="範疇一 (直接)" stackId="a" fill="#e11d48" />
-                                                <Bar dataKey="Scope2" name="範疇二 (間接)" stackId="a" fill="#fb7185" radius={[0,4,4,0]}>
-                                                    <LabelList dataKey="Total" position="right" formatter={v => (v/10000).toFixed(0)} fontSize={10} fill="#be123c" fontWeight="bold"/>
+                                                <Bar dataKey="value" name="範疇一 (直接)" fill="#e11d48" radius={[0,4,4,0]} barSize={20}>
+                                                    <LabelList dataKey="value" position="right" formatter={v => (v/10000).toFixed(0)} fontSize={10} fill="#be123c" fontWeight="bold"/>
                                                 </Bar>
                                             </BarChart>
                                         </ResponsiveContainer>
@@ -978,7 +1015,7 @@ const CcusDashboard = () => {
                                 <thead className="bg-slate-100 sticky top-0 shadow-sm z-10">
                                     <tr>
                                         <th className="p-3">事業名稱</th><th className="p-3">縣市</th><th className="p-3">行業</th><th className="p-3">所屬聚落</th>
-                                        <th className="p-3 text-right">範疇一(噸)</th><th className="p-3 text-right text-slate-500">範疇二(噸)</th><th className="p-3 text-right font-bold">總計(噸)</th>
+                                        <th className="p-3 text-right text-rose-600">範疇一(噸)</th><th className="p-3 text-right text-slate-500">範疇二(噸)</th><th className="p-3 text-right font-bold">總計(噸)</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100">
