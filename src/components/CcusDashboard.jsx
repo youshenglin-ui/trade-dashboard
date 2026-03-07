@@ -127,6 +127,7 @@ const getRefinedRegion = (plantName, companyName, county) => {
     if (full.match(/(台北|新北|桃園|新竹|基隆|宜蘭)/)) return '北區';
     if (full.match(/(苗栗|台中|彰化|雲林|南投)/)) return '中區';
     if (full.match(/(嘉義|台南|高雄|屏東)/)) return '南區';
+    if (full.match(/(花蓮|台東)/)) return '東區';
     
     // 額外確保台鹽在苗栗(中區)
     if (c.includes('台鹽') || c.includes('臺鹽') || p.includes('通霄')) return '中區';
@@ -156,48 +157,68 @@ const getIndustrialZone = (plant, company, county) => {
     if (p.includes('頭份') || (c.includes('長春') && p.includes('苗栗'))) return '苗栗-頭份工業區';
     if (full.includes('南科') || full.includes('台積電') || p.includes('18廠')) return '台南-南部科學園區';
     
+    // 防呆機制：若無特定工業區，以縣市聚落命名，減少「其他獨立廠區」造成跨縣市錯誤連線的佔比
     if (cty) return `${cty}工業聚落`;
-    return '其他獨立廠區';
+    
+    // 若真的連縣市都沒有，才歸類在公司獨立廠區
+    return `${c}獨立廠區`;
 };
 
 const getApproximateCoordinates = (plant, company, county) => {
     const n = `${String(company || '')} ${String(plant || '')}`;
     const cty = String(county || '');
 
-    // 特殊校正：台鹽實業 (通霄廠為主)
+    // 擬亂數產生器：依據廠區名稱產生固定的小幅度偏移，防止重疊且避免畫面抖動
+    const pseudoRandom = (seed) => {
+        let h = 0;
+        for(let i=0; i<seed.length; i++) h = Math.imul(31, h) + seed.charCodeAt(i) | 0;
+        return ((Math.abs(h) % 1000) / 1000 - 0.5) * 0.08; // -0.04 to +0.04
+    };
+    
+    const offsetLat = pseudoRandom(n + "lat");
+    const offsetLon = pseudoRandom(n + "lon");
+
+    // 優先比對明確的工業區特徵
     if (company?.includes('台鹽') || company?.includes('臺鹽') || plant?.includes('通霄')) {
-        if (cty.includes('台南')) return { lat: 23.14, lon: 120.10 };
-        return { lat: 24.54, lon: 120.67 }; // 預設苗栗通霄
+        if (cty.includes('台南')) return { lat: 23.14 + offsetLat, lon: 120.10 + offsetLon };
+        return { lat: 24.54 + offsetLat, lon: 120.67 + offsetLon }; // 預設苗栗通霄
     }
 
-    if (company?.includes('台化') && plant?.includes('台北')) return { lat: 23.78, lon: 120.18 };
-    if (company?.includes('台塑科騰')) return { lat: 23.783, lon: 120.179 };
-    if (company?.includes('李長榮') && plant?.includes('高雄')) return { lat: 22.538, lon: 120.343 }; 
-    if ((company?.includes('台苯') || company?.includes('台灣苯乙烯')) && plant?.includes('高雄')) return { lat: 22.493, lon: 120.382 }; 
-    if (n.includes('大發') || company?.includes('台灣石化')) return { lat: 22.58, lon: 120.40 };
-    if (n.includes('林園') || n.includes('大林') || n.includes('石化事業部') || n.includes('台灣苯乙烯')) return { lat: 22.51, lon: 120.38 };
-    if (n.includes('小港') || n.includes('中鋼') || n.includes('臨海') || company?.includes('李長榮')) return { lat: 22.54, lon: 120.34 };
-    if (n.includes('仁武') || n.includes('大社') || n.includes('國喬')) return { lat: 22.70, lon: 120.34 };
-    if (n.includes('南科') || n.includes('台積電') || n.includes('善化')) return { lat: 23.10, lon: 120.27 };
-    if (n.includes('麥寮') || n.includes('六輕') || company?.includes('台灣化纖') || company?.includes('台化')) return { lat: 23.78, lon: 120.18 };
-    if (n.includes('彰濱') || n.includes('線西') || n.includes('中龍')) return { lat: 24.07, lon: 120.42 };
-    if (n.includes('苗栗二') || n.includes('二廠')) return { lat: 24.58, lon: 120.82 }; 
-    if (n.includes('頭份') || n.includes('長春') || n.includes('苗栗')) return { lat: 24.68, lon: 120.91 };
-    if (n.includes('桃園') || n.includes('觀音') || n.includes('桃煉') || n.includes('工三')) return { lat: 25.03, lon: 121.12 };
+    if (company?.includes('台化') && plant?.includes('台北')) return { lat: 23.78 + offsetLat, lon: 120.18 + offsetLon };
+    if (company?.includes('台塑科騰')) return { lat: 23.783 + offsetLat, lon: 120.179 + offsetLon };
+    if (company?.includes('李長榮') && plant?.includes('高雄')) return { lat: 22.538 + offsetLat, lon: 120.343 + offsetLon }; 
+    if ((company?.includes('台苯') || company?.includes('台灣苯乙烯')) && plant?.includes('高雄')) return { lat: 22.493 + offsetLat, lon: 120.382 + offsetLon }; 
+    if (n.includes('大發') || company?.includes('台灣石化')) return { lat: 22.58 + offsetLat, lon: 120.40 + offsetLon };
+    if (n.includes('林園') || n.includes('大林') || n.includes('石化事業部') || n.includes('台灣苯乙烯')) return { lat: 22.51 + offsetLat, lon: 120.38 + offsetLon };
+    if (n.includes('小港') || n.includes('中鋼') || n.includes('臨海') || company?.includes('李長榮')) return { lat: 22.54 + offsetLat, lon: 120.34 + offsetLon };
+    if (n.includes('仁武') || n.includes('大社') || n.includes('國喬')) return { lat: 22.70 + offsetLat, lon: 120.34 + offsetLon };
+    if (n.includes('南科') || n.includes('台積電') || n.includes('善化')) return { lat: 23.10 + offsetLat, lon: 120.27 + offsetLon };
+    if (n.includes('麥寮') || n.includes('六輕') || company?.includes('台灣化纖') || company?.includes('台化')) return { lat: 23.78 + offsetLat, lon: 120.18 + offsetLon };
+    if (n.includes('彰濱') || n.includes('線西') || n.includes('中龍')) return { lat: 24.07 + offsetLat, lon: 120.42 + offsetLon };
+    if (n.includes('苗栗二') || n.includes('二廠')) return { lat: 24.58 + offsetLat, lon: 120.82 + offsetLon }; 
+    if (n.includes('頭份') || n.includes('長春') || n.includes('苗栗')) return { lat: 24.68 + offsetLat, lon: 120.91 + offsetLon };
+    if (n.includes('桃園') || n.includes('觀音') || n.includes('桃煉') || n.includes('工三')) return { lat: 25.03 + offsetLat, lon: 121.12 + offsetLon };
     
-    // 微調偏移避免完全重疊
-    const offset = () => (Math.random() - 0.5) * 0.05;
-    if (cty.includes('台北') || cty.includes('新北')) return { lat: 25.03 + offset(), lon: 121.45 + offset() };
-    if (cty.includes('桃園')) return { lat: 24.95 + offset(), lon: 121.20 + offset() };
-    if (cty.includes('新竹')) return { lat: 24.80 + offset(), lon: 121.00 + offset() };
-    if (cty.includes('台中')) return { lat: 24.20 + offset(), lon: 120.60 + offset() };
-    if (cty.includes('彰化')) return { lat: 24.00 + offset(), lon: 120.45 + offset() };
-    if (cty.includes('雲林')) return { lat: 23.75 + offset(), lon: 120.35 + offset() };
-    if (cty.includes('嘉義')) return { lat: 23.45 + offset(), lon: 120.30 + offset() };
-    if (cty.includes('台南')) return { lat: 23.15 + offset(), lon: 120.25 + offset() };
-    if (cty.includes('高雄')) return { lat: 22.65 + offset(), lon: 120.35 + offset() };
+    // 若無明確廠區特徵，嚴格依據縣市別進行定位
+    if (cty.includes('基隆')) return { lat: 25.13 + offsetLat, lon: 121.74 + offsetLon };
+    if (cty.includes('台北') || cty.includes('新北')) return { lat: 25.03 + offsetLat, lon: 121.45 + offsetLon };
+    if (cty.includes('桃園')) return { lat: 24.95 + offsetLat, lon: 121.20 + offsetLon };
+    if (cty.includes('新竹')) return { lat: 24.82 + offsetLat, lon: 121.01 + offsetLon };
+    if (cty.includes('苗栗')) return { lat: 24.56 + offsetLat, lon: 120.82 + offsetLon };
+    if (cty.includes('台中')) return { lat: 24.14 + offsetLat, lon: 120.67 + offsetLon };
+    if (cty.includes('彰化')) return { lat: 24.05 + offsetLat, lon: 120.54 + offsetLon };
+    if (cty.includes('南投')) return { lat: 23.90 + offsetLat, lon: 120.99 + offsetLon };
+    if (cty.includes('雲林')) return { lat: 23.70 + offsetLat, lon: 120.43 + offsetLon };
+    if (cty.includes('嘉義')) return { lat: 23.48 + offsetLat, lon: 120.45 + offsetLon };
+    if (cty.includes('台南')) return { lat: 23.11 + offsetLat, lon: 120.28 + offsetLon };
+    if (cty.includes('高雄')) return { lat: 22.62 + offsetLat, lon: 120.31 + offsetLon };
+    if (cty.includes('屏東')) return { lat: 22.67 + offsetLat, lon: 120.48 + offsetLon };
+    if (cty.includes('宜蘭')) return { lat: 24.70 + offsetLat, lon: 121.75 + offsetLon };
+    if (cty.includes('花蓮')) return { lat: 23.98 + offsetLat, lon: 121.60 + offsetLon };
+    if (cty.includes('台東')) return { lat: 22.75 + offsetLat, lon: 121.14 + offsetLon };
     
-    return { lat: 23.6, lon: 120.9 }; 
+    // 如果連縣市都沒有，預設在中部海域附近，不會干擾內陸
+    return { lat: 23.6 + offsetLat, lon: 119.9 + offsetLon }; 
 };
 
 // 四大封存與接收樞紐 (依據陸路起點與海線接收差異設計)
@@ -291,7 +312,7 @@ const TaiwanCcusMap = ({ mode = 'capture', captureData = [], utilData = [], stor
         const mainRoutes = [];
         const branchRoutes = [];
 
-        // 1. 支線：各廠區 -> 工業區聚落中心
+        // 1. 支線：各廠區 -> 嚴格同縣市的聚落中心
         scope1Data.forEach(d => {
             const z = zoneMap[d.zone];
             if (z && (Math.abs(d.lat - z.lat) > 0.002 || Math.abs(d.lon - z.lon) > 0.002)) {
@@ -302,13 +323,12 @@ const TaiwanCcusMap = ({ mode = 'capture', captureData = [], utilData = [], stor
             }
         });
 
-        // 2. 主管線：工業區聚落中心 -> 最近且同區的海港樞紐
+        // 2. 主管線：縣市聚落中心 -> 該區域專屬海港樞紐
         Object.values(zoneMap).forEach(z => {
             let targetHub = null;
             
-            // 強制南區往高雄港、北區往林口
             if (z.Region === '南區') targetHub = CCS_HUBS['SOUTH_HUB'];
-            else if (z.Region === '北區') targetHub = CCS_HUBS['NORTH_HUB'];
+            else if (z.Region === '北區' || z.Region === '東區') targetHub = CCS_HUBS['NORTH_HUB'];
             else if (z.Region === '中區') {
                 // 中區依據緯度分配給台中港或麥寮
                 if (z.lat > 24.1) targetHub = CCS_HUBS['CENTRAL_HUB_1']; 
@@ -743,17 +763,20 @@ const CcusDashboard = () => {
                     const comp = simplifyCompanyName(rawName);
                     const plantRaw = rawName.replace(d['公司'] || '', '').replace(comp, '').replace(/股份有限公司|工業|企業|分公司/g, '').trim(); 
                     
-                    const countyStr = String(d[countyKey] || '');
+                    // 嚴格抽取縣市別，作為絕對的地理防呆依據
+                    let countyStr = String(d[countyKey] || '').trim();
+                    const countyMatch = countyStr.match(/(基隆|台北|臺北|新北|桃園|新竹|苗栗|台中|臺中|彰化|南投|雲林|嘉義|台南|臺南|高雄|屏東|宜蘭|花蓮|台東|臺東)/);
+                    if (countyMatch) {
+                        countyStr = countyMatch[0].replace('臺', '台');
+                    } else {
+                        countyStr = '未知';
+                    }
+
+                    // 將解析出的 countyStr 強制帶入，防止跨區
                     const zone = getIndustrialZone(plantRaw, comp, countyStr);
                     const coords = getApproximateCoordinates(plantRaw, comp, countyStr);
                     
-                    let region = '其他';
-                    if (countyStr.match(/(台北|新北|桃園|新竹|基隆)/)) region = '北區';
-                    if (countyStr.match(/(苗栗|台中|彰化|雲林|南投)/)) region = '中區';
-                    if (countyStr.match(/(嘉義|台南|高雄|屏東)/)) region = '南區';
-
-                    const refinedRegion = getRefinedRegion(plantRaw, comp, countyStr);
-                    if (refinedRegion !== '其他') region = refinedRegion;
+                    const region = getRefinedRegion(plantRaw, comp, countyStr);
 
                     const scope1Val = cleanNumber(d[emit1Key]);
                     const scope2Val = cleanNumber(d[emit2Key]);
@@ -936,7 +959,7 @@ const CcusDashboard = () => {
                 <div className="space-y-6 animate-fade-in">
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                         <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between">
-                            <div><p className="text-xs text-slate-500 font-bold mb-1 uppercase">列管工廠總排放量 (範疇 1+2)</p><h3 className="text-2xl font-black text-rose-700">{(scope1Stats.total / 10000).toFixed(1)} <span className="text-sm font-medium text-slate-500">萬噸</span></h3></div>
+                            <div><p className="text-xs text-slate-500 font-bold mb-1 uppercase">符合門檻之廠區總排放量 (範疇 1+2)</p><h3 className="text-2xl font-black text-rose-700">{(scope1Stats.total / 10000).toFixed(1)} <span className="text-sm font-medium text-slate-500">萬噸</span></h3></div>
                             <div className="w-12 h-12 rounded-full bg-rose-50 flex items-center justify-center text-rose-600"><AlertTriangle size={24}/></div>
                         </div>
                         <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between border-l-4 border-l-indigo-500">
@@ -949,8 +972,7 @@ const CcusDashboard = () => {
                         </div>
                     </div>
 
-                    {/* 移除 min-h 限制，讓版面自然適應，消除不必要的空白 */}
-                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch min-h-[850px]">
                         {/* 左側地圖 (加大空間) */}
                         <div className="lg:col-span-7 bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col h-[600px]">
                             <h3 className="font-bold text-slate-700 text-sm mb-4 border-b pb-2 flex items-center gap-2"><Map size={16} className="text-indigo-500"/> CCS 案場與共通管線拓樸分析</h3>
