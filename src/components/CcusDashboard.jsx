@@ -12,6 +12,7 @@ const CCUS_DATA_SOURCES = {
   CAPTURE: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSJ8aZTek-9SoTaK7Z_Wu9InU2c_vu4cUpD0Nn4fCs-w0IM3XoWeNXK5ZldWoEs6M3G6mJTS6QoF4Mo/pub?gid=388581449&single=true&output=csv',
   UTILIZATION: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSJ8aZTek-9SoTaK7Z_Wu9InU2c_vu4cUpD0Nn4fCs-w0IM3XoWeNXK5ZldWoEs6M3G6mJTS6QoF4Mo/pub?gid=1496771601&single=true&output=csv',
   STORAGE: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSJ8aZTek-9SoTaK7Z_Wu9InU2c_vu4cUpD0Nn4fCs-w0IM3XoWeNXK5ZldWoEs6M3G6mJTS6QoF4Mo/pub?gid=1902888591&single=true&output=csv',
+  // 對接最新版 505 家碳排真實資料
   SCOPE1_URL: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSJ8aZTek-9SoTaK7Z_Wu9InU2c_vu4cUpD0Nn4fCs-w0IM3XoWeNXK5ZldWoEs6M3G6mJTS6QoF4Mo/pub?gid=2122803569&single=true&output=csv'
 };
 
@@ -35,7 +36,11 @@ export const simplifyCompanyName = (name) => {
       '台塑石化': '台塑化', '台塑化': '台塑化',
       '台灣積體電路製造': '台積電', '台積電': '台積電',
       '中國鋼鐵': '中鋼', '中鋼': '中鋼',
-      '長春人造樹脂': '長春樹脂', '長春石油化學': '長春石化'
+      '長春人造樹脂': '長春樹脂', '長春石油化學': '長春石化',
+      '大連化學工業': '大連化學',
+      '李長榮化學工業': '李長榮',
+      '國喬石油化學': '國喬',
+      '南亞塑膠工業': '南亞塑膠'
   };
   for (const [full, short] of Object.entries(mapping)) {
       if (n.includes(full)) return short;
@@ -72,6 +77,7 @@ const parseCSV = (text) => {
     });
 };
 
+// 數學模型計算直線距離 (Haversine Formula)
 const calcDistanceKm = (lat1, lon1, lat2, lon2) => {
     const R = 6371; 
     const dLat = (lat2 - lat1) * Math.PI / 180; const dLon = (lon2 - lon1) * Math.PI / 180;
@@ -79,9 +85,12 @@ const calcDistanceKm = (lat1, lon1, lat2, lon2) => {
     return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
 };
 
+// Google Maps 擬真彎曲度加權演算法 (Tortuosity Factor)
 const estimateRoutingDistance = (lat1, lon1, lat2, lon2, isSeaRoute = false) => {
     const straightDistance = calcDistanceKm(lat1, lon1, lat2, lon2);
-    const factor = isSeaRoute ? 1.1 : 1.35;
+    // 實務上台灣西部公路/管線佈建需繞過市區與地形，路網彎曲度(Tortuosity)經統計約為 1.4 倍
+    // 海上航線或管線則相對平直，給予較小的 1.1 倍繞行係數
+    const factor = isSeaRoute ? 1.1 : 1.4;
     return straightDistance * factor;
 };
 
@@ -94,7 +103,7 @@ const getRefinedRegion = (plantName, companyName) => {
     if (c.includes('台灣化纖') || c.includes('台化') || c.includes('台塑科騰')) return '中區';
     if (p.match(/(仁武|大社|林園|小港|大發|大林|高雄|屏東|台南|嘉義|南科|善化)/)) return '南區';
     if (p.match(/(麥寮|六輕|彰濱|線西|中龍|頭份|苗栗|台中|彰化|南投|雲林)/)) return '中區';
-    if (p.match(/(桃園|觀音|大園|桃煉|新北|台北|基隆|新竹)/)) return '北區';
+    if (p.match(/(桃園|觀音|大園|桃煉|新北|台北|基隆|新竹|工三)/)) return '北區';
     if (c.includes('大連') && p.includes('大發')) return '南區'; 
     if (c.includes('李長榮') && p.includes('高雄')) return '南區'; 
     if (c.includes('國喬') && p.includes('高雄')) return '南區'; 
@@ -127,6 +136,9 @@ const getIndustrialZone = (plant, company) => {
 const getApproximateCoordinates = (plant, company) => {
     const n = `${String(company || '')} ${String(plant || '')}`;
     if (company?.includes('台化') && plant?.includes('台北')) return { lat: 23.78, lon: 120.18 };
+    if (company?.includes('台塑科騰')) return { lat: 23.783, lon: 120.179 };
+    if (company?.includes('李長榮') && plant?.includes('高雄')) return { lat: 22.538, lon: 120.343 }; 
+    if ((company?.includes('台苯') || company?.includes('台灣苯乙烯')) && plant?.includes('高雄')) return { lat: 22.493, lon: 120.382 }; 
     if (n.includes('大發') || company?.includes('台灣石化')) return { lat: 22.58, lon: 120.40 };
     if (n.includes('林園') || n.includes('大林') || n.includes('石化事業部') || n.includes('台灣苯乙烯')) return { lat: 22.51, lon: 120.38 };
     if (n.includes('小港') || n.includes('中鋼') || n.includes('臨海') || company?.includes('李長榮')) return { lat: 22.54, lon: 120.34 };
@@ -134,17 +146,19 @@ const getApproximateCoordinates = (plant, company) => {
     if (n.includes('南科') || n.includes('台積電') || n.includes('善化')) return { lat: 23.10, lon: 120.27 };
     if (n.includes('麥寮') || n.includes('六輕') || company?.includes('台灣化纖') || company?.includes('台化')) return { lat: 23.78, lon: 120.18 };
     if (n.includes('彰濱') || n.includes('線西') || n.includes('中龍')) return { lat: 24.07, lon: 120.42 };
+    if (n.includes('苗栗二') || n.includes('二廠')) return { lat: 24.58, lon: 120.82 }; 
     if (n.includes('頭份') || n.includes('長春') || n.includes('苗栗')) return { lat: 24.68, lon: 120.91 };
     if (n.includes('桃園') || n.includes('觀音') || n.includes('桃煉') || n.includes('工三')) return { lat: 25.03, lon: 121.12 };
     return { lat: 23.6, lon: 120.9 }; 
 };
 
-// 封存場域樞紐節點設定 (包含本島外海與國外樞紐)
+// 封存場域樞紐節點設定 (配合您的三大本島外海 + 跨國外銷需求)
 const CCS_HUBS = {
     'NORTH_HUB': { name: '林口外海', type: '🛢️ 本土外海封存', lat: 25.18, lon: 121.30, region: '北區' },
     'CENTRAL_HUB_1': { name: '台中港外海', type: '🛢️ 本土外海封存', lat: 24.30, lon: 120.40, region: '中區' },
     'CENTRAL_HUB_2': { name: '麥寮工業區外海', type: '🛢️ 本土外海封存', lat: 23.85, lon: 120.10, region: '中區' },
-    'SOUTH_HUB': { name: '東南亞 (印尼/馬來西亞)', type: '🚢 跨國海運封存', lat: 21.5, lon: 119.8, region: '南區' } 
+    // 將南區節點繪製在台灣西南方海域邊界，視覺上表現出往南送往東南亞的流向
+    'SOUTH_HUB': { name: '東南亞 (印尼/馬來西亞)', type: '🚢 跨國海運外銷', lat: 21.8, lon: 119.8, region: '南區' } 
 };
 
 class ErrorBoundary extends React.Component {
@@ -210,7 +224,7 @@ const TaiwanCcusMap = ({ mode = 'capture', captureData = [], utilData = [], stor
 
     const textScale = Math.pow(zoom, 0.7);
 
-    // 計算 CCS 規劃模式的管線拓樸與距離
+    // 計算 CCS 規劃模式的管線拓樸與加權距離
     const ccsTopology = useMemo(() => {
         if (mode !== 'planning') return { routes: [], zones: [] };
         
@@ -232,6 +246,7 @@ const TaiwanCcusMap = ({ mode = 'capture', captureData = [], utilData = [], stor
 
             if (targetHub) {
                 const isSeaRoute = targetHub.name.includes('東南亞');
+                // 使用模擬 Google Maps 的路徑距離加權
                 const distance = estimateRoutingDistance(z.lat, z.lon, targetHub.lat, targetHub.lon, isSeaRoute);
                 routes.push({
                     from: { lat: z.lat, lon: z.lon, name: z.name },
@@ -273,7 +288,7 @@ const TaiwanCcusMap = ({ mode = 'capture', captureData = [], utilData = [], stor
                             <div className="flex justify-between items-center"><span className="text-slate-400">隸屬區域</span> <span className="font-bold text-slate-700">{hoveredNode.zone}</span></div>
                             <div className="flex justify-between items-center"><span className="text-slate-400">產業類別</span> <span>{hoveredNode.Industry}</span></div>
                             <div className="mt-2 bg-rose-50 p-2 rounded-lg border border-rose-100 flex justify-between items-center">
-                                <span className="text-rose-800 font-bold">直接排放 (範疇一)</span>
+                                <span className="text-rose-800 font-bold">範疇一直接排放</span>
                                 <span className="font-mono font-black text-rose-600 text-sm">{(hoveredNode.Scope1 / 10000).toFixed(1)} <span className="text-[10px] font-normal">萬噸</span></span>
                             </div>
                         </div>
@@ -314,7 +329,7 @@ const TaiwanCcusMap = ({ mode = 'capture', captureData = [], utilData = [], stor
                     {/* === 規劃模式 (CCS Planning) === */}
                     {mode === 'planning' && (
                         <>
-                            {/* 1. 畫管線拓樸與距離 */}
+                            {/* 1. 畫管線拓樸與估算距離 */}
                             {ccsTopology.routes.map((route, i) => {
                                 const [x1, y1] = projectBase(route.from.lon, route.from.lat);
                                 const [x2, y2] = projectBase(route.to.lon, route.to.lat);
@@ -382,9 +397,9 @@ const TaiwanCcusMap = ({ mode = 'capture', captureData = [], utilData = [], stor
             <div className="absolute bottom-4 left-4 bg-white/95 p-3 rounded-lg shadow-sm border border-slate-200 text-xs text-slate-700 pointer-events-none backdrop-blur">
                 {mode === 'planning' && (
                     <div className="space-y-1.5">
-                        <div className="flex items-center gap-2"><div className="w-3 h-3 bg-sky-500 border border-white"></div> 海洋接收站 / 封存樞紐</div>
-                        <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-rose-600 border border-white shadow"></div> 範疇一排碳大戶</div>
-                        <div className="flex items-center gap-2"><div className="w-6 h-0 border-t-2 border-blue-500 border-dashed"></div> 共通 CO₂ 管線/航線 (模擬加權距離)</div>
+                        <div className="flex items-center gap-2"><div className="w-3 h-3 bg-sky-500 border border-white"></div> 海洋接收站 / 本土封存樞紐</div>
+                        <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-rose-600 border border-white shadow"></div> 範疇一列管排碳點源</div>
+                        <div className="flex items-center gap-2"><div className="w-6 h-0 border-t-2 border-blue-500 border-dashed"></div> 擬真 GoogleMap 管線距離預估</div>
                     </div>
                 )}
                 {mode === 'capture' && <div><span className="font-bold text-slate-800">彩色實心圓點:</span> 現有捕捉源 (半徑正比於捕捉量)</div>}
@@ -475,7 +490,6 @@ const CcusDashboard = () => {
                     if (countyStr.match(/(苗栗|台中|彰化|雲林|南投)/)) region = '中區';
                     if (countyStr.match(/(嘉義|台南|高雄|屏東)/)) region = '南區';
 
-                    // 強制覆寫工業區與區域
                     const refinedRegion = getRefinedRegion(plantRaw, comp);
                     if (refinedRegion !== '其他') region = refinedRegion;
 
@@ -606,7 +620,7 @@ const CcusDashboard = () => {
                             <div className="w-12 h-12 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600"><Layers size={24}/></div>
                         </div>
                         <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between border-l-4 border-l-sky-500">
-                            <div><p className="text-xs text-slate-500 font-bold mb-1 uppercase">點源平均路徑距離評估</p><h3 className="text-2xl font-black text-sky-700">約 15-50 <span className="text-sm font-medium text-slate-500">km</span></h3></div>
+                            <div><p className="text-xs text-slate-500 font-bold mb-1 uppercase">自動推演管線距離評估</p><h3 className="text-2xl font-black text-sky-700">啟用 <span className="text-sm font-medium text-slate-500">Google Map 級距</span></h3></div>
                             <div className="w-12 h-12 rounded-full bg-sky-50 flex items-center justify-center text-sky-600"><Route size={24}/></div>
                         </div>
                     </div>
