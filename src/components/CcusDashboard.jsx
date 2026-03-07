@@ -12,7 +12,6 @@ const CCUS_DATA_SOURCES = {
   CAPTURE: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSJ8aZTek-9SoTaK7Z_Wu9InU2c_vu4cUpD0Nn4fCs-w0IM3XoWeNXK5ZldWoEs6M3G6mJTS6QoF4Mo/pub?gid=388581449&single=true&output=csv',
   UTILIZATION: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSJ8aZTek-9SoTaK7Z_Wu9InU2c_vu4cUpD0Nn4fCs-w0IM3XoWeNXK5ZldWoEs6M3G6mJTS6QoF4Mo/pub?gid=1496771601&single=true&output=csv',
   STORAGE: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSJ8aZTek-9SoTaK7Z_Wu9InU2c_vu4cUpD0Nn4fCs-w0IM3XoWeNXK5ZldWoEs6M3G6mJTS6QoF4Mo/pub?gid=1902888591&single=true&output=csv',
-  // 對接最新版 505 家碳排真實資料
   SCOPE1_URL: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSJ8aZTek-9SoTaK7Z_Wu9InU2c_vu4cUpD0Nn4fCs-w0IM3XoWeNXK5ZldWoEs6M3G6mJTS6QoF4Mo/pub?gid=2122803569&single=true&output=csv'
 };
 
@@ -77,7 +76,6 @@ const parseCSV = (text) => {
     });
 };
 
-// 數學模型計算直線距離 (Haversine Formula)
 const calcDistanceKm = (lat1, lon1, lat2, lon2) => {
     const R = 6371; 
     const dLat = (lat2 - lat1) * Math.PI / 180; const dLon = (lon2 - lon1) * Math.PI / 180;
@@ -85,16 +83,12 @@ const calcDistanceKm = (lat1, lon1, lat2, lon2) => {
     return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
 };
 
-// Google Maps 擬真彎曲度加權演算法 (Tortuosity Factor)
 const estimateRoutingDistance = (lat1, lon1, lat2, lon2, isSeaRoute = false) => {
     const straightDistance = calcDistanceKm(lat1, lon1, lat2, lon2);
-    // 實務上台灣西部公路/管線佈建需繞過市區與地形，路網彎曲度(Tortuosity)經統計約為 1.4 倍
-    // 海上航線或管線則相對平直，給予較小的 1.1 倍繞行係數
     const factor = isSeaRoute ? 1.1 : 1.4;
     return straightDistance * factor;
 };
 
-// --- 工業區與地圖座標底層函數 ---
 const getRefinedRegion = (plantName, companyName) => {
     const p = String(plantName || '').trim();
     const c = String(companyName || '').trim();
@@ -152,12 +146,10 @@ const getApproximateCoordinates = (plant, company) => {
     return { lat: 23.6, lon: 120.9 }; 
 };
 
-// 封存場域樞紐節點設定 (配合您的三大本島外海 + 跨國外銷需求)
 const CCS_HUBS = {
     'NORTH_HUB': { name: '林口外海', type: '🛢️ 本土外海封存', lat: 25.18, lon: 121.30, region: '北區' },
     'CENTRAL_HUB_1': { name: '台中港外海', type: '🛢️ 本土外海封存', lat: 24.30, lon: 120.40, region: '中區' },
     'CENTRAL_HUB_2': { name: '麥寮工業區外海', type: '🛢️ 本土外海封存', lat: 23.85, lon: 120.10, region: '中區' },
-    // 將南區節點繪製在台灣西南方海域邊界，視覺上表現出往南送往東南亞的流向
     'SOUTH_HUB': { name: '東南亞 (印尼/馬來西亞)', type: '🚢 跨國海運外銷', lat: 21.8, lon: 119.8, region: '南區' } 
 };
 
@@ -171,23 +163,36 @@ class ErrorBoundary extends React.Component {
 }
 
 // ==========================================
-// 台灣地圖核心模組
+// 地圖常數與共用轉換函數 (提昇至全域以優化效能)
 // ==========================================
-const TaiwanCcusMap = ({ mode = 'capture', captureData = [], utilData = [], storageData = [], scope1Data = [] }) => {
+const MAP_CONSTANTS = {
+    baseWidth: 800,
+    baseHeight: 900,
+    centerLon: 120.9,
+    centerLat: 23.7,
+    baseScale: 380
+};
+
+export const projectBase = (lon, lat) => {
+    if (!lon || !lat || isNaN(lon) || isNaN(lat)) return [-9999, -9999]; 
+    return [
+        (lon - MAP_CONSTANTS.centerLon) * MAP_CONSTANTS.baseScale, 
+        -(lat - MAP_CONSTANTS.centerLat) * MAP_CONSTANTS.baseScale * 1.1
+    ];
+};
+
+// ==========================================
+// 台灣地圖核心模組 (移除內部的 GeoJSON 請求)
+// ==========================================
+const TaiwanCcusMap = ({ mode = 'capture', captureData = [], utilData = [], storageData = [], scope1Data = [], mapPaths = [] }) => {
     const mapRef = useRef(null);
     const [zoom, setZoom] = useState(1);
     const [pan, setPan] = useState({ x: 0, y: 0 });
     const [isDragging, setIsDragging] = useState(false);
     const [lastPos, setLastPos] = useState({ x: 0, y: 0 });
-    const [mapPaths, setMapPaths] = useState([]);
     const [hoveredNode, setHoveredNode] = useState(null);
 
-    const baseWidth = 800, baseHeight = 900, centerLon = 120.9, centerLat = 23.7, baseScale = 380; 
-    
-    const projectBase = (lon, lat) => {
-        if (!lon || !lat || isNaN(lon) || isNaN(lat)) return [-9999, -9999]; 
-        return [(lon - centerLon) * baseScale, -(lat - centerLat) * baseScale * 1.1];
-    };
+    const { baseWidth, baseHeight } = MAP_CONSTANTS;
 
     const handleMouseDown = (e) => { setIsDragging(true); setLastPos({ x: e.clientX, y: e.clientY }); };
     const handleMouseMove = (e) => {
@@ -197,30 +202,6 @@ const TaiwanCcusMap = ({ mode = 'capture', captureData = [], utilData = [], stor
     };
     const handleMouseUp = () => setIsDragging(false);
     const handleMouseLeave = () => setIsDragging(false);
-
-    useEffect(() => {
-        fetch('https://raw.githubusercontent.com/g0v/twgeojson/master/json/twCounty2010.geo.json')
-            .then(res => res.json())
-            .then(data => {
-                const paths = data.features.map(f => {
-                    let d = '';
-                    const pr = (ring) => { 
-                        if(!ring||ring.length===0) return; 
-                        const [x,y]=projectBase(ring[0][0],ring[0][1]); 
-                        if (x === -9999) return; 
-                        d+=`M${x},${y} `; 
-                        for(let i=1;i<ring.length;i++){
-                            const [lx,ly]=projectBase(ring[i][0],ring[i][1]); 
-                            if(lx !== -9999) d+=`L${lx},${ly} `;
-                        } 
-                        d+='Z '; 
-                    };
-                    if(f.geometry.type==='Polygon') f.geometry.coordinates.forEach(pr); else if(f.geometry.type==='MultiPolygon') f.geometry.coordinates.forEach(p=>p.forEach(pr));
-                    return { d };
-                });
-                setMapPaths(paths);
-            }).catch(() => {});
-    }, []);
 
     const textScale = Math.pow(zoom, 0.7);
 
@@ -246,7 +227,6 @@ const TaiwanCcusMap = ({ mode = 'capture', captureData = [], utilData = [], stor
 
             if (targetHub) {
                 const isSeaRoute = targetHub.name.includes('東南亞');
-                // 使用模擬 Google Maps 的路徑距離加權
                 const distance = estimateRoutingDistance(z.lat, z.lon, targetHub.lat, targetHub.lon, isSeaRoute);
                 routes.push({
                     from: { lat: z.lat, lon: z.lon, name: z.name },
@@ -262,7 +242,6 @@ const TaiwanCcusMap = ({ mode = 'capture', captureData = [], utilData = [], stor
 
     return (
         <div className="w-full h-full relative bg-slate-50/80 rounded-lg overflow-hidden border border-slate-200">
-            {/* 動態懸浮資訊卡 */}
             <div className="absolute top-4 left-4 z-20 bg-white/95 backdrop-blur shadow-2xl rounded-xl border border-slate-200 p-4 transition-all duration-300 w-80 pointer-events-none" style={{ opacity: hoveredNode ? 1 : 0, transform: hoveredNode ? 'translateY(0)' : 'translateY(-10px)' }}>
                 
                 {hoveredNode && mode === 'planning' && hoveredNode.type === 'hub' && (
@@ -581,6 +560,7 @@ const CcusDashboard = () => {
     const [utilizationData, setUtilizationData] = useState([]);
     const [storageData, setStorageData] = useState([]);
     const [scope1Data, setScope1Data] = useState([]); 
+    const [mapPaths, setMapPaths] = useState([]); // 新增：全域地圖快取狀態
     const [loading, setLoading] = useState(true);
     const [selectedYear, setSelectedYear] = useState('ALL');
     const [transportMode, setTransportMode] = useState('ALL'); 
@@ -589,17 +569,42 @@ const CcusDashboard = () => {
         const fetchAllData = async () => {
             setLoading(true);
             try {
-                const [resCap, resUtil, resStore, resScope1] = await Promise.all([
+                // 將地圖的 GeoJSON 請求一併加入 Promise.all，實現資料與地圖同步預載
+                const [resCap, resUtil, resStore, resScope1, resGeo] = await Promise.all([
                     fetch(CCUS_DATA_SOURCES.CAPTURE),
                     fetch(CCUS_DATA_SOURCES.UTILIZATION),
                     fetch(CCUS_DATA_SOURCES.STORAGE),
-                    fetch(CCUS_DATA_SOURCES.SCOPE1_URL).catch(() => null) 
+                    fetch(CCUS_DATA_SOURCES.SCOPE1_URL).catch(() => null),
+                    fetch('https://raw.githubusercontent.com/g0v/twgeojson/master/json/twCounty2010.geo.json').catch(() => null)
                 ]);
 
                 const txtCap = await resCap.text();
                 const txtUtil = await resUtil.text();
                 const txtStore = await resStore.text();
                 const txtScope1 = resScope1 ? await resScope1.text() : '';
+
+                // 解析地圖 SVG 路徑並存入全域狀態
+                if (resGeo) {
+                    const geoData = await resGeo.json();
+                    const paths = geoData.features.map(f => {
+                        let d = '';
+                        const pr = (ring) => { 
+                            if(!ring || ring.length === 0) return; 
+                            const [x,y] = projectBase(ring[0][0], ring[0][1]); 
+                            if (x === -9999) return; 
+                            d += `M${x},${y} `; 
+                            for(let i=1; i<ring.length; i++){
+                                const [lx,ly] = projectBase(ring[i][0], ring[i][1]); 
+                                if(lx !== -9999) d += `L${lx},${ly} `;
+                            } 
+                            d += 'Z '; 
+                        };
+                        if(f.geometry.type === 'Polygon') f.geometry.coordinates.forEach(pr); 
+                        else if(f.geometry.type === 'MultiPolygon') f.geometry.coordinates.forEach(p => p.forEach(pr));
+                        return { d };
+                    });
+                    setMapPaths(paths);
+                }
 
                 const rawCap = parseCSV(txtCap);
                 const rawUtil = parseCSV(txtUtil);
@@ -777,7 +782,7 @@ const CcusDashboard = () => {
                         <div className="lg:col-span-5 bg-white p-4 rounded-xl border border-slate-200 shadow-sm h-[700px] flex flex-col">
                             <h3 className="font-bold text-slate-700 text-sm mb-4 border-b pb-2 flex items-center gap-2"><Map size={16} className="text-indigo-500"/> CCS 案場與共通管線拓樸分析</h3>
                             <ErrorBoundary>
-                                <TaiwanCcusMap mode="planning" scope1Data={scope1Data} />
+                                <TaiwanCcusMap mode="planning" scope1Data={scope1Data} mapPaths={mapPaths} />
                             </ErrorBoundary>
                         </div>
 
@@ -874,7 +879,7 @@ const CcusDashboard = () => {
                             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-[650px]">
                                 <div className="lg:col-span-5 relative">
                                     <ErrorBoundary>
-                                        <TaiwanCcusMap mode="capture" captureData={fCapture.filter(r => r.Capture_Volume > 0)} />
+                                        <TaiwanCcusMap mode="capture" captureData={fCapture.filter(r => r.Capture_Volume > 0)} mapPaths={mapPaths} />
                                     </ErrorBoundary>
                                 </div>
                                 <div className="lg:col-span-7 flex flex-col">
@@ -934,7 +939,7 @@ const CcusDashboard = () => {
                             <div className="flex flex-col lg:flex-row gap-6 h-[650px]">
                                 <div className="lg:w-1/3 relative border border-amber-200 rounded-xl overflow-hidden">
                                     <ErrorBoundary>
-                                        <TaiwanCcusMap mode="future" captureData={fCapture.filter(r => r.Future_Emission_Volume > 0)} />
+                                        <TaiwanCcusMap mode="future" captureData={fCapture.filter(r => r.Future_Emission_Volume > 0)} mapPaths={mapPaths} />
                                     </ErrorBoundary>
                                 </div>
                                 <div className="lg:w-2/3 overflow-x-auto custom-scrollbar border border-amber-100 rounded-xl">
@@ -973,7 +978,7 @@ const CcusDashboard = () => {
                         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm h-[500px] flex flex-col">
                             <h3 className="font-bold text-slate-700 text-sm mb-4 border-b pb-2 flex items-center gap-2"><MapPin size={16} className="text-emerald-500"/> 碳再利用需求廠區分佈</h3>
                             <ErrorBoundary>
-                                <TaiwanCcusMap mode="utilization" utilData={fUtil} captureData={fCapture} />
+                                <TaiwanCcusMap mode="utilization" utilData={fUtil} captureData={fCapture} mapPaths={mapPaths} />
                             </ErrorBoundary>
                         </div>
                     </div>
@@ -1064,7 +1069,7 @@ const CcusDashboard = () => {
                                 </div>
                             </div>
                             <ErrorBoundary>
-                                <TaiwanCcusMap mode="storage" storageData={fStorage.filter(r => transportMode === 'ALL' || r.Transport_Method.includes(transportMode))} captureData={fCapture} />
+                                <TaiwanCcusMap mode="storage" storageData={fStorage.filter(r => transportMode === 'ALL' || r.Transport_Method.includes(transportMode))} captureData={fCapture} mapPaths={mapPaths} />
                             </ErrorBoundary>
                         </div>
                         <div className="lg:col-span-7 bg-white p-4 rounded-xl border border-slate-200 shadow-sm h-[650px] flex flex-col">
