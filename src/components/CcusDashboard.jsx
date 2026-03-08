@@ -174,6 +174,7 @@ const getApproximateCoordinates = (plant, company, county) => {
     const offsetLat = pseudoRandom(n + "lat");
     const offsetLon = pseudoRandom(n + "lon");
 
+    // 台鹽實業強制校正 (通霄廠為主)
     if (company?.includes('台鹽') || company?.includes('臺鹽') || plant?.includes('通霄')) {
         if (cty.includes('台南')) return { lat: 23.14 + offsetLat, lon: 120.10 + offsetLon };
         return { lat: 24.54 + offsetLat, lon: 120.67 + offsetLon }; 
@@ -214,14 +215,15 @@ const getApproximateCoordinates = (plant, company, county) => {
     return { lat: 23.6 + offsetLat, lon: 119.9 + offsetLon }; 
 };
 
-// 五大封存與接收樞紐
+// 封存與接收樞紐
 const CCS_HUBS = {
     'NORTH_HUB': { id: 'NORTH_HUB', name: '林口外海 (封存樞紐)', type: '🛢️ 本土外海封存', lat: 25.12, lon: 121.28, region: '北區' },
     'CENTRAL_HUB_1': { id: 'CENTRAL_HUB_1', name: '台中港外海 (封存樞紐)', type: '🛢️ 本土外海封存', lat: 24.25, lon: 120.45, region: '中區' },
     'CENTRAL_HUB_2': { id: 'CENTRAL_HUB_2', name: '麥寮外海 (封存樞紐)', type: '🛢️ 本土外海封存', lat: 23.80, lon: 120.10, region: '中區' },
     'CENTRAL_HUB_LAND': { id: 'CENTRAL_HUB_LAND', name: '苗栗鐵砧山 (陸地封存)', type: '⛰️ 陸地封存場域', lat: 24.45, lon: 120.68, region: '中區' }, 
     'SOUTH_HUB': { id: 'SOUTH_HUB', name: '高雄港接收站 (輸出轉運)', type: '🚢 港口接收轉運', lat: 22.55, lon: 120.25, region: '南區' },
-    'EAST_HUB': { id: 'EAST_HUB', name: '花蓮港接收站 (輸出北送)', type: '🚢 港口接收轉運', lat: 23.98, lon: 121.62, region: '東區' } 
+    'EAST_HUB': { id: 'EAST_HUB', name: '花蓮港接收站 (輸出北送)', type: '🚢 港口接收轉運', lat: 23.98, lon: 121.62, region: '東區' },
+    'SOUTHEAST_HUB': { id: 'SOUTHEAST_HUB', name: '台東接收站 (南迴海運)', type: '🚢 港口接收轉運', lat: 22.75, lon: 121.15, region: '南區' } 
 };
 
 class ErrorBoundary extends React.Component {
@@ -433,12 +435,18 @@ const TaiwanCcusMap = ({ mode = 'capture', captureData = [], utilData = [], stor
                             {ccsTopology.seaRoutes.map((route, i) => {
                                 const [x1, y1] = projectBase(route.from.lon, route.from.lat);
                                 const [x2, y2] = projectBase(route.to.lon, route.to.lat);
-                                const [cx, cy] = projectBase(route.control.lon, route.control.lat);
-                                if (x1 === -9999 || x2 === -9999 || cx === -9999) return null;
+                                const [cx1, cy1] = projectBase(route.c1.lon, route.c1.lat);
+                                const [cx2, cy2] = projectBase(route.c2.lon, route.c2.lat);
+                                if (x1 === -9999 || x2 === -9999 || cx1 === -9999) return null;
+                                
+                                // 取貝茲曲線大約中間點作為文字標籤位置
+                                const midX = 0.125*x1 + 0.375*cx1 + 0.375*cx2 + 0.125*x2;
+                                const midY = 0.125*y1 + 0.375*cy1 + 0.375*cy2 + 0.125*y2;
+
                                 return (
                                     <g key={`sea-route-${i}`}>
-                                        <path d={`M ${x1} ${y1} Q ${cx} ${cy}, ${x2} ${y2}`} stroke="#0284c7" strokeWidth={Math.max(3, Math.log10(route.weight/10000))/zoom} strokeDasharray={`${6/zoom} ${6/zoom}`} fill="none" opacity={0.6}/>
-                                        <text x={cx} y={cy} fontSize={11/zoom} fill="#0369a1" textAnchor="middle" fontWeight="bold" style={{textShadow: '0 0 3px white', pointerEvents: 'none'}}>
+                                        <path d={`M ${x1} ${y1} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${x2} ${y2}`} stroke="#0284c7" strokeWidth={Math.max(3, Math.log10(route.weight/10000))/zoom} strokeDasharray={`${6/zoom} ${6/zoom}`} fill="none" opacity={0.6}/>
+                                        <text x={midX} y={midY} fontSize={11/zoom} fill="#0369a1" textAnchor="middle" fontWeight="bold" style={{textShadow: '0 0 3px white', pointerEvents: 'none'}}>
                                             {route.label}
                                         </text>
                                     </g>
@@ -735,10 +743,10 @@ const CcusDashboard = () => {
                         countyStr = '未知';
                     }
 
-                    // 將解析出的 countyStr 強制帶入，防止跨區
-                    const zone = getIndustrialZone(plantRaw, comp, countyStr);
+                    // 確保台鹽等特例正確修正
                     const coords = getApproximateCoordinates(plantRaw, comp, countyStr);
-                    
+                    // 依據縣市別防呆聚落
+                    const zone = getIndustrialZone(plantRaw, comp, countyStr);
                     const region = getRefinedRegion(plantRaw, comp, countyStr);
 
                     const scope1Val = cleanNumber(d[emit1Key]);
@@ -844,138 +852,134 @@ const CcusDashboard = () => {
     const fUtil = useMemo(() => utilizationData.filter(d => selectedYear === 'ALL' || d.Year === selectedYear), [utilizationData, selectedYear]);
     const fStorage = useMemo(() => storageData.filter(d => selectedYear === 'ALL' || d.Year === selectedYear), [storageData, selectedYear]);
 
-    // 將地圖的拓樸計算提升到主元件，且加入 60km 管線智能棄保邏輯
+    // 將地圖的拓樸計算提升到主元件，採用「縣市實體聚落」分配與 60km 智能棄保邏輯
     const ccsTopology = useMemo(() => {
         if (!scope1Data || scope1Data.length === 0) return null;
 
-        // 1. 第一階段：計算各工業聚落的初步幾何中心點
-        const tempZoneMap = {};
-        scope1Data.forEach(d => {
-            if (!tempZoneMap[d.zone]) tempZoneMap[d.zone] = { lat: 0, lon: 0, count: 0 };
-            tempZoneMap[d.zone].lat += d.lat;
-            tempZoneMap[d.zone].lon += d.lon;
-            tempZoneMap[d.zone].count += 1;
-        });
+        // 預先定義各大縣市的實體聚落中心點，徹底解決因為公司名稱造成跨縣市錯誤匹配的問題
+        const PREDEFINED_CLUSTERS = {
+            'C_TPE': { name: '大台北聚落', lat: 25.05, lon: 121.50, targetHub: 'NORTH_HUB' },
+            'C_TYN': { name: '桃園聚落', lat: 25.00, lon: 121.15, targetHub: 'NORTH_HUB' },
+            'C_HSZ': { name: '新竹聚落', lat: 24.80, lon: 121.00, targetHub: 'NORTH_HUB' },
+            'C_MIA': { name: '苗栗聚落', lat: 24.55, lon: 120.80, targetHub: 'CENTRAL_HUB_LAND' },
+            'C_TXG': { name: '台中聚落', lat: 24.20, lon: 120.60, targetHub: 'CENTRAL_HUB_1' },
+            'C_CHW_N': { name: '彰北聚落', lat: 24.10, lon: 120.45, targetHub: 'CENTRAL_HUB_1' },
+            'C_CHW_S': { name: '彰南聚落', lat: 23.95, lon: 120.35, targetHub: 'CENTRAL_HUB_2' },
+            'C_YUN': { name: '雲林聚落', lat: 23.75, lon: 120.35, targetHub: 'CENTRAL_HUB_2' },
+            'C_CYI': { name: '嘉義聚落', lat: 23.45, lon: 120.30, targetHub: 'CENTRAL_HUB_2' },
+            'C_TNN': { name: '台南聚落', lat: 23.10, lon: 120.25, targetHub: 'SOUTH_HUB' },
+            'C_KHH': { name: '高雄聚落', lat: 22.65, lon: 120.35, targetHub: 'SOUTH_HUB' },
+            'C_PTG': { name: '屏東聚落', lat: 22.60, lon: 120.50, targetHub: 'SOUTH_HUB' },
+            'C_YIL': { name: '宜蘭聚落', lat: 24.70, lon: 121.75, targetHub: 'EAST_HUB' },
+            'C_HUA': { name: '花蓮聚落', lat: 23.98, lon: 121.60, targetHub: 'EAST_HUB' },
+            'C_TTT': { name: '台東聚落', lat: 22.75, lon: 121.14, targetHub: 'SOUTHEAST_HUB' }
+        };
 
-        Object.values(tempZoneMap).forEach(z => {
-            z.lat /= z.count;
-            z.lon /= z.count;
-        });
+        const countyMap = {
+            '基隆': 'C_TPE', '台北': 'C_TPE', '臺北': 'C_TPE', '新北': 'C_TPE', 
+            '桃園': 'C_TYN', '新竹': 'C_HSZ', '苗栗': 'C_MIA', 
+            '台中': 'C_TXG', '臺中': 'C_TXG', '南投': 'C_TXG', 
+            '雲林': 'C_YUN', '嘉義': 'C_CYI', 
+            '台南': 'C_TNN', '臺南': 'C_TNN', '高雄': 'C_KHH', '屏東': 'C_PTG', 
+            '宜蘭': 'C_YIL', '花蓮': 'C_HUA', '台東': 'C_TTT', '臺東': 'C_TTT' 
+        };
 
-        const zoneMap = {};
+        const activeClusters = {};
         const hubSources = {}; 
         Object.keys(CCS_HUBS).forEach(k => hubSources[k] = []);
         const validSources = []; 
-
-        // 2. 第二階段：過濾與中心點距離 <= 60km 的廠區，並計算最終中心點與排放量
-        scope1Data.forEach(d => {
-            const tempZ = tempZoneMap[d.zone];
-            if (tempZ) {
-                const distToCenter = calcDistanceKm(d.lat, d.lon, tempZ.lat, tempZ.lon);
-                // 核心邏輯：如果廠區距離聚落中心超過 60 公里，直接放棄加入 CCS 網路
-                if (distToCenter <= 60) {
-                    if (!zoneMap[d.zone]) zoneMap[d.zone] = { name: d.zone, emissions: 0, lat: 0, lon: 0, count: 0, Region: d.Region, sources: [] };
-                    zoneMap[d.zone].emissions += d.Scope1; 
-                    zoneMap[d.zone].lat += d.lat;
-                    zoneMap[d.zone].lon += d.lon;
-                    zoneMap[d.zone].count += 1;
-                    zoneMap[d.zone].sources.push({...d, distanceToCenter: distToCenter}); 
-                    validSources.push(d); 
-                }
-            }
-        });
-
-        // 重新計算有效點源構成的最終幾何中心點
-        Object.values(zoneMap).forEach(z => {
-            z.lat /= z.count;
-            z.lon /= z.count;
-        });
-
         const mainRoutes = [];
         const branchRoutes = [];
         const seaRoutes = [];
-        const hubEmissions = { NORTH_HUB: 0, CENTRAL_HUB_1: 0, CENTRAL_HUB_2: 0, CENTRAL_HUB_LAND: 0, SOUTH_HUB: 0, EAST_HUB: 0 };
+        const hubEmissions = { NORTH_HUB: 0, CENTRAL_HUB_1: 0, CENTRAL_HUB_2: 0, CENTRAL_HUB_LAND: 0, SOUTH_HUB: 0, EAST_HUB: 0, SOUTHEAST_HUB: 0 };
 
-        // 3. 建立有效支線 (有效廠區 -> 最終聚落中心)
-        validSources.forEach(d => {
-            const z = zoneMap[d.zone];
-            // 避免廠區完全重疊在聚落中心時產生無意義的短線
-            if (z && (Math.abs(d.lat - z.lat) > 0.002 || Math.abs(d.lon - z.lon) > 0.002)) {
-                branchRoutes.push({
-                    from: { lat: d.lat, lon: d.lon, name: d.Plant },
-                    to: { lat: z.lat, lon: z.lon, name: z.name }
-                });
+        // 1. 將廠區分配至縣市實體聚落 (支援彰化智慧分流與 60km 棄保)
+        scope1Data.forEach(d => {
+            let cId = countyMap[d.County];
+            if (!cId) return; // 無縣市對應者跳過
+
+            // 彰化動態分流：依距離就近分流至台中港(北)或麥寮(南)
+            if (d.County.includes('彰化')) {
+                const dist1 = calcDistanceKm(d.lat, d.lon, CCS_HUBS['CENTRAL_HUB_1'].lat, CCS_HUBS['CENTRAL_HUB_1'].lon);
+                const dist2 = calcDistanceKm(d.lat, d.lon, CCS_HUBS['CENTRAL_HUB_2'].lat, CCS_HUBS['CENTRAL_HUB_2'].lon);
+                cId = dist1 < dist2 ? 'C_CHW_N' : 'C_CHW_S';
             }
-        });
 
-        // 4. 主管線分配 (聚落中心 -> 最近接收樞紐)
-        Object.values(zoneMap).forEach(z => {
-            if (z.emissions <= 0) return;
-
-            let targetHub = null;
+            const cluster = PREDEFINED_CLUSTERS[cId];
+            const distToCenter = calcDistanceKm(d.lat, d.lon, cluster.lat, cluster.lon);
             
-            // 區域強制分配邏輯 (南區統一送往高雄港，不會拉長管線去北部)
-            if (z.Region === '南區') targetHub = CCS_HUBS['SOUTH_HUB'];
-            else if (z.Region === '北區') targetHub = CCS_HUBS['NORTH_HUB'];
-            else if (z.Region === '東區') targetHub = CCS_HUBS['EAST_HUB'];
-            else if (z.Region === '中區') {
-                // 苗栗區的工廠強制分配至鐵砧山陸地封存，不再北送林口外海
-                if (z.name.includes('苗栗') || z.name.includes('頭份') || z.name.includes('通霄') || z.name.includes('竹南')) {
-                    targetHub = CCS_HUBS['CENTRAL_HUB_LAND'];
-                } else {
-                    // 中區依據最短距離智能分配給台中港或麥寮
-                    const midHubs = [CCS_HUBS['CENTRAL_HUB_1'], CCS_HUBS['CENTRAL_HUB_2']];
-                    let minDist = Infinity;
-                    midHubs.forEach(h => {
-                        const dist = calcDistanceKm(z.lat, z.lon, h.lat, h.lon);
-                        if (dist < minDist) {
-                            minDist = dist;
-                            targetHub = h;
-                        }
+            // 如果廠區距離聚落中心超過 60 公里，直接放棄加入 CCS 網路 (不會畫線，不計入排放)
+            if (distToCenter <= 60) {
+                if (!activeClusters[cId]) {
+                    activeClusters[cId] = { ...cluster, emissions: 0, sources: [] };
+                }
+                activeClusters[cId].emissions += d.Scope1;
+                activeClusters[cId].sources.push({ ...d, distanceToHub: 0 }); // 佔位，後續補上真實距離
+                validSources.push(d); 
+                
+                if (distToCenter > 0.002) {
+                    branchRoutes.push({
+                        from: { lat: d.lat, lon: d.lon, name: d.Plant },
+                        to: { lat: cluster.lat, lon: cluster.lon, name: cluster.name }
                     });
                 }
             }
+        });
 
+        // 2. 主管線分配 (聚落中心 -> 預設海港/陸地樞紐)
+        Object.values(activeClusters).forEach(cluster => {
+            if (cluster.emissions <= 0) return;
+            const targetHub = CCS_HUBS[cluster.targetHub];
+            
             if (targetHub) {
-                hubEmissions[targetHub.id] += z.emissions;
-                const distance = estimateRoutingDistance(z.lat, z.lon, targetHub.lat, targetHub.lon, false);
+                hubEmissions[targetHub.id] += cluster.emissions;
+                const distMain = estimateRoutingDistance(cluster.lat, cluster.lon, targetHub.lat, targetHub.lon, false);
                 
                 mainRoutes.push({
-                    from: { lat: z.lat, lon: z.lon, name: z.name },
+                    from: { lat: cluster.lat, lon: cluster.lon, name: cluster.name },
                     to: { lat: targetHub.lat, lon: targetHub.lon, name: targetHub.name },
-                    weight: z.emissions,
-                    distance: distance,
-                    isUnrealistic: distance > 60 // 若超過 60km 即標示為可行性極低
+                    weight: cluster.emissions,
+                    distance: distMain,
+                    isUnrealistic: distMain > 60 // 修正為超過 60km 標示橘色極低可行性
                 });
 
                 // 將該聚落的碳源歸戶至目標樞紐，並計算完整估計距離 (主線+支線)
-                z.sources.forEach(src => {
+                cluster.sources.forEach(src => {
+                    const distBranch = estimateRoutingDistance(src.lat, src.lon, cluster.lat, cluster.lon, false);
                     hubSources[targetHub.id].push({
                         ...src,
-                        distanceToHub: distance + estimateRoutingDistance(src.lat, src.lon, z.lat, z.lon, false)
+                        distanceToHub: distMain + distBranch
                     });
                 });
             }
         });
 
-        // 5. 海運航線 (南區/東區 -> 西部封存場)
+        // 3. 海運航線 (南區/東區 -> 西部封存場) - 精確控制點避開陸地
         if (hubEmissions['SOUTH_HUB'] > 0) {
             seaRoutes.push({
                 from: CCS_HUBS['SOUTH_HUB'], to: CCS_HUBS['CENTRAL_HUB_2'], 
-                control: { lat: 23.2, lon: 119.5 }, 
+                c1: { lat: 22.8, lon: 119.8 }, c2: { lat: 23.5, lon: 119.8 }, // 高雄外海轉麥寮外海
                 weight: hubEmissions['SOUTH_HUB'], label: '海運北送封存'
             });
         }
         if (hubEmissions['EAST_HUB'] > 0) {
             seaRoutes.push({
                 from: CCS_HUBS['EAST_HUB'], to: CCS_HUBS['NORTH_HUB'],
-                // 調整控制點，將航線大幅向外海繞行，避免穿越或碰撞宜蘭/新北陸地
-                control: { lat: 24.6, lon: 122.8 }, 
+                // 調整控制點，將航線大幅向外海繞行，完美避開宜蘭與東北角陸地
+                c1: { lat: 24.7, lon: 122.2 }, c2: { lat: 25.4, lon: 121.9 },
                 weight: hubEmissions['EAST_HUB'], label: '海運北送封存'
             });
         }
+        if (hubEmissions['SOUTHEAST_HUB'] > 0) {
+            seaRoutes.push({
+                from: CCS_HUBS['SOUTHEAST_HUB'], to: CCS_HUBS['SOUTH_HUB'],
+                // 從台東南迴，完美繞過恆春半島
+                c1: { lat: 22.2, lon: 121.2 }, c2: { lat: 21.7, lon: 120.5 },
+                weight: hubEmissions['SOUTHEAST_HUB'], label: '南迴海運轉運'
+            });
+        }
 
-        return { mainRoutes, branchRoutes, seaRoutes, zones: Object.values(zoneMap), hubSources, hubEmissions, validSources };
+        return { mainRoutes, branchRoutes, seaRoutes, hubSources, hubEmissions, validSources };
     }, [scope1Data]);
 
     // 計算 Scope 1+2 區域統計 (套用有效過濾名單)
@@ -1109,7 +1113,7 @@ const CcusDashboard = () => {
                                 <div className="flex flex-col gap-2 overflow-y-auto pr-2 custom-scrollbar max-h-[300px]">
                                     <div className="bg-slate-50 p-3 rounded border border-slate-200">
                                         <div className="text-xs font-bold text-slate-500 mb-1">【南區】陸路集中 ➔ 港口接收外銷</div>
-                                        <div className="text-xs text-slate-600 leading-relaxed">由於缺乏合適本土封存場址，建議以陸路支線將大發、林園、台南、台東等高排碳區收集至聚落中心，再以主管線送往高雄港接收站，轉由船運送往中部的麥寮/台中港或東南亞(印尼/馬來西亞)進行封存。</div>
+                                        <div className="text-xs text-slate-600 leading-relaxed">由於缺乏合適本土封存場址，建議以陸路支線將大發、林園等高排碳區收集至聚落中心，再以主管線送往高雄港接收站，轉由船運送往中部的麥寮/台中港或東南亞(印尼/馬來西亞)進行封存。台東則以南迴海運接駁至高雄。</div>
                                     </div>
                                     <div className="bg-slate-50 p-3 rounded border border-slate-200">
                                         <div className="text-xs font-bold text-slate-500 mb-1">【中區】陸路集中 ➔ 本土海/陸封存</div>
@@ -1117,7 +1121,7 @@ const CcusDashboard = () => {
                                     </div>
                                     <div className="bg-slate-50 p-3 rounded border border-slate-200">
                                         <div className="text-xs font-bold text-slate-500 mb-1">【北區】陸路集中 ➔ 林口外海封存</div>
-                                        <div className="text-xs text-slate-600 leading-relaxed">排放源較分散。主要集中於桃園與新竹，需評估建立較長的陸地管線往北延伸，集中至林口沿岸，轉由海管輸送至林口外海封存。</div>
+                                        <div className="text-xs text-slate-600 leading-relaxed">排放源較分散。主要集中於桃園與新竹，需評估建立較長的陸地管線往北延伸，集中至林口沿岸，轉由海管輸送至林口外海封存。大於60km之管線(橘色虛線)可行性極低。</div>
                                     </div>
                                     <div className="bg-slate-50 p-3 rounded border border-slate-200">
                                         <div className="text-xs font-bold text-slate-500 mb-1">【東區】花蓮港接收 ➔ 海運北送封存</div>
@@ -1178,7 +1182,7 @@ const CcusDashboard = () => {
                             
                             <div className="flex justify-between items-center bg-blue-50 p-3 rounded-lg border border-blue-100 mb-3">
                                 <div>
-                                    <div className="text-[10px] text-blue-600 font-bold uppercase mb-0.5">涵蓋排放點數量</div>
+                                    <div className="text-[10px] text-blue-600 font-bold uppercase mb-0.5">涵蓋有效排放點數量 (≤60km)</div>
                                     <div className="text-xl font-black text-blue-800">{selectedHubSources.length} <span className="text-xs font-normal">家</span></div>
                                 </div>
                                 <div className="text-right">
@@ -1193,7 +1197,7 @@ const CcusDashboard = () => {
                                         <tr>
                                             <th className="p-3 text-blue-800">事業名稱</th>
                                             <th className="p-3 text-blue-800">縣市</th>
-                                            <th className="p-3 text-right text-blue-800">預估距離(km)</th>
+                                            <th className="p-3 text-right text-blue-800">預估管線(km)</th>
                                             <th className="p-3 text-right text-blue-800">範疇一(噸)</th>
                                         </tr>
                                     </thead>
@@ -1202,11 +1206,11 @@ const CcusDashboard = () => {
                                             <tr key={i} className="hover:bg-blue-50/30 transition-colors">
                                                 <td className="p-3 font-bold text-slate-700 truncate max-w-[150px]" title={row.Plant}>{row.Plant}</td>
                                                 <td className="p-3 text-slate-500">{row.County}</td>
-                                                <td className="p-3 text-right font-mono text-slate-500">{row.distanceToHub.toFixed(1)}</td>
+                                                <td className={`p-3 text-right font-mono ${row.distanceToHub > 60 ? 'text-orange-500 font-bold' : 'text-slate-500'}`}>{row.distanceToHub.toFixed(1)}</td>
                                                 <td className="p-3 text-right font-mono font-bold text-rose-600">{row.Scope1.toLocaleString()}</td>
                                             </tr>
                                         ))}
-                                        {selectedHubSources.length === 0 && <tr><td colSpan={4} className="p-8 text-center text-slate-400">此樞紐目前未分配到任何碳源廠區。</td></tr>}
+                                        {selectedHubSources.length === 0 && <tr><td colSpan={4} className="p-8 text-center text-slate-400">此樞紐目前未分配到任何有效碳源廠區。</td></tr>}
                                     </tbody>
                                 </table>
                             </div>
