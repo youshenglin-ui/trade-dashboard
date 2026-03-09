@@ -208,7 +208,7 @@ const generateTreePath = (x1, y1, x2, y2, isBranch, inlandCurve = false) => {
     }
 };
 
-// 捕捉端專用 Y 軸標籤 (修復 ReferenceError)
+// 捕捉端專用 Y 軸標籤
 const CaptureYAxisTick = ({ x, y, payload, data }) => {
     const item = data && data.find(d => d.Label === payload.value);
     const tech = item ? item.Capture_Tech : '';
@@ -220,7 +220,7 @@ const CaptureYAxisTick = ({ x, y, payload, data }) => {
     );
 };
 
-// 捕捉專用 Tooltip (修復 ReferenceError)
+// 捕捉專用 Tooltip
 const CaptureTooltip = ({ active, payload, label }) => {
     if (active && payload && payload.length) {
         const data = payload[0].payload;
@@ -264,7 +264,7 @@ const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], sto
     const handleMouseMove = (e) => {
         if (dragState) {
             const dx = e.clientX - dragState.startX; const dy = e.clientY - dragState.startY;
-            const dLon = dx / (MAP_CONSTANTS.baseScale * zoom); const dLat = -dy / (MAPCONSTANTS.baseScale * 1.1 * zoom);
+            const dLon = dx / (MAP_CONSTANTS.baseScale * zoom); const dLat = -dy / (MAP_CONSTANTS.baseScale * 1.1 * zoom);
             if (setHubs) setHubs(prev => ({...prev, [dragState.id]: { ...prev[dragState.id], lat: dragState.startLat + dLat, lon: dragState.startLon + dLon }}));
         } else if (isDragging) {
             setPan(prev => ({ x: prev.x + (e.clientX - lastPos.x), y: prev.y + (e.clientY - lastPos.y) }));
@@ -274,20 +274,43 @@ const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], sto
     const handleMouseUp = () => { setIsDragging(false); setDragState(null); };
     const handleMouseLeave = () => { setIsDragging(false); setDragState(null); };
 
+    // 高解析度圖片匯出 (修正 HTML 圖例無法截取的痛點，改用原生 SVG 圖例)
     const exportMapAsImage = () => {
         const svgElement = containerRef.current?.querySelector('svg');
         if (!svgElement) return;
-        const serializer = new XMLSerializer(); let svgString = serializer.serializeToString(svgElement);
-        svgString = svgString.replace(/<svg /, `<svg style="background-color:#f8fafc;" `);
-        const canvas = document.createElement('canvas'); const ctx = canvas.getContext('2d');
-        const img = new Image(); const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
-        const url = URL.createObjectURL(svgBlob);
+
+        const clonedSvg = svgElement.cloneNode(true);
+        if (!clonedSvg.getAttribute('xmlns')) {
+            clonedSvg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+        }
+        
+        clonedSvg.setAttribute('width', '800');
+        clonedSvg.setAttribute('height', '900');
+        clonedSvg.style.backgroundColor = '#f8fafc';
+        clonedSvg.style.fontFamily = 'sans-serif';
+
+        const serializer = new XMLSerializer(); 
+        const svgString = serializer.serializeToString(clonedSvg);
+        
+        const canvas = document.createElement('canvas'); 
+        const ctx = canvas.getContext('2d');
+        const scale = 2; // High DPI
+        canvas.width = 800 * scale; 
+        canvas.height = 900 * scale;
+        ctx.scale(scale, scale);
+        
+        const img = new Image(); 
+        img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgString);
+        
         img.onload = () => {
-            canvas.width = svgElement.clientWidth * 2; canvas.height = svgElement.clientHeight * 2;
-            ctx.scale(2, 2); ctx.drawImage(img, 0, 0); URL.revokeObjectURL(url);
-            const a = document.createElement('a'); a.download = 'CCUS_Map_Export.png'; a.href = canvas.toDataURL('image/png'); a.click();
-        }; img.src = url;
+            ctx.drawImage(img, 0, 0, 800, 900); 
+            const a = document.createElement('a'); 
+            a.download = 'CCUS_Pipeline_Map.png'; 
+            a.href = canvas.toDataURL('image/png'); 
+            a.click();
+        }; 
     };
+
     const textScale = Math.pow(zoom, 0.7);
 
     return (
@@ -384,15 +407,17 @@ const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], sto
                 )}
             </div>
 
+            {/* 控制面板：不參與匯出 */}
             <div className="absolute top-4 right-4 z-10 flex flex-col gap-2 bg-white/95 p-1.5 rounded-lg shadow-sm border border-slate-200 backdrop-blur">
                 <button onClick={() => setZoom(prev => Math.min(prev * 1.3, 10))} className="p-2 bg-slate-50 hover:bg-slate-200 rounded-md text-slate-600 transition-colors" title="放大"><ZoomIn size={18}/></button>
                 <button onClick={() => setZoom(prev => Math.max(prev / 1.3, 0.5))} className="p-2 bg-slate-50 hover:bg-slate-200 rounded-md text-slate-600 transition-colors" title="縮小"><ZoomOut size={18}/></button>
                 <button onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }} className="p-2 bg-slate-50 hover:bg-slate-200 rounded-md text-slate-600 transition-colors" title="重置畫面"><Maximize size={18}/></button>
                 <div className="w-full h-px bg-slate-200 my-1"></div>
-                <button onClick={exportMapAsImage} className="p-2 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-md transition-colors" title="輸出圖片"><DownloadCloud size={18}/></button>
+                <button onClick={exportMapAsImage} className="p-2 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-md transition-colors" title="輸出高品質圖片"><DownloadCloud size={18}/></button>
             </div>
 
             <svg viewBox={`0 0 ${baseWidth} ${baseHeight}`} className={`w-full h-full select-none ${isDragging ? 'cursor-grabbing' : 'cursor-grab'} ${dragState ? 'cursor-move' : ''}`} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave={handleMouseLeave} ref={mapRef}>
+                {/* 內部群組：受 Zoom & Pan 控制 */}
                 <g transform={`translate(${baseWidth/2 + pan.x}, ${baseHeight/2 + pan.y}) scale(${zoom})`}>
                     {mapPaths.map((p, i) => p.d && <path key={`map-${i}`} d={p.d} fill="#f8fafc" stroke="#cbd5e1" strokeWidth={1.5 / zoom} />)}
 
@@ -519,30 +544,76 @@ const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], sto
                         );
                     })}
                 </g>
-            </svg>
-            
-            <div className="absolute bottom-4 left-4 bg-white/95 p-3 rounded-lg shadow-sm border border-slate-200 text-xs text-slate-700 pointer-events-none backdrop-blur">
+
+                {/* 將圖例原生渲染於 SVG 內，確保匯出時完美保留 */}
                 {activeLayers.includes('planning') && (
-                    <div className="space-y-1.5">
-                        <div className="flex items-center gap-2"><div className="w-3 h-3 bg-sky-500 border border-white"></div> 海洋接收站 / 本土封存樞紐 (可拖曳)</div>
-                        <div className="flex items-center gap-2"><div className="w-3 h-3 bg-amber-600 border border-white"></div> 陸地封存場域 (可拖曳)</div>
-                        <div className="flex items-center gap-2 mt-2 pt-1 border-t border-slate-200"><div className="w-3 h-3 rounded-full bg-rose-600 border border-white shadow"></div> 優先碳源 (&ge; 2.5萬噸)</div>
-                        <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-orange-500"></div> 次要碳源 (&lt; 2.5萬噸)</div>
-                        <div className="flex items-center gap-2 mt-2 pt-1 border-t border-slate-200"><div className="w-6 h-0 border-t-2 border-blue-500 border-dashed"></div> 擬真 GoogleMap 主幹管線預估</div>
-                        <div className="flex items-center gap-2"><div className="w-6 h-0 border-t-2 border-orange-500 border-dashed opacity-80"></div> 超過 60km (主幹可行性極低)</div>
-                        <div className="flex items-center gap-2"><svg width="24" height="6" className="overflow-visible"><path d="M 0 3 Q 12 3, 24 -3" stroke="#94a3b8" strokeWidth="2" fill="none"/></svg> 廠區就近接入主幹</div>
-                        <div className="flex items-center gap-2"><div className="w-6 h-0 border-t-2 border-sky-500 border-dashed opacity-60"></div> 樞紐海運外繞航線</div>
-                    </div>
+                    <g transform={`translate(20, ${baseHeight - 270})`}>
+                        <rect x="0" y="0" width="310" height="250" fill="rgba(255,255,255,0.95)" rx="10" stroke="#e2e8f0" strokeWidth="1.5" />
+                        
+                        <rect x="15" y="20" width="12" height="12" fill="#0ea5e9" stroke="white" strokeWidth="1" />
+                        <text x="35" y="30" fontSize="12" fill="#334155" fontWeight="bold">海洋接收站 / 本土封存樞紐 (可拖曳)</text>
+                        
+                        <rect x="15" y="45" width="12" height="12" fill="#b45309" stroke="white" strokeWidth="1" />
+                        <text x="35" y="55" fontSize="12" fill="#334155" fontWeight="bold">陸地封存場域 (可拖曳)</text>
+                        
+                        <line x1="15" y1="70" x2="295" y2="70" stroke="#e2e8f0" strokeWidth="1" />
+                        
+                        <circle cx="21" cy="85" r="6" fill="#e11d48" stroke="white" strokeWidth="1" />
+                        <text x="35" y="90" fontSize="12" fill="#334155" fontWeight="bold">優先碳源 (≥ 2.5萬噸)</text>
+                        
+                        <circle cx="21" cy="110" r="4" fill="#f97316" opacity="0.8" />
+                        <text x="35" y="115" fontSize="12" fill="#334155" fontWeight="bold">次要碳源 (&lt; 2.5萬噸)</text>
+                        
+                        <line x1="15" y1="130" x2="295" y2="130" stroke="#e2e8f0" strokeWidth="1" />
+                        
+                        <line x1="15" y1="150" x2="40" y2="150" stroke="#3b82f6" strokeWidth="3" strokeDasharray="6 4" />
+                        <text x="45" y="154" fontSize="12" fill="#334155" fontWeight="bold">擬真 GoogleMap 主幹管線預估</text>
+
+                        <line x1="15" y1="175" x2="40" y2="175" stroke="#f97316" strokeWidth="3" strokeDasharray="6 4" opacity="0.8" />
+                        <text x="45" y="179" fontSize="12" fill="#334155" fontWeight="bold">超過 60km (主幹可行性極低)</text>
+
+                        <path d="M 15 200 Q 27.5 200, 40 195" stroke="#94a3b8" strokeWidth="2" fill="none" />
+                        <text x="45" y="204" fontSize="12" fill="#334155" fontWeight="bold">有效廠區支線 (優先≤60km,次要≤20km)</text>
+
+                        <line x1="15" y1="225" x2="40" y2="225" stroke="#0284c7" strokeWidth="2" strokeDasharray="6 6" opacity="0.6" />
+                        <text x="45" y="229" fontSize="12" fill="#334155" fontWeight="bold">樞紐海運外繞航線</text>
+                    </g>
                 )}
+
                 {!activeLayers.includes('planning') && (
-                    <div className="space-y-2">
-                        {activeLayers.includes('capture') && <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-blue-500 border border-white shadow"></span> 捕捉端 (依捕捉量)</div>}
-                        {activeLayers.includes('future') && <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full border-2 border-amber-600 border-dashed"></span> 潛力擴充點源</div>}
-                        {activeLayers.includes('util') && <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-emerald-500 border border-white shadow"></span> 再利用端 (依需求量)</div>}
-                        {activeLayers.includes('storage') && <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-rose-500 border border-white shadow"></span> 封存場域與專案管線</div>}
-                    </div>
+                    <g transform={`translate(20, ${baseHeight - (30 + activeLayers.length * 30)})`}>
+                        <rect x="0" y="0" width="220" height={20 + activeLayers.length * 30} fill="rgba(255,255,255,0.95)" rx="10" stroke="#e2e8f0" strokeWidth="1.5" />
+                        {activeLayers.map((layer, idx) => {
+                            const yOffset = 25 + idx * 30;
+                            if (layer === 'capture') return (
+                                <g key={layer} transform={`translate(15, ${yOffset})`}>
+                                    <circle cx="6" cy="-4" r="5" fill="#3b82f6" stroke="white" strokeWidth="1" />
+                                    <text x="20" y="0" fontSize="12" fill="#334155" fontWeight="bold">捕捉端 (依捕捉量)</text>
+                                </g>
+                            );
+                            if (layer === 'future') return (
+                                <g key={layer} transform={`translate(15, ${yOffset})`}>
+                                    <circle cx="6" cy="-4" r="5" fill="transparent" stroke="#d97706" strokeWidth="2" strokeDasharray="3 3" />
+                                    <text x="20" y="0" fontSize="12" fill="#334155" fontWeight="bold">潛力擴充點源</text>
+                                </g>
+                            );
+                            if (layer === 'util') return (
+                                <g key={layer} transform={`translate(15, ${yOffset})`}>
+                                    <circle cx="6" cy="-4" r="5" fill="#10b981" stroke="white" strokeWidth="1" />
+                                    <text x="20" y="0" fontSize="12" fill="#334155" fontWeight="bold">再利用端 (依需求量)</text>
+                                </g>
+                            );
+                            if (layer === 'storage') return (
+                                <g key={layer} transform={`translate(15, ${yOffset})`}>
+                                    <circle cx="6" cy="-4" r="6" fill="#ef4444" stroke="white" strokeWidth="1" />
+                                    <text x="20" y="0" fontSize="12" fill="#334155" fontWeight="bold">封存場域與專案管線</text>
+                                </g>
+                            );
+                            return null;
+                        })}
+                    </g>
                 )}
-            </div>
+            </svg>
         </div>
     );
 };
@@ -814,9 +885,6 @@ const CcusDashboard = () => {
         return scope1Data.filter(d => (listRegion === 'ALL' || d.Region === listRegion) && (listIndustry === 'ALL' || d.Industry === listIndustry));
     }, [scope1Data, listRegion, listIndustry]);
 
-    const [listMode, setListMode] = useState('all'); 
-    const [selectedHubId, setSelectedHubId] = useState('NORTH_HUB');
-    
     const selectedHubSources = useMemo(() => {
         if (!ccsTopology || !ccsTopology.hubSources[selectedHubId]) return [];
         return [...ccsTopology.hubSources[selectedHubId]].sort((a,b) => b.Scope1 - a.Scope1);
@@ -1037,7 +1105,6 @@ const CcusDashboard = () => {
                 </div>
             )}
 
-            {/* 合併版 CCUS 設施總覽 */}
             {activeTab === 'facilities' && (
                 <div className="space-y-6 animate-fade-in">
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -1074,7 +1141,6 @@ const CcusDashboard = () => {
                         </div>
 
                         <div className="lg:col-span-6 flex flex-col gap-6 h-full">
-                            {/* --- 動態渲染右側內容 --- */}
                             {facilitySubTab === 'all' && (
                                 <>
                                     <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col h-[350px]">
