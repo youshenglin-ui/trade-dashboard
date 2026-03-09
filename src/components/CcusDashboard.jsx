@@ -510,9 +510,6 @@ const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], sto
     );
 };
 
-// ==========================================
-// 主戰情室模組
-// ==========================================
 const CcusDashboard = () => {
     const [activeTab, setActiveTab] = useState('planning'); 
     const [facilitySubTab, setFacilitySubTab] = useState('all'); 
@@ -523,9 +520,9 @@ const CcusDashboard = () => {
     const [mapPaths, setMapPaths] = useState([]); 
     const [loading, setLoading] = useState(true);
     const [selectedYear, setSelectedYear] = useState('ALL');
+    const [transportMode, setTransportMode] = useState('ALL');
     const [hubs, setHubs] = useState(INITIAL_CCS_HUBS);
 
-    // Filter states
     const [listRegion, setListRegion] = useState('ALL');
     const [listIndustry, setListIndustry] = useState('ALL');
     const [selectedHubId, setSelectedHubId] = useState('NORTH_HUB');
@@ -895,9 +892,17 @@ const CcusDashboard = () => {
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col">
                             <div className="flex justify-between items-center mb-3 border-b pb-2">
-                                <h3 className="font-bold text-slate-700 text-sm flex items-center gap-2"><Anchor size={16} className="text-blue-500"/> 封存點位可能碳源分析</h3>
-                                <select value={selectedHubId} onChange={e => setSelectedHubId(e.target.value)} className="bg-slate-50 border border-slate-200 text-slate-700 font-bold px-3 py-1 rounded-lg outline-none cursor-pointer hover:bg-slate-100 text-xs">
-                                    {Object.values(hubs).map(hub => (<option key={hub.id} value={hub.id}>{hub.name}</option>))}
+                                <h3 className="font-bold text-slate-700 text-sm flex items-center gap-2">
+                                    <Anchor size={16} className="text-blue-500"/> 封存點位可能碳源分析
+                                </h3>
+                                <select 
+                                    value={selectedHubId} 
+                                    onChange={e => setSelectedHubId(e.target.value)} 
+                                    className="bg-slate-50 border border-slate-200 text-slate-700 font-bold px-3 py-1 rounded-lg outline-none cursor-pointer hover:bg-slate-100 text-xs"
+                                >
+                                    {Object.values(hubs).map(hub => (
+                                        <option key={hub.id} value={hub.id}>{hub.name}</option>
+                                    ))}
                                 </select>
                             </div>
                             
@@ -1023,7 +1028,7 @@ const CcusDashboard = () => {
                             </div>
                             <div className="flex-1 w-full h-full relative min-h-0">
                                 <ErrorBoundary>
-                                    <TaiwanCcusMap mode="facilities" activeLayers={activeLayersMap[facilitySubTab]} captureData={fCapture} utilData={fUtil} storageData={fStorage} mapPaths={mapPaths} />
+                                    <TaiwanCcusMap mode="facilities" activeLayers={activeLayersMap[facilitySubTab]} captureData={fCapture} utilData={fUtil} storageData={fStorage} mapPaths={mapPaths} hubs={hubs} setHubs={setHubs} />
                                 </ErrorBoundary>
                             </div>
                         </div>
@@ -1036,7 +1041,7 @@ const CcusDashboard = () => {
                                         <h3 className="font-bold text-slate-700 text-sm mb-3 border-b pb-2 flex items-center gap-2"><Activity size={16} className="text-blue-500"/> 企業價值鏈橫向對照 (捕捉 vs 去化)</h3>
                                         <div className="flex-1 min-h-0 w-full relative">
                                             <ErrorBoundary>
-                                                <ResponsiveContainer width="100%" height="100%">
+                                                <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                                                     <ComposedChart data={valueChainData.slice(0, 10)} margin={{top: 10, right: 10, bottom: 20, left: 0}}>
                                                         <CartesianGrid strokeDasharray="3 3" vertical={false} />
                                                         <XAxis dataKey="Company" tick={{fontSize: 10}} interval={0} angle={-30} textAnchor="end" />
@@ -1082,7 +1087,7 @@ const CcusDashboard = () => {
                                         <h3 className="font-bold text-slate-700 text-sm mb-3 border-b pb-2 flex items-center gap-2"><Activity size={16} className="text-blue-500"/> 技術解析：總捕捉量 vs 設備耗能</h3>
                                         <div className="flex-1 min-h-0 w-full relative">
                                             <ErrorBoundary>
-                                                <ResponsiveContainer width="100%" height="100%">
+                                                <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                                                     <BarChart data={fCapture.filter(r => r.Capture_Volume > 0).sort((a,b) => b.Capture_Volume - a.Capture_Volume)} layout="vertical" margin={{ top: 5, right: 30, left: 10, bottom: 5 }} barGap={2} barSize={20}>
                                                         <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false}/>
                                                         <XAxis type="number" fontSize={10} unit=" 萬噸"/>
@@ -1171,7 +1176,7 @@ const CcusDashboard = () => {
                                         <div className="flex-1 min-h-0 w-full relative">
                                             <div className="absolute top-0 right-2 text-[10px] text-slate-400 bg-white/80 px-2 rounded z-10 border border-slate-100 shadow-sm">圓點大小 = 封存量能</div>
                                             <ErrorBoundary>
-                                                <ResponsiveContainer width="100%" height="100%">
+                                                <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                                                     <ScatterChart margin={{ top: 10, right: 10, bottom: 20, left: 0 }}>
                                                         <CartesianGrid strokeDasharray="3 3"/>
                                                         <XAxis type="number" dataKey="Distance_km" name="運輸距離" unit=" km" tick={{fontSize: 10}}>
