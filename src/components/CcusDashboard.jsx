@@ -243,20 +243,16 @@ const MAP_CONSTANTS = {
 };
 
 export const projectBase = (lon, lat) => {
-    if (!lon || !lat || isNaN(lon) || isNaN(lat)) return [-9999, -9999]; 
+    if (lon == null || lat == null || isNaN(lon) || isNaN(lat)) return [-9999, -9999]; 
     return [
         (lon - MAP_CONSTANTS.centerLon) * MAP_CONSTANTS.baseScale, 
         -(lat - MAP_CONSTANTS.centerLat) * MAP_CONSTANTS.baseScale * 1.1
     ];
 };
 
-// SVG 繪圖：加入微彎視覺，避免直線切過海灣或陸地
 const generateTreePath = (x1, y1, x2, y2, isBranch) => {
     if (isBranch) {
-        // 支線：加入向東(內陸)的微彎，避免沿海廠區直線連線切過海面
-        const cx = (x1 + x2) / 2 + 8;
-        const cy = (y1 + y2) / 2;
-        return `M ${x1} ${y1} Q ${cx} ${cy}, ${x2} ${y2}`;
+        return `M ${x1} ${y1} Q ${x1} ${y2}, ${x2} ${y2}`;
     } else {
         const midY = (y1 + y2) / 2;
         return `M ${x1} ${y1} C ${x1} ${midY}, ${x2} ${midY}, ${x2} ${y2}`;
@@ -304,7 +300,7 @@ const TaiwanCcusMap = ({ mode = 'capture', captureData = [], utilData = [], stor
                         {ccsTopology && ccsTopology.hubEmissions[hoveredNode.id] > 0 && (
                              <div className="bg-slate-50 p-2 rounded border border-slate-200 flex justify-between items-center">
                                  <span className="text-slate-600 text-xs font-bold">預估接收總量</span>
-                                 <span className="font-mono font-black text-blue-600 text-sm">{(ccsTopology.hubEmissions[hoveredNode.id] / 10000).toFixed(1)} 萬噸</span>
+                                 <span className="font-mono font-black text-blue-600 text-sm">{(Number(ccsTopology.hubEmissions[hoveredNode.id] || 0) / 10000).toFixed(1)} 萬噸</span>
                              </div>
                         )}
                     </div>
@@ -319,20 +315,20 @@ const TaiwanCcusMap = ({ mode = 'capture', captureData = [], utilData = [], stor
                         <div className="space-y-1.5 text-xs text-slate-600">
                             <div className="flex justify-between items-center"><span className="text-slate-400">隸屬聚落</span> <span className="font-bold text-slate-700">{hoveredNode.zone}</span></div>
                             <div className="flex justify-between items-center"><span className="text-slate-400">產業類別</span> <span>{hoveredNode.Industry}</span></div>
-                            <div className="flex justify-between items-center"><span className="text-slate-400">管線狀態</span> <span className={`font-bold ${hoveredNode.distanceToHub === 0 ? 'text-slate-400' : 'text-emerald-600'}`}>{hoveredNode.distanceToHub === 0 ? '未納入管網' : `已連線 (距中心 ${hoveredNode.distanceToCenter.toFixed(1)}km)`}</span></div>
+                            <div className="flex justify-between items-center"><span className="text-slate-400">管線狀態</span> <span className={`font-bold ${hoveredNode.distanceToHub <= 0 ? 'text-slate-400' : 'text-emerald-600'}`}>{hoveredNode.distanceToHub <= 0 ? '距離過遠，未納入管網' : `已連線 (距中心 ${(Number(hoveredNode.distanceToCenter)||0).toFixed(1)}km)`}</span></div>
                             
                             <div className="mt-2 bg-rose-50 p-2 rounded-lg border border-rose-100 flex flex-col gap-1">
                                 <div className="flex justify-between items-center">
                                     <span className="text-rose-800 font-bold">總排放量 (範疇 1+2)</span>
-                                    <span className="font-mono font-black text-rose-600 text-sm">{(hoveredNode.TotalScope / 10000).toFixed(1)} <span className="text-[10px] font-normal">萬噸</span></span>
+                                    <span className="font-mono font-black text-rose-600 text-sm">{(Number(hoveredNode.TotalScope || 0) / 10000).toFixed(1)} <span className="text-[10px] font-normal">萬噸</span></span>
                                 </div>
                                 <div className="flex justify-between items-center text-xs mt-1 pt-1 border-t border-rose-200/50">
                                     <span className="text-rose-600 font-bold">範疇一 (可CCS捕捉)</span>
-                                    <span className="font-mono text-rose-600 font-bold">{(hoveredNode.Scope1 / 10000).toFixed(1)} 萬噸</span>
+                                    <span className="font-mono text-rose-600 font-bold">{(Number(hoveredNode.Scope1 || 0) / 10000).toFixed(1)} 萬噸</span>
                                 </div>
                                 <div className="flex justify-between items-center text-xs">
                                     <span className="text-slate-500">範疇二 (間接)</span>
-                                    <span className="font-mono text-slate-500">{(hoveredNode.Scope2 / 10000).toFixed(1)} 萬噸</span>
+                                    <span className="font-mono text-slate-500">{(Number(hoveredNode.Scope2 || 0) / 10000).toFixed(1)} 萬噸</span>
                                 </div>
                             </div>
                         </div>
@@ -350,9 +346,9 @@ const TaiwanCcusMap = ({ mode = 'capture', captureData = [], utilData = [], stor
                             <div className="flex justify-between items-center"><span className="text-slate-400">捕捉技術</span> <span className="font-bold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded">{hoveredNode.Capture_Tech || '-'} (TRL {hoveredNode.TRL})</span></div>
                             
                             <div className="mt-2 bg-blue-50 p-2 rounded-lg border border-blue-100 space-y-1 text-xs">
-                                <div className="flex justify-between"><span className="text-slate-500">總捕捉量(A):</span><span className="font-mono font-bold text-slate-700">{hoveredNode.Capture_Volume.toFixed(2)} 萬噸</span></div>
-                                <div className="flex justify-between"><span className="text-rose-500">設備耗能(B):</span><span className="font-mono font-bold text-rose-600">-{hoveredNode.Captur_energy.toFixed(2)} 萬噸</span></div>
-                                <div className="flex justify-between pt-1 border-t border-blue-200 mt-1"><span className="text-blue-800 font-bold">淨捕捉量(=A-B)</span><span className="font-mono font-black text-blue-700">{hoveredNode.Net_Capture_Volume.toFixed(2)} 萬噸</span></div>
+                                <div className="flex justify-between"><span className="text-slate-500">總捕捉量(A):</span><span className="font-mono font-bold text-slate-700">{Number(hoveredNode.Capture_Volume||0).toFixed(2)} 萬噸</span></div>
+                                <div className="flex justify-between"><span className="text-rose-500">設備耗能(B):</span><span className="font-mono font-bold text-rose-600">-{Number(hoveredNode.Captur_energy||0).toFixed(2)} 萬噸</span></div>
+                                <div className="flex justify-between pt-1 border-t border-blue-200 mt-1"><span className="text-blue-800 font-bold">淨捕捉量(=A-B)</span><span className="font-mono font-black text-blue-700">{Number(hoveredNode.Net_Capture_Volume||0).toFixed(2)} 萬噸</span></div>
                             </div>
                         </div>
                     </div>
@@ -373,7 +369,7 @@ const TaiwanCcusMap = ({ mode = 'capture', captureData = [], utilData = [], stor
                             </div>
                             <div className="mt-2 flex justify-between items-center bg-amber-50 p-2 rounded-lg border border-amber-200">
                                 <span className="text-amber-800 font-bold">未來總排放潛力</span>
-                                <span className="font-mono font-black text-amber-600 text-sm">{hoveredNode.Future_Emission_Volume.toFixed(1)} <span className="text-[10px] font-normal">萬噸</span></span>
+                                <span className="font-mono font-black text-amber-600 text-sm">{Number(hoveredNode.Future_Emission_Volume||0).toFixed(1)} <span className="text-[10px] font-normal">萬噸</span></span>
                             </div>
                         </div>
                      </div>
@@ -391,11 +387,11 @@ const TaiwanCcusMap = ({ mode = 'capture', captureData = [], utilData = [], stor
                             
                             <div className="mt-2 flex justify-between items-center bg-slate-50 p-2 rounded-lg border border-slate-100">
                                 <span className="text-slate-600 font-bold">當前驗證量</span>
-                                <span className="font-mono font-black text-slate-700">{hoveredNode.Current_Demand} <span className="text-[10px] font-normal">萬噸</span></span>
+                                <span className="font-mono font-black text-slate-700">{Number(hoveredNode.Current_Demand||0).toFixed(1)} <span className="text-[10px] font-normal">萬噸</span></span>
                             </div>
                             <div className="mt-1 flex justify-between items-center bg-emerald-50 p-2 rounded-lg border border-emerald-100">
                                 <span className="text-emerald-800 font-bold">預期總需求</span>
-                                <span className="font-mono font-black text-emerald-600 text-sm">{hoveredNode.Expected_Demand} <span className="text-[10px] font-normal">萬噸</span></span>
+                                <span className="font-mono font-black text-emerald-600 text-sm">{Number(hoveredNode.Expected_Demand||0).toFixed(1)} <span className="text-[10px] font-normal">萬噸</span></span>
                             </div>
                         </div>
                     </div>
@@ -414,7 +410,7 @@ const TaiwanCcusMap = ({ mode = 'capture', captureData = [], utilData = [], stor
                             
                             <div className="mt-2 flex justify-between items-center bg-rose-50 p-2 rounded-lg border border-rose-100">
                                 <span className="text-rose-800 font-bold">可封存總量</span>
-                                <span className="font-mono font-black text-rose-600 text-sm">{hoveredNode.Capturable_Volume} <span className="text-[10px] font-normal">萬噸</span></span>
+                                <span className="font-mono font-black text-rose-600 text-sm">{Number(hoveredNode.Capturable_Volume||0).toFixed(1)} <span className="text-[10px] font-normal">萬噸</span></span>
                             </div>
                         </div>
                     </div>
@@ -435,7 +431,7 @@ const TaiwanCcusMap = ({ mode = 'capture', captureData = [], utilData = [], stor
                     {/* === 規劃模式 (CCS Planning) === */}
                     {mode === 'planning' && ccsTopology && (
                         <>
-                            {/* 0. 畫海運航線 (完美避開陸地，向外海繞行) */}
+                            {/* 0. 畫海運航線 (完美避開陸地，向外海繞行，附加距離計算) */}
                             {ccsTopology.seaRoutes.map((route, i) => {
                                 const [x1, y1] = projectBase(route.from.lon, route.from.lat);
                                 const [x2, y2] = projectBase(route.to.lon, route.to.lat);
@@ -448,7 +444,7 @@ const TaiwanCcusMap = ({ mode = 'capture', captureData = [], utilData = [], stor
 
                                 return (
                                     <g key={`sea-route-${i}`}>
-                                        <path d={`M ${x1} ${y1} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${x2} ${y2}`} stroke="#0284c7" strokeWidth={Math.max(3, Math.log10(route.weight/10000))/zoom} strokeDasharray={`${6/zoom} ${6/zoom}`} fill="none" opacity={0.6}/>
+                                        <path d={`M ${x1} ${y1} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${x2} ${y2}`} stroke="#0284c7" strokeWidth={Math.max(2, Math.log10(Math.max(10000, route.weight))/zoom)} strokeDasharray={`${6/zoom} ${6/zoom}`} fill="none" opacity={0.6}/>
                                         <text x={midX} y={midY} fontSize={11/zoom} fill="#0369a1" textAnchor="middle" fontWeight="bold" style={{textShadow: '0 0 3px white', pointerEvents: 'none'}}>
                                             {route.label}
                                         </text>
@@ -496,10 +492,10 @@ const TaiwanCcusMap = ({ mode = 'capture', captureData = [], utilData = [], stor
 
                                 return (
                                     <g key={`main-route-${i}`}>
-                                        <path d={pathD} stroke={strokeColor} strokeWidth={Math.max(2, Math.log10(route.weight/10000))/zoom} strokeDasharray={`${6/zoom} ${4/zoom}`} fill="none" opacity={route.isUnrealistic ? 0.7 : 0.85}/>
+                                        <path d={pathD} stroke={strokeColor} strokeWidth={Math.max(2, Math.log10(Math.max(10000, route.weight)))/zoom} strokeDasharray={`${6/zoom} ${4/zoom}`} fill="none" opacity={route.isUnrealistic ? 0.7 : 0.85}/>
                                         <circle cx={x1} cy={y1} r={4/zoom} fill={strokeColor}/>
                                         <text x={midX} y={midY - (4/zoom)} fontSize={10/zoom} fill={textColor} textAnchor="middle" fontWeight="bold" style={{textShadow: '0 0 3px white', pointerEvents: 'none'}}>
-                                            {route.distance.toFixed(0)} km
+                                            {Number(route.distance||0).toFixed(0)} km
                                         </text>
                                     </g>
                                 );
@@ -522,7 +518,7 @@ const TaiwanCcusMap = ({ mode = 'capture', captureData = [], utilData = [], stor
                             {ccsTopology.validSources.map((d, i) => {
                                 const [cx, cy] = projectBase(d.lon, d.lat);
                                 if (cx === -9999) return null;
-                                const r = Math.max(d.isPriority ? 4 : 2, Math.min(d.isPriority ? 20 : 10, Math.sqrt(d.Scope1 / 50000))) / zoom;
+                                const r = Math.max(d.isPriority ? 4 : 2, Math.min(d.isPriority ? 20 : 10, Math.sqrt(Math.max(0, d.Scope1 || 0) / 50000))) / zoom;
                                 const isHovered = hoveredNode === d;
                                 const fillCol = d.isPriority ? "#e11d48" : "#fb7185";
                                 const opac = isHovered ? 1 : (d.isPriority ? 0.85 : 0.5);
@@ -540,7 +536,7 @@ const TaiwanCcusMap = ({ mode = 'capture', captureData = [], utilData = [], stor
                     {mode === 'capture' && captureData.map((d, i) => {
                         const [cx, cy] = projectBase(d.Longitude, d.Latitude);
                         if (cx === -9999) return null;
-                        const r = Math.max(6, Math.min(25, Math.sqrt(d.Capture_Volume || 0) * 1.5)) / zoom; 
+                        const r = Math.max(6, Math.min(25, Math.sqrt(Math.max(0, d.Capture_Volume || 0)) * 1.5)) / zoom; 
                         const isHovered = hoveredNode === d;
                         return (
                             <g key={`cap-${i}`} className="cursor-pointer transition-all" onMouseEnter={() => setHoveredNode(d)} onMouseLeave={() => setHoveredNode(null)}>
@@ -556,7 +552,7 @@ const TaiwanCcusMap = ({ mode = 'capture', captureData = [], utilData = [], stor
                     {mode === 'future' && captureData.map((d, i) => {
                         const [cx, cy] = projectBase(d.Longitude, d.Latitude);
                         if (cx === -9999) return null;
-                        const r = Math.max(6, Math.min(25, Math.sqrt(d.Future_Emission_Volume || 0) * 1.5)) / zoom; 
+                        const r = Math.max(6, Math.min(25, Math.sqrt(Math.max(0, d.Future_Emission_Volume || 0)) * 1.5)) / zoom; 
                         const isHovered = hoveredNode === d;
                         return (
                             <g key={`fut-${i}`} className="cursor-pointer transition-all" onMouseEnter={() => setHoveredNode(d)} onMouseLeave={() => setHoveredNode(null)}>
@@ -574,7 +570,7 @@ const TaiwanCcusMap = ({ mode = 'capture', captureData = [], utilData = [], stor
                         const coords = findCoords(d.Target_Company, d.Target_Plant);
                         const [cx, cy] = projectBase(coords.Longitude, coords.Latitude);
                         if (cx === -9999) return null;
-                        const r = Math.max(8, Math.min(20, Math.sqrt(d.Expected_Demand || 0) * 2)) / zoom;
+                        const r = Math.max(8, Math.min(20, Math.sqrt(Math.max(0, d.Expected_Demand || 0)) * 2)) / zoom;
                         const isHovered = hoveredNode === d;
                         return (
                             <g key={`util-${i}`} className="cursor-pointer transition-all" onMouseEnter={() => setHoveredNode(d)} onMouseLeave={() => setHoveredNode(null)}>
@@ -670,9 +666,9 @@ const CaptureTooltip = ({ active, payload, label }) => {
                 </div>
                 
                 <div className="bg-blue-50/50 p-2 border border-blue-100 rounded space-y-1">
-                    <div className="flex justify-between text-slate-600"><span className="text-slate-500">總捕捉量 (A):</span> <span className="font-mono font-bold">{data.Capture_Volume.toFixed(2)} 萬噸</span></div>
-                    <div className="flex justify-between text-rose-600"><span className="text-rose-500">設備耗能 (B):</span> <span className="font-mono font-bold">-{data.Captur_energy.toFixed(2)} 萬噸</span></div>
-                    <div className="flex justify-between pt-1 border-t border-blue-200 text-emerald-700 font-bold"><span className="text-emerald-800">淨捕捉量 (=A-B):</span> <span className="font-mono font-black">{data.Net_Capture_Volume.toFixed(2)} 萬噸</span></div>
+                    <div className="flex justify-between text-slate-600"><span className="text-slate-500">總捕捉量 (A):</span> <span className="font-mono font-bold">{Number(data.Capture_Volume||0).toFixed(2)} 萬噸</span></div>
+                    <div className="flex justify-between text-rose-600"><span className="text-rose-500">設備耗能 (B):</span> <span className="font-mono font-bold">-{Number(data.Captur_energy||0).toFixed(2)} 萬噸</span></div>
+                    <div className="flex justify-between pt-1 border-t border-blue-200 text-emerald-700 font-bold"><span className="text-emerald-800">淨捕捉量 (=A-B):</span> <span className="font-mono font-black">{Number(data.Net_Capture_Volume||0).toFixed(2)} 萬噸</span></div>
                 </div>
             </div>
         );
@@ -743,6 +739,7 @@ const CcusDashboard = () => {
                 setScope1Data(rawScope1.map(d => {
                     const keys = Object.keys(d);
                     const nameKey = keys.find(k => k.includes('事業名稱') || k.includes('公司名稱') || k.includes('廠區')) || '事業名稱';
+                    // 強化配對以完整讀取範疇一、範疇二與總量
                     const emit1Key = keys.find(k => k.includes('直接排放') || k.includes('範疇一') || k.includes('Scope 1') || k === '直接排放量(公噸CO2e)') || '直接排放量(公噸CO2e)';
                     const emit2Key = keys.find(k => k.includes('間接排放') || k.includes('範疇二') || k.includes('Scope 2') || k === '能源間接排放量(公噸CO2e)') || '能源間接排放量(公噸CO2e)';
                     const emitTotalKey = keys.find(k => k.includes('合計排放') || k.includes('總排') || k === '合計排放量(公噸CO2e)') || '合計排放量(公噸CO2e)';
@@ -756,6 +753,7 @@ const CcusDashboard = () => {
                     const comp = simplifyCompanyName(rawName);
                     const plantRaw = rawName.replace(d['公司'] || '', '').replace(comp, '').replace(/股份有限公司|工業|企業|分公司/g, '').trim(); 
                     
+                    // 嚴格抽取縣市別，作為絕對的地理防呆依據
                     let countyStr = String(d[countyKey] || '').trim();
                     const countyMatch = countyStr.match(/(基隆|台北|臺北|新北|桃園|新竹|苗栗|台中|臺中|彰化|南投|雲林|嘉義|台南|臺南|高雄|屏東|宜蘭|花蓮|台東|臺東)/);
                     if (countyMatch) {
@@ -764,8 +762,10 @@ const CcusDashboard = () => {
                         countyStr = '未知';
                     }
 
-                    const coords = getApproximateCoordinates(plantRaw, comp, countyStr);
+                    // 將解析出的 countyStr 強制帶入，防止跨區
                     const zone = getIndustrialZone(plantRaw, comp, countyStr);
+                    const coords = getApproximateCoordinates(plantRaw, comp, countyStr);
+                    
                     const region = getRefinedRegion(plantRaw, comp, countyStr);
 
                     const scope1Val = cleanNumber(d[emit1Key]);
@@ -786,12 +786,14 @@ const CcusDashboard = () => {
                         lon: coords.lon
                     };
                 }).filter(d => {
+                    // 剃除無效或不值得評估的資料
                     if (!d || d.TotalScope <= 0) return false;
+                    // 剃除 Scope 2 (電力間接排放) 佔比超過 70% 的廠商 (對建立 CCS 幫助不大)
                     const scope2Ratio = d.Scope2 / d.TotalScope;
                     if (scope2Ratio > 0.7) return false;
-                    // 保留所有資料，不再以 < 1萬噸 直接過濾，交由後方 isPriority 判斷
+                    
                     return true;
-                }).sort((a,b) => b.Scope1 - a.Scope1));
+                }).sort((a,b) => b.Scope1 - a.Scope1)); // 依據範疇一排放量排序
 
                 setCaptureData(rawCap.map(d => {
                     const capVol = cleanNumber(d.Capture_Volume);
@@ -979,28 +981,32 @@ const CcusDashboard = () => {
             }
         });
 
+        // 海運航線完美避障演算 (精確設定外海控制點)
         if (hubEmissions['SOUTH_HUB'] > 0) {
+            const dist = estimateRoutingDistance(CCS_HUBS['SOUTH_HUB'].lat, CCS_HUBS['SOUTH_HUB'].lon, CCS_HUBS['CENTRAL_HUB_2'].lat, CCS_HUBS['CENTRAL_HUB_2'].lon, true);
             seaRoutes.push({
                 from: CCS_HUBS['SOUTH_HUB'], to: CCS_HUBS['CENTRAL_HUB_2'], 
                 // 往西外海繞行，避開台南嘉義凸出之海岸線
-                c1: { lat: 22.4, lon: 119.5 }, c2: { lat: 23.5, lon: 119.5 },
-                weight: hubEmissions['SOUTH_HUB'], label: '海運北送封存'
+                c1: { lat: 22.8, lon: 119.8 }, c2: { lat: 23.5, lon: 119.8 }, 
+                weight: hubEmissions['SOUTH_HUB'], label: `海運北送封存 (${dist.toFixed(0)}km)`
             });
         }
         if (hubEmissions['EAST_HUB'] > 0) {
+            const dist = estimateRoutingDistance(CCS_HUBS['EAST_HUB'].lat, CCS_HUBS['EAST_HUB'].lon, CCS_HUBS['NORTH_HUB'].lat, CCS_HUBS['NORTH_HUB'].lon, true);
             seaRoutes.push({
                 from: CCS_HUBS['EAST_HUB'], to: CCS_HUBS['NORTH_HUB'],
-                // 大幅向東外海繞行，完美避開宜蘭與新北三貂角陸地
-                c1: { lat: 24.2, lon: 122.5 }, c2: { lat: 25.5, lon: 122.2 },
-                weight: hubEmissions['EAST_HUB'], label: '海運北送封存'
+                // 大幅度向東方深海繞行，完美避開宜蘭與新北三貂角陸地交錯
+                c1: { lat: 24.2, lon: 122.5 }, c2: { lat: 25.5, lon: 122.2 }, 
+                weight: hubEmissions['EAST_HUB'], label: `海運北送封存 (${dist.toFixed(0)}km)`
             });
         }
         if (hubEmissions['SOUTHEAST_HUB'] > 0) {
+            const dist = estimateRoutingDistance(CCS_HUBS['SOUTHEAST_HUB'].lat, CCS_HUBS['SOUTHEAST_HUB'].lon, CCS_HUBS['SOUTH_HUB'].lat, CCS_HUBS['SOUTH_HUB'].lon, true);
             seaRoutes.push({
                 from: CCS_HUBS['SOUTHEAST_HUB'], to: CCS_HUBS['SOUTH_HUB'],
-                // 從南邊海域繞過恆春半島
-                c1: { lat: 21.6, lon: 121.2 }, c2: { lat: 21.6, lon: 120.3 },
-                weight: hubEmissions['SOUTHEAST_HUB'], label: '南迴海運轉運'
+                // 從南邊海域大幅度繞過恆春半島
+                c1: { lat: 21.6, lon: 121.2 }, c2: { lat: 21.6, lon: 120.3 }, 
+                weight: hubEmissions['SOUTHEAST_HUB'], label: `南迴海運轉運 (${dist.toFixed(0)}km)`
             });
         }
 
@@ -1030,7 +1036,6 @@ const CcusDashboard = () => {
 
     const regionalIndustryStats = useMemo(() => {
         const industryMap = {};
-        // 將產業分析的資料來源與列表過濾器掛鉤
         const dataToUse = ccsTopology ? ccsTopology.validSources : scope1Data;
         
         dataToUse.forEach(d => {
@@ -1070,7 +1075,7 @@ const CcusDashboard = () => {
     
     const selectedHubSources = useMemo(() => {
         if (!ccsTopology || !ccsTopology.hubSources[selectedHubId]) return [];
-        return ccsTopology.hubSources[selectedHubId].sort((a,b) => b.Scope1 - a.Scope1);
+        return [...ccsTopology.hubSources[selectedHubId]].sort((a,b) => b.Scope1 - a.Scope1);
     }, [ccsTopology, selectedHubId]);
 
     const selectedHubTotalEmissions = useMemo(() => {
@@ -1101,7 +1106,7 @@ const CcusDashboard = () => {
                 <div className="space-y-6 animate-fade-in">
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                         <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between">
-                            <div><p className="text-xs text-slate-500 font-bold mb-1 uppercase">符合門檻之廠區總排放量 (範疇 1+2)</p><h3 className="text-2xl font-black text-rose-700">{(scope1Stats.total / 10000).toFixed(1)} <span className="text-sm font-medium text-slate-500">萬噸</span></h3></div>
+                            <div><p className="text-xs text-slate-500 font-bold mb-1 uppercase">符合門檻之廠區總排放量 (範疇 1+2)</p><h3 className="text-2xl font-black text-rose-700">{(Number(scope1Stats.total || 0) / 10000).toFixed(1)} <span className="text-sm font-medium text-slate-500">萬噸</span></h3></div>
                             <div className="w-12 h-12 rounded-full bg-rose-50 flex items-center justify-center text-rose-600"><AlertTriangle size={24}/></div>
                         </div>
                         <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between border-l-4 border-l-indigo-500">
@@ -1157,14 +1162,14 @@ const CcusDashboard = () => {
                                             <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                                                 <BarChart data={regionalIndustryStats.slice(0, 8)} layout="vertical" margin={{top:5, right:40, left:40, bottom:0}}>
                                                     <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} />
-                                                    <XAxis type="number" tickFormatter={v => (v/10000).toFixed(0)} fontSize={10} unit="萬噸"/>
+                                                    <XAxis type="number" tickFormatter={v => (Number(v||0)/10000).toFixed(0)} fontSize={10} unit="萬噸"/>
                                                     <YAxis dataKey="name" type="category" width={90} tick={{fontSize:11, fontWeight:'bold', fill:'#475569'}} interval={0}/>
                                                     <Tooltip 
-                                                        formatter={(v) => [(v/10000).toFixed(1) + ' 萬噸', '範疇一 (直接排放)']} 
+                                                        formatter={(v) => [(Number(v||0)/10000).toFixed(1) + ' 萬噸', '範疇一 (直接排放)']} 
                                                         contentStyle={{borderRadius:'8px'}}
                                                     />
                                                     <Bar dataKey="value" name="範疇一 (直接)" fill="#e11d48" radius={[0,4,4,0]} barSize={20}>
-                                                        <LabelList dataKey="value" position="right" formatter={v => (v/10000).toFixed(0)} fontSize={10} fill="#be123c" fontWeight="bold"/>
+                                                        <LabelList dataKey="value" position="right" formatter={v => (Number(v||0)/10000).toFixed(0)} fontSize={10} fill="#be123c" fontWeight="bold"/>
                                                     </Bar>
                                                 </BarChart>
                                             </ResponsiveContainer>
@@ -1201,7 +1206,7 @@ const CcusDashboard = () => {
                                 </div>
                                 <div className="text-right">
                                     <div className="text-[10px] text-blue-600 font-bold uppercase mb-0.5">總涵蓋排放量 (範疇一)</div>
-                                    <div className="text-xl font-black text-blue-800">{(selectedHubTotalEmissions / 10000).toFixed(1)} <span className="text-xs font-normal">萬噸</span></div>
+                                    <div className="text-xl font-black text-blue-800">{(Number(selectedHubTotalEmissions||0) / 10000).toFixed(1)} <span className="text-xs font-normal">萬噸</span></div>
                                 </div>
                             </div>
 
@@ -1223,8 +1228,8 @@ const CcusDashboard = () => {
                                                     {row.Plant}
                                                 </td>
                                                 <td className="p-3 text-slate-500">{row.County}</td>
-                                                <td className={`p-3 text-right font-mono ${row.distanceToHub > 60 ? 'text-orange-500 font-bold' : 'text-slate-500'}`}>{row.distanceToHub.toFixed(1)}</td>
-                                                <td className="p-3 text-right font-mono font-bold text-rose-600">{row.Scope1.toLocaleString()}</td>
+                                                <td className={`p-3 text-right font-mono ${row.distanceToHub > 60 ? 'text-orange-500 font-bold' : 'text-slate-500'}`}>{Number(row.distanceToHub||0).toFixed(1)}</td>
+                                                <td className="p-3 text-right font-mono font-bold text-rose-600">{Number(row.Scope1||0).toLocaleString()}</td>
                                             </tr>
                                         ))}
                                         {selectedHubSources.length === 0 && <tr><td colSpan={4} className="p-8 text-center text-slate-400">此樞紐目前未分配到任何有效碳源廠區。</td></tr>}
@@ -1274,8 +1279,8 @@ const CcusDashboard = () => {
                                                 </td>
                                                 <td className="p-3">{row.County}</td>
                                                 <td className="p-3 text-blue-600 text-[10px]">{row.zone}</td>
-                                                <td className="p-3 text-right font-mono text-rose-600">{row.Scope1.toLocaleString()}</td>
-                                                <td className="p-3 text-right font-mono font-bold text-slate-800">{row.TotalScope.toLocaleString()}</td>
+                                                <td className="p-3 text-right font-mono text-rose-600">{Number(row.Scope1||0).toLocaleString()}</td>
+                                                <td className="p-3 text-right font-mono font-bold text-slate-800">{Number(row.TotalScope||0).toLocaleString()}</td>
                                             </tr>
                                         ))}
                                         {filteredScope1Data.length === 0 && <tr><td colSpan={5} className="p-8 text-center text-slate-400">找不到符合條件的點源資料。</td></tr>}
@@ -1331,10 +1336,10 @@ const CcusDashboard = () => {
                                                     <Tooltip content={<CaptureTooltip />}/>
                                                     <Legend wrapperStyle={{fontSize:'11px'}} verticalAlign="top"/>
                                                     <Bar dataKey="Net_Capture_Volume" name="淨捕捉量" stackId="capture" fill="#10b981">
-                                                        <LabelList dataKey="Net_Capture_Volume" position="insideLeft" fill="white" fontSize={10} fontWeight="bold" formatter={(v) => v > 0 ? `淨 ${Number(v).toFixed(1)}` : ''} style={{textShadow: '0px 0px 2px rgba(0,0,0,0.5)'}} />
+                                                        <LabelList dataKey="Net_Capture_Volume" position="insideLeft" fill="white" fontSize={10} fontWeight="bold" formatter={(v) => Number(v||0) > 0 ? `淨 ${Number(v||0).toFixed(1)}` : ''} style={{textShadow: '0px 0px 2px rgba(0,0,0,0.5)'}} />
                                                     </Bar>
                                                     <Bar dataKey="Captur_energy" name="設備耗能" stackId="capture" fill="#ef4444" radius={[0, 4, 4, 0]}>
-                                                        <LabelList dataKey="Capture_Volume" position="right" fill="#475569" fontSize={10} fontWeight="bold" formatter={(v) => `總 ${Number(v).toFixed(1)}`} />
+                                                        <LabelList dataKey="Capture_Volume" position="right" fill="#475569" fontSize={10} fontWeight="bold" formatter={(v) => `總 ${Number(v||0).toFixed(1)}`} />
                                                     </Bar>
                                                 </BarChart>
                                             </ResponsiveContainer>
@@ -1361,9 +1366,9 @@ const CcusDashboard = () => {
                                                 <td className="p-3"><span className="px-2 py-1 bg-blue-50 text-blue-700 rounded-lg">{row.Capture_Tech}</span></td>
                                                 <td className="p-3 text-slate-500">{row.Separation_Tech}</td><td className="p-3 font-mono">{row.TRL}</td>
                                                 <td className="p-3 font-mono">{row.Temperature}</td><td className="p-3 font-mono">{row.Pressure}</td><td className="p-3 font-mono">{row.Concentration}</td>
-                                                <td className="p-3 text-right font-mono font-bold text-blue-600">{row.Capture_Volume.toFixed(1)}</td>
-                                                <td className="p-3 text-right font-mono text-rose-500">-{row.Captur_energy.toFixed(1)}</td>
-                                                <td className="p-3 text-right font-mono font-bold text-emerald-600">{row.Net_Capture_Volume.toFixed(1)}</td>
+                                                <td className="p-3 text-right font-mono font-bold text-blue-600">{Number(row.Capture_Volume||0).toFixed(1)}</td>
+                                                <td className="p-3 text-right font-mono text-rose-500">-{Number(row.Captur_energy||0).toFixed(1)}</td>
+                                                <td className="p-3 text-right font-mono font-bold text-emerald-600">{Number(row.Net_Capture_Volume||0).toFixed(1)}</td>
                                             </tr>
                                         ))}
                                         {fCapture.filter(r => r.Capture_Volume > 0).length === 0 && <tr><td colSpan={11} className="p-8 text-center text-slate-400">目前尚無現有捕捉設備數據</td></tr>}
@@ -1392,7 +1397,7 @@ const CcusDashboard = () => {
                                                 <tr key={i} className="hover:bg-amber-50/50 transition-colors">
                                                     <td className="p-3 font-bold text-slate-700">{row.Label}</td>
                                                     <td className="p-3 font-medium text-amber-700">{row.Potential_Source}</td>
-                                                    <td className="p-3 text-right font-mono font-black text-rose-600 text-sm">{row.Future_Emission_Volume.toFixed(1)}</td>
+                                                    <td className="p-3 text-right font-mono font-black text-rose-600 text-sm">{Number(row.Future_Emission_Volume||0).toFixed(1)}</td>
                                                     <td className="p-3 font-mono text-slate-600">{row.Future_Temperature}</td>
                                                     <td className="p-3 font-mono text-slate-600">{row.Future_Pressure}</td>
                                                     <td className="p-3 font-mono text-slate-600">{row.Future_Concentration}</td>
@@ -1450,11 +1455,11 @@ const CcusDashboard = () => {
                                             <div className="font-bold text-slate-700 mb-2 text-center text-sm mt-3">{item.Target_Company} <br/> {item.Target_Plant}</div>
                                             <div className="flex gap-2">
                                                 <div className="bg-emerald-50 border border-emerald-100 rounded-lg py-1 px-3 text-center">
-                                                    <div className="text-lg font-mono font-black text-emerald-600">{item.Expected_Demand.toFixed(1)}</div>
+                                                    <div className="text-lg font-mono font-black text-emerald-600">{Number(item.Expected_Demand||0).toFixed(1)}</div>
                                                     <div className="text-[9px] text-emerald-500 font-bold">預期 CO₂ 萬噸</div>
                                                 </div>
                                                 <div className="bg-slate-50 border border-slate-100 rounded-lg py-1 px-3 text-center">
-                                                    <div className={`text-lg font-mono font-black ${item.Current_Demand > 0 ? 'text-slate-600' : 'text-slate-300'}`}>{item.Current_Demand.toFixed(1)}</div>
+                                                    <div className={`text-lg font-mono font-black ${item.Current_Demand > 0 ? 'text-slate-600' : 'text-slate-300'}`}>{Number(item.Current_Demand||0).toFixed(1)}</div>
                                                     <div className="text-[9px] text-slate-500 font-bold">當前 CO₂ 萬噸</div>
                                                 </div>
                                             </div>
@@ -1468,7 +1473,7 @@ const CcusDashboard = () => {
                                             <div className="absolute top-2 left-2 text-[9px] text-slate-400 font-bold">產出估算</div>
                                             <div className="font-bold text-slate-700 mb-2 text-center text-sm">{String(item.Conversion_Tech).split('轉')[1] || '高階化學品'}</div>
                                             <div className="bg-purple-50 border border-purple-100 rounded-lg py-2 px-4 text-center shadow-sm">
-                                                <div className="text-xl font-mono font-black text-purple-600">{item.Product_Generated.toFixed(1)}</div>
+                                                <div className="text-xl font-mono font-black text-purple-600">{Number(item.Product_Generated||0).toFixed(1)}</div>
                                                 <div className="text-[10px] text-purple-500 font-bold">萬噸 產品/年</div>
                                             </div>
                                         </div>
@@ -1561,9 +1566,9 @@ const CcusDashboard = () => {
                                                                 {row.Transport_Method}
                                                             </span>
                                                         </td>
-                                                        <td className="p-2 text-right font-mono text-slate-600">{row.Distance_km} km</td>
-                                                        <td className="p-2 text-right font-mono text-blue-600">{row.Capturable_Volume} 萬噸</td>
-                                                        <td className="p-2 text-right font-mono font-bold text-rose-600 pr-4">${row.Cost_USD_Per_Ton}</td>
+                                                        <td className="p-2 text-right font-mono text-slate-600">{Number(row.Distance_km||0).toFixed(0)} km</td>
+                                                        <td className="p-2 text-right font-mono text-blue-600">{Number(row.Capturable_Volume||0).toFixed(1)} 萬噸</td>
+                                                        <td className="p-2 text-right font-mono font-bold text-rose-600 pr-4">${Number(row.Cost_USD_Per_Ton||0).toFixed(1)}</td>
                                                     </tr>
                                                 ))}
                                                 {fStorage.filter(r => transportMode === 'ALL' || r.Transport_Method.includes(transportMode)).length === 0 && <tr><td colSpan={5} className="p-4 text-center text-slate-400">無符合條件之專案</td></tr>}
