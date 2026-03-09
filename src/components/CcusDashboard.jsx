@@ -222,6 +222,7 @@ class ErrorBoundary extends React.Component {
 }
 
 const MAP_CONSTANTS = { baseWidth: 800, baseHeight: 900, centerLon: 120.9, centerLat: 23.7, baseScale: 400 };
+
 export const projectBase = (lon, lat) => {
     if (lon == null || lat == null || isNaN(lon) || isNaN(lat)) return [-9999, -9999]; 
     return [(lon - MAP_CONSTANTS.centerLon) * MAP_CONSTANTS.baseScale, -(lat - MAP_CONSTANTS.centerLat) * MAP_CONSTANTS.baseScale * 1.1];
@@ -261,7 +262,6 @@ const CaptureTooltip = ({ active, payload }) => {
                    <div>壓力: <span className="font-mono font-bold">{data.Pressure || '-'}</span></div>
                    <div className="col-span-2">濃度: <span className="font-mono font-bold">{data.Concentration || '-'}</span></div>
                 </div>
-                
                 <div className="bg-blue-50/50 p-2 border border-blue-100 rounded space-y-1">
                     <div className="flex justify-between text-slate-600"><span className="text-slate-500">總捕捉量 (A):</span> <span className="font-mono font-bold">{Number(data.Capture_Volume||0).toFixed(2)} 萬噸</span></div>
                     <div className="flex justify-between text-rose-600"><span className="text-rose-500">設備耗能 (B):</span> <span className="font-mono font-bold">-{Number(data.Captur_energy||0).toFixed(2)} 萬噸</span></div>
@@ -358,7 +358,7 @@ const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], sto
                             <div className="text-xs font-bold text-blue-800 mb-1">樞紐定位 (可拖曳)</div>
                             <div className="text-xs text-blue-700">{hoveredNode.hubType}</div>
                         </div>
-                        {ccsTopology && ccsTopology.hubEmissions[hoveredNode.id] > 0 && (
+                        {ccsTopology && ccsTopology.hubEmissions && ccsTopology.hubEmissions[hoveredNode.id] > 0 && (
                              <div className="bg-slate-50 p-2 rounded border border-slate-200 flex justify-between items-center">
                                  <span className="text-slate-600 text-xs font-bold">預估接收總量</span><span className="font-mono font-black text-blue-600 text-sm">{(Number(ccsTopology.hubEmissions[hoveredNode.id] || 0) / 10000).toFixed(1)} 萬噸</span>
                              </div>
@@ -1122,6 +1122,7 @@ const CcusDashboard = () => {
                 </div>
             )}
 
+            {/* 合併版 CCUS 設施總覽 */}
             {activeTab === 'facilities' && (
                 <div className="space-y-6 animate-fade-in">
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -1158,6 +1159,7 @@ const CcusDashboard = () => {
                         </div>
 
                         <div className="lg:col-span-6 flex flex-col gap-6 h-full">
+                            {/* --- 動態渲染右側內容 --- */}
                             {facilitySubTab === 'all' && (
                                 <>
                                     <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col h-[350px] min-h-[350px]">
