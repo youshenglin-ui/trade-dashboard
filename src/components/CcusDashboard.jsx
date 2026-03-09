@@ -208,8 +208,45 @@ const generateTreePath = (x1, y1, x2, y2, isBranch, inlandCurve = false) => {
     }
 };
 
+// 捕捉端專用 Y 軸標籤 (修復 ReferenceError)
+const CaptureYAxisTick = ({ x, y, payload, data }) => {
+    const item = data && data.find(d => d.Label === payload.value);
+    const tech = item ? item.Capture_Tech : '';
+    return (
+        <g transform={`translate(${x},${y})`}>
+            <text x={-5} y={-6} textAnchor="end" fill="#334155" fontSize={11} fontWeight="bold">{payload.value}</text>
+            <text x={-5} y={8} textAnchor="end" fill="#0284c7" fontSize={9} fontWeight="bold">{tech ? `[${tech}]` : ''}</text>
+        </g>
+    );
+};
+
+// 捕捉專用 Tooltip (修復 ReferenceError)
+const CaptureTooltip = ({ active, payload, label }) => {
+    if (active && payload && payload.length) {
+        const data = payload[0].payload;
+        return (
+            <div className="bg-white/95 backdrop-blur border border-slate-200 p-3 rounded-lg shadow-xl text-xs w-64 pointer-events-auto">
+                <p className="font-bold text-slate-800 mb-2 border-b pb-1 flex items-center gap-1"><Factory size={14} className="text-blue-600"/> {data.Label}</p>
+                <p className="mb-1 font-bold text-blue-600">技術: {data.Capture_Tech} (TRL {data.TRL})</p>
+                <div className="text-slate-600 mb-2 grid grid-cols-2 gap-x-2 gap-y-1 bg-slate-50 p-1.5 rounded">
+                   <div>溫度: <span className="font-mono font-bold">{data.Temperature || '-'}</span></div>
+                   <div>壓力: <span className="font-mono font-bold">{data.Pressure || '-'}</span></div>
+                   <div className="col-span-2">濃度: <span className="font-mono font-bold">{data.Concentration || '-'}</span></div>
+                </div>
+                
+                <div className="bg-blue-50/50 p-2 border border-blue-100 rounded space-y-1">
+                    <div className="flex justify-between text-slate-600"><span className="text-slate-500">總捕捉量 (A):</span> <span className="font-mono font-bold">{Number(data.Capture_Volume||0).toFixed(2)} 萬噸</span></div>
+                    <div className="flex justify-between text-rose-600"><span className="text-rose-500">設備耗能 (B):</span> <span className="font-mono font-bold">-{Number(data.Captur_energy||0).toFixed(2)} 萬噸</span></div>
+                    <div className="flex justify-between pt-1 border-t border-blue-200 text-emerald-700 font-bold"><span className="text-emerald-800">淨捕捉量 (=A-B):</span> <span className="font-mono font-black">{Number(data.Net_Capture_Volume||0).toFixed(2)} 萬噸</span></div>
+                </div>
+            </div>
+        );
+    }
+    return null;
+};
+
 // ==========================================
-// 共用整合版地圖核心 (支援 activeLayers)
+// 台灣地圖核心模組 (支援 activeLayers)
 // ==========================================
 const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], storageData = [], scope1Data = [], mapPaths = [], ccsTopology = null, hubs, setHubs }) => {
     const mapRef = useRef(null); const containerRef = useRef(null); 
@@ -227,7 +264,7 @@ const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], sto
     const handleMouseMove = (e) => {
         if (dragState) {
             const dx = e.clientX - dragState.startX; const dy = e.clientY - dragState.startY;
-            const dLon = dx / (MAP_CONSTANTS.baseScale * zoom); const dLat = -dy / (MAP_CONSTANTS.baseScale * 1.1 * zoom);
+            const dLon = dx / (MAP_CONSTANTS.baseScale * zoom); const dLat = -dy / (MAPCONSTANTS.baseScale * 1.1 * zoom);
             if (setHubs) setHubs(prev => ({...prev, [dragState.id]: { ...prev[dragState.id], lat: dragState.startLat + dLat, lon: dragState.startLon + dLon }}));
         } else if (isDragging) {
             setPan(prev => ({ x: prev.x + (e.clientX - lastPos.x), y: prev.y + (e.clientY - lastPos.y) }));
@@ -777,6 +814,9 @@ const CcusDashboard = () => {
         return scope1Data.filter(d => (listRegion === 'ALL' || d.Region === listRegion) && (listIndustry === 'ALL' || d.Industry === listIndustry));
     }, [scope1Data, listRegion, listIndustry]);
 
+    const [listMode, setListMode] = useState('all'); 
+    const [selectedHubId, setSelectedHubId] = useState('NORTH_HUB');
+    
     const selectedHubSources = useMemo(() => {
         if (!ccsTopology || !ccsTopology.hubSources[selectedHubId]) return [];
         return [...ccsTopology.hubSources[selectedHubId]].sort((a,b) => b.Scope1 - a.Scope1);
@@ -1152,7 +1192,7 @@ const CcusDashboard = () => {
                                                         <div className="flex-1 p-3 flex flex-col items-center justify-center relative">
                                                             <div className="font-bold text-slate-700 mb-1 text-center text-sm">{String(item.Conversion_Tech).split('轉')[1] || '高階產品'}</div>
                                                             <div className="bg-purple-50 border border-purple-100 rounded px-3 py-1 text-center shadow-sm">
-                                                                <div className="text-lg font-mono font-black text-purple-600">{Number(item.Product_Generated||0).toFixed(1)}</div><div className="text-[9px] text-purple-500 font-bold">產出萬噸/年</div>
+                                                                <div className="text-xl font-mono font-black text-purple-600">{Number(item.Product_Generated||0).toFixed(1)}</div><div className="text-[10px] text-purple-500 font-bold">產出萬噸/年</div>
                                                             </div>
                                                         </div>
                                                     </div>
@@ -1219,6 +1259,7 @@ const CcusDashboard = () => {
                                                             <td className="p-2 text-right font-mono font-bold text-rose-600">${Number(row.Cost_USD_Per_Ton||0).toFixed(1)}</td>
                                                         </tr>
                                                     ))}
+                                                    {fStorage.filter(r => transportMode === 'ALL' || r.Transport_Method.includes(transportMode)).length === 0 && <tr><td colSpan={5} className="p-4 text-center text-slate-400">無符合條件之專案</td></tr>}
                                                 </tbody>
                                             </table>
                                         </div>
