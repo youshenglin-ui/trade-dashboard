@@ -180,7 +180,6 @@ const getApproximateCoordinates = (plant, company, county) => {
     return { lat: 23.6 + offsetLat, lon: 119.9 + offsetLon }; 
 };
 
-// 封存與接收樞紐預設設定
 const INITIAL_CCS_HUBS = {
     'NORTH_HUB': { id: 'NORTH_HUB', name: '台北港/林口 (陸地轉海域)', type: '🛢️ 本土外海封存', lat: 25.14, lon: 121.32, region: '北區' },
     'CENTRAL_HUB_1': { id: 'CENTRAL_HUB_1', name: '台中港接收站 (陸地轉海域)', type: '🛢️ 本土外海封存', lat: 24.25, lon: 120.45, region: '中區' },
@@ -274,9 +273,6 @@ const CaptureTooltip = ({ active, payload }) => {
     return null;
 };
 
-// ==========================================
-// 台灣地圖核心模組 (支援 activeLayers 與節點拖曳)
-// ==========================================
 const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], storageData = [], scope1Data = [], mapPaths = [], ccsTopology = null, hubs, setHubs, clusters, setClusters }) => {
     const mapRef = useRef(null); const containerRef = useRef(null); 
     const [zoom, setZoom] = useState(1); const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -362,7 +358,7 @@ const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], sto
                             <div className="text-xs font-bold text-blue-800 mb-1">樞紐定位 (可拖曳)</div>
                             <div className="text-xs text-blue-700">{hoveredNode.hubType}</div>
                         </div>
-                        {ccsTopology && ccsTopology.hubEmissions && ccsTopology.hubEmissions[hoveredNode.id] > 0 && (
+                        {ccsTopology && ccsTopology.hubEmissions[hoveredNode.id] > 0 && (
                              <div className="bg-slate-50 p-2 rounded border border-slate-200 flex justify-between items-center">
                                  <span className="text-slate-600 text-xs font-bold">預估接收總量</span><span className="font-mono font-black text-blue-600 text-sm">{(Number(ccsTopology.hubEmissions[hoveredNode.id] || 0) / 10000).toFixed(1)} 萬噸</span>
                              </div>
@@ -458,7 +454,6 @@ const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], sto
                 )}
             </div>
 
-            {/* 控制面板：不參與匯出 */}
             <div className="absolute top-4 right-4 z-10 flex flex-col gap-2 bg-white/95 p-1.5 rounded-lg shadow-sm border border-slate-200 backdrop-blur">
                 <button onClick={() => setZoom(prev => Math.min(prev * 1.3, 10))} className="p-2 bg-slate-50 hover:bg-slate-200 rounded-md text-slate-600 transition-colors" title="放大"><ZoomIn size={18}/></button>
                 <button onClick={() => setZoom(prev => Math.max(prev / 1.3, 0.5))} className="p-2 bg-slate-50 hover:bg-slate-200 rounded-md text-slate-600 transition-colors" title="縮小"><ZoomOut size={18}/></button>
@@ -794,7 +789,6 @@ const CcusDashboard = () => {
 
     const ccsTopology = useMemo(() => {
         if (!scope1Data || scope1Data.length === 0) return null;
-        const countyMap = { '基隆': 'C_TPE', '台北': 'C_TPE', '臺北': 'C_TPE', '新北': 'C_TPE', '桃園': 'C_TYN_COAST', '新竹': 'C_HSZ', '苗栗': 'C_MIA', '台中': 'C_TXG', '臺中': 'C_TXG', '南投': 'C_TXG', '雲林': 'C_YUN_IN', '嘉義': 'C_CYI', '台南': 'C_TNN', '臺南': 'C_TNN', '高雄': 'C_KHH_N', '屏東': 'C_PTG', '宜蘭': 'C_YIL', '花蓮': 'C_HUA', '台東': 'C_TTT', '臺東': 'C_TTT' };
 
         const activeClusters = JSON.parse(JSON.stringify(clusters));
         Object.keys(activeClusters).forEach(k => { activeClusters[k].id = k; activeClusters[k].emissions = 0; activeClusters[k].sources = []; });
@@ -806,6 +800,8 @@ const CcusDashboard = () => {
         const allMainNodes = [];
         Object.values(activeClusters).forEach(c => allMainNodes.push({id: c.id, lat: c.lat, lon: c.lon, name: c.name}));
         Object.values(hubs).forEach(h => allMainNodes.push({id: h.id, lat: h.lat, lon: h.lon, name: h.name}));
+
+        const countyMap = { '基隆': 'C_TPE', '台北': 'C_TPE', '臺北': 'C_TPE', '新北': 'C_TPE', '桃園': 'C_TYN_COAST', '新竹': 'C_HSZ', '苗栗': 'C_MIA', '台中': 'C_TXG', '臺中': 'C_TXG', '南投': 'C_TXG', '雲林': 'C_YUN_IN', '嘉義': 'C_CYI', '台南': 'C_TNN', '臺南': 'C_TNN', '高雄': 'C_KHH_N', '屏東': 'C_PTG', '宜蘭': 'C_YIL', '花蓮': 'C_HUA', '台東': 'C_TTT', '臺東': 'C_TTT' };
 
         scope1Data.forEach(d => {
             d.isPriority = d.Scope1 >= 25000;
@@ -906,10 +902,6 @@ const CcusDashboard = () => {
         return scope1Data.filter(d => (listRegion === 'ALL' || d.Region === listRegion) && (listIndustry === 'ALL' || d.Industry === listIndustry));
     }, [scope1Data, listRegion, listIndustry]);
 
-    const [listMode, setListMode] = useState('all'); 
-    const [selectedHubId, setSelectedHubId] = useState('NORTH_HUB');
-    
-    // 修復了 ReferenceError：將變數正確指向 ccsTopology
     const selectedHubSources = useMemo(() => {
         if (!ccsTopology || !ccsTopology.hubSources[selectedHubId]) return [];
         return [...ccsTopology.hubSources[selectedHubId]].sort((a,b) => b.Scope1 - a.Scope1);
@@ -963,7 +955,7 @@ const CcusDashboard = () => {
                     </div>
 
                     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
-                        <div className="lg:col-span-7 bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col h-[750px]">
+                        <div className="lg:col-span-7 bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col h-[750px] min-h-[750px]">
                             <h3 className="font-bold text-slate-700 text-sm mb-4 border-b pb-2 flex items-center gap-2"><Map size={16} className="text-indigo-500"/> CCS 案場與共通管線拓樸分析</h3>
                             <div className="flex-1 w-full h-full relative min-h-0">
                                 <ErrorBoundary>
@@ -973,9 +965,9 @@ const CcusDashboard = () => {
                         </div>
 
                         <div className="lg:col-span-5 flex flex-col gap-6 h-[750px]">
-                            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col">
+                            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col h-[350px] min-h-[350px]">
                                 <h3 className="font-bold text-slate-700 text-sm mb-3 border-b pb-2 flex items-center gap-2"><Route size={16} className="text-sky-500"/> 區域管線佈建可行性分析</h3>
-                                <div className="flex flex-col gap-2 overflow-y-auto pr-2 custom-scrollbar max-h-[300px]">
+                                <div className="flex flex-col gap-2 overflow-y-auto pr-2 custom-scrollbar">
                                     <div className="bg-slate-50 p-3 rounded border border-slate-200">
                                         <div className="text-xs font-bold text-slate-500 mb-1">【南區】多節點集中 ➔ 港口接收外銷</div>
                                         <div className="text-xs text-slate-600 leading-relaxed">由於缺乏合適本土封存場址，系統已將高雄分為南北與內陸多節點，分別收集周邊高排碳區至高雄港接收站，轉由船運送往中部的麥寮/台中港或東南亞(印尼/馬來西亞)進行封存。台東則以南迴海運接駁至高雄。</div>
@@ -995,7 +987,7 @@ const CcusDashboard = () => {
                                 </div>
                             </div>
 
-                            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex-1 flex flex-col min-h-0">
+                            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex-1 flex flex-col min-h-[300px]">
                                 <h3 className="font-bold text-slate-700 text-sm mb-3 border-b pb-2 flex items-center gap-2">
                                     <PieChartIcon size={16} className="text-rose-500"/> 各產業範疇一 (可CCS捕捉) 絕對量分析 - {listRegion === 'ALL' ? '全區域' : listRegion}
                                 </h3>
@@ -1130,7 +1122,6 @@ const CcusDashboard = () => {
                 </div>
             )}
 
-            {/* 合併版 CCUS 設施總覽 */}
             {activeTab === 'facilities' && (
                 <div className="space-y-6 animate-fade-in">
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -1149,7 +1140,7 @@ const CcusDashboard = () => {
                     </div>
                     
                     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-[750px] items-stretch">
-                        <div className="lg:col-span-6 bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col h-full">
+                        <div className="lg:col-span-6 bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col h-full min-h-[750px]">
                             <div className="flex justify-between items-center mb-4 border-b pb-2">
                                 <h3 className="font-bold text-slate-700 text-sm flex items-center gap-2"><MapPin size={16} className="text-slate-500"/> CCUS 全價值鏈分佈</h3>
                                 <div className="flex bg-slate-100 p-1 rounded-lg text-[10px] font-bold shadow-inner">
@@ -1167,10 +1158,9 @@ const CcusDashboard = () => {
                         </div>
 
                         <div className="lg:col-span-6 flex flex-col gap-6 h-full">
-                            {/* --- 動態渲染右側內容 --- */}
                             {facilitySubTab === 'all' && (
                                 <>
-                                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col h-[350px]">
+                                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col h-[350px] min-h-[350px]">
                                         <h3 className="font-bold text-slate-700 text-sm mb-3 border-b pb-2 flex items-center gap-2"><Activity size={16} className="text-blue-500"/> 企業價值鏈橫向對照 (捕捉 vs 去化)</h3>
                                         <div className="flex-1 min-h-0 w-full relative">
                                             <ErrorBoundary>
@@ -1190,7 +1180,7 @@ const CcusDashboard = () => {
                                             </ErrorBoundary>
                                         </div>
                                     </div>
-                                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex-1 flex flex-col min-h-0">
+                                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex-1 flex flex-col min-h-[300px]">
                                         <h3 className="font-bold text-slate-700 text-sm mb-3 border-b pb-2 flex items-center gap-2"><List size={16} className="text-slate-500"/> CCUS 價值鏈總覽表</h3>
                                         <div className="flex-1 overflow-auto custom-scrollbar">
                                             <table className="w-full text-xs text-left">
@@ -1216,7 +1206,7 @@ const CcusDashboard = () => {
 
                             {facilitySubTab === 'capture' && (
                                 <>
-                                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col h-[350px]">
+                                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col h-[350px] min-h-[350px]">
                                         <h3 className="font-bold text-slate-700 text-sm mb-3 border-b pb-2 flex items-center gap-2"><Activity size={16} className="text-blue-500"/> 技術解析：總捕捉量 vs 設備耗能</h3>
                                         <div className="flex-1 min-h-0 w-full relative">
                                             <ErrorBoundary>
@@ -1234,7 +1224,7 @@ const CcusDashboard = () => {
                                             </ErrorBoundary>
                                         </div>
                                     </div>
-                                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex-1 flex flex-col min-h-0">
+                                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex-1 flex flex-col min-h-[300px]">
                                         <h3 className="font-bold text-slate-700 text-sm mb-3 border-b pb-2 flex items-center gap-2"><List size={16} className="text-blue-500"/> 現有捕捉設施明細</h3>
                                         <div className="flex-1 overflow-auto custom-scrollbar">
                                             <table className="w-full text-xs text-left whitespace-nowrap">
@@ -1299,7 +1289,7 @@ const CcusDashboard = () => {
 
                             {facilitySubTab === 'storage' && (
                                 <>
-                                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col h-[350px]">
+                                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col h-[350px] min-h-[350px]">
                                         <div className="flex justify-between items-center mb-3 border-b pb-2">
                                             <h3 className="font-bold text-slate-700 text-sm flex items-center gap-2"><Box size={16} className="text-amber-500"/> 封存成本與距離矩陣</h3>
                                             <select value={transportMode} onChange={(e) => setTransportMode(e.target.value)} className="text-xs border rounded p-1 bg-slate-50 outline-none">
@@ -1335,7 +1325,7 @@ const CcusDashboard = () => {
                                             </ErrorBoundary>
                                         </div>
                                     </div>
-                                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex-1 flex flex-col min-h-0">
+                                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex-1 flex flex-col min-h-[300px]">
                                         <h3 className="font-bold text-slate-700 text-sm mb-3 border-b pb-2 flex items-center gap-2"><List size={16} className="text-amber-500"/> 封存專案明細</h3>
                                         <div className="flex-1 overflow-auto custom-scrollbar">
                                             <table className="w-full text-xs text-left">
