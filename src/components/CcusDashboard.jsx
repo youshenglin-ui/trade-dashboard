@@ -217,7 +217,7 @@ class ErrorBoundary extends React.Component {
     constructor(props) { super(props); this.state = { hasError: false }; }
     static getDerivedStateFromError(error) { return { hasError: true }; }
     render() {
-      if (this.state.hasError) return <div className="h-full flex flex-col items-center justify-center bg-slate-50 border border-slate-200 rounded text-slate-400"><AlertTriangle size={32} className="mb-2 text-amber-400" /><p className="text-sm">圖表資料異常，請檢查資料來源格式</p></div>;
+      if (this.state.hasError) return <div className="h-full flex flex-col items-center justify-center bg-slate-50 border border-slate-200 rounded text-slate-400 min-h-[250px]"><AlertTriangle size={32} className="mb-2 text-amber-400" /><p className="text-sm">圖表資料異常，請檢查資料來源格式</p></div>;
       return this.props.children;
     }
 }
@@ -372,7 +372,7 @@ const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], sto
     const textScale = Math.pow(zoom, 0.7);
 
     return (
-        <div className="w-full h-full relative bg-slate-50/80 rounded-lg overflow-hidden border border-slate-200" ref={containerRef}>
+        <div className="w-full h-full relative bg-slate-50/80 rounded-lg overflow-hidden border border-slate-200 min-h-[400px]" ref={containerRef}>
             <div className="absolute top-4 left-4 z-20 bg-white/95 backdrop-blur shadow-2xl rounded-xl border border-slate-200 p-4 transition-all duration-300 w-80 pointer-events-none" style={{ opacity: hoveredNode ? 1 : 0, transform: hoveredNode ? 'translateY(0)' : 'translateY(-10px)' }}>
                 {hoveredNode && hoveredNode.nodeType === 'hub' && (
                     <div>
@@ -494,7 +494,6 @@ const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], sto
 
                     {activeLayers.includes('planning') && ccsTopology && (
                         <>
-                            {/* 海運航線 */}
                             {ccsTopology.seaRoutes.map((route, i) => {
                                 const [x1, y1] = projectBase(route.from.lon, route.from.lat); const [x2, y2] = projectBase(route.to.lon, route.to.lat);
                                 const currentC1 = seaControlPoints[route.id]?.c1 || route.c1;
@@ -513,14 +512,12 @@ const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], sto
                                         <path d={`M ${x1} ${y1} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${x2} ${y2}`} stroke="#0284c7" strokeWidth={Math.max(2, Math.log10(Math.max(10000, route.weight))/zoom)} strokeDasharray={`${6/zoom} ${6/zoom}`} fill="none" opacity={0.6}/>
                                         <text x={midX} y={midY} fontSize={11/zoom} fill="#0369a1" textAnchor="middle" fontWeight="bold" style={{textShadow: '0 0 3px white', pointerEvents: 'none'}}>{route.label}</text>
                                         
-                                        {/* 海運控制點 (可拖曳) */}
                                         <circle cx={cx1} cy={cy1} r={4/zoom} fill="rgba(2,132,199,0.2)" stroke="#0284c7" strokeWidth={isC1Dragged ? 2/zoom : 1/zoom} className={isC1Dragged ? "cursor-grabbing" : "cursor-grab hover:scale-125"} onMouseDown={(e) => handleNodeMouseDown(e, 'c1', 'seaControl', route.id)}/>
                                         <circle cx={cx2} cy={cy2} r={4/zoom} fill="rgba(2,132,199,0.2)" stroke="#0284c7" strokeWidth={isC2Dragged ? 2/zoom : 1/zoom} className={isC2Dragged ? "cursor-grabbing" : "cursor-grab hover:scale-125"} onMouseDown={(e) => handleNodeMouseDown(e, 'c2', 'seaControl', route.id)}/>
                                     </g>
                                 );
                             })}
                             
-                            {/* 支線 */}
                             {ccsTopology.branchRoutes.map((route, i) => {
                                 const [x1, y1] = projectBase(route.from.lon, route.from.lat); const [x2, y2] = projectBase(route.to.lon, route.to.lat);
                                 if (x1 === -9999 || x2 === -9999) return null;
@@ -529,7 +526,6 @@ const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], sto
                                 return (<path key={`branch-${i}`} d={generateTreePath(x1, y1, x2, y2, true, route.inlandCurve)} stroke={strokeColor} strokeWidth={strokeW} strokeDasharray={dash} fill="none" opacity={opac} />);
                             })}
                             
-                            {/* 主幹線 */}
                             {ccsTopology.mainRoutes.map((route, i) => {
                                 const currentNodes = routeNodes[route.id] || route.nodes;
                                 const pathNodes = currentNodes.map(n => projectBase(n.lon, n.lat));
@@ -547,7 +543,6 @@ const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], sto
                                     <g key={`main-route-${i}`}>
                                         <path d={pathD} stroke={strokeColor} strokeWidth={Math.max(2, Math.log10(Math.max(10000, route.weight)))/zoom} strokeDasharray={`${6/zoom} ${4/zoom}`} fill="none" strokeLinejoin="round" opacity={isUnrealistic ? 0.7 : 0.85}/>
                                         
-                                        {/* 主管線中繼節點 (可拖曳) */}
                                         {currentNodes.slice(1, -1).map((n, idx) => {
                                             const [cx, cy] = projectBase(n.lon, n.lat);
                                             const actualIdx = idx + 1;
@@ -561,7 +556,6 @@ const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], sto
                                 );
                             })}
                             
-                            {/* 聚落中繼站 */}
                             {clusters && Object.values(clusters).map((cluster, i) => {
                                 if (cluster.emissions <= 0) return null;
                                 const [cx, cy] = projectBase(cluster.lon, cluster.lat);
@@ -574,7 +568,6 @@ const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], sto
                                 );
                             })}
                             
-                            {/* 樞紐站 */}
                             {hubs && Object.values(hubs).map((hub, i) => {
                                 const [cx, cy] = projectBase(hub.lon, hub.lat);
                                 if (cx === -9999) return null;
@@ -587,7 +580,6 @@ const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], sto
                                 );
                             })}
                             
-                            {/* 廠區點源 */}
                             {ccsTopology.validSources.map((d, i) => {
                                 const [cx, cy] = projectBase(d.lon, d.lat);
                                 if (cx === -9999) return null;
@@ -741,7 +733,6 @@ const CcusDashboard = () => {
     const [selectedYear, setSelectedYear] = useState('ALL');
     const [transportMode, setTransportMode] = useState('ALL');
     
-    // 將 Hubs, Clusters 與動態節點的狀態拉至頂層管理
     const [hubs, setHubs] = useState(INITIAL_CCS_HUBS);
     const [clusters, setClusters] = useState(INITIAL_CLUSTERS);
     const [routeNodes, setRouteNodes] = useState({});
@@ -871,7 +862,6 @@ const CcusDashboard = () => {
         Object.values(activeClusters).forEach(c => allMainNodes.push({id: c.id, lat: c.lat, lon: c.lon, name: c.name}));
         Object.values(hubs).forEach(h => allMainNodes.push({id: h.id, lat: h.lat, lon: h.lon, name: h.name}));
         
-        // 提取現有已保存的 routeNodes
         const currentRouteNodes = { ...routeNodes };
 
         scope1Data.forEach(d => {
@@ -887,19 +877,7 @@ const CcusDashboard = () => {
             }
 
             const targetCluster = activeClusters[cId]; let bestNode = targetCluster; let minDist = calcDistanceKm(d.lat, d.lon, targetCluster.lat, targetCluster.lon);
-            
-            allMainNodes.forEach(node => { 
-                const nDist = calcDistanceKm(d.lat, d.lon, node.lat, node.lon); 
-                if (nDist < minDist && nDist < 30) { minDist = nDist; bestNode = node; } 
-            });
-            
-            // 檢查是否可以連向使用者拖曳產生的中繼節點
-            Object.values(currentRouteNodes).forEach(nodesArray => {
-                nodesArray.forEach(node => {
-                    const nDist = calcDistanceKm(d.lat, d.lon, node.lat, node.lon);
-                    if (nDist < minDist && nDist < 30) { minDist = nDist; bestNode = node; }
-                });
-            });
+            allMainNodes.forEach(node => { const nDist = calcDistanceKm(d.lat, d.lon, node.lat, node.lon); if (nDist < minDist && nDist < 30) { minDist = nDist; bestNode = node; } });
 
             const maxDist = d.isPriority ? 50 : 20; 
             if (minDist <= maxDist) {
@@ -939,39 +917,22 @@ const CcusDashboard = () => {
         });
 
         const mainRoutes = []; const seaRoutes = [];
-        
         Object.values(edges).forEach(edge => {
             if (edge.flow <= 0) return;
-            
+            const dist = estimateRoutingDistance(edge.from.lat, edge.from.lon, edge.to.lat, edge.to.lon, edge.type === 'sea');
             if (edge.type === 'sea') {
                 let c1 = edge.from, c2 = edge.to;
                 if (edge.from.id === 'C_HUA' && edge.to.id === 'C_KEE_PORT') { c1 = {lat: 24.3, lon: 122.2}; c2 = {lat: 24.8, lon: 122.1}; }
                 if (edge.from.id === 'C_KEE_PORT' && edge.to.id === 'NORTH_HUB') { c1 = {lat: 25.4, lon: 121.7}; c2 = {lat: 25.4, lon: 121.4}; }
                 if (edge.from.id === 'C_YIL' && edge.to.id === 'NORTH_HUB') { c1 = {lat: 25.2, lon: 122.1}; c2 = {lat: 25.4, lon: 121.8}; }
                 if (edge.from.id === 'C_TTT' && edge.to.id === 'SOUTH_HUB') { c1 = {lat: 21.8, lon: 121.2}; c2 = {lat: 21.8, lon: 120.5}; }
-                
-                // 初始化海運控制點
-                if (!seaControlPoints[edge.id]) {
-                    setSeaControlPoints(prev => ({ ...prev, [edge.id]: { c1, c2 } }));
-                }
-                
-                const activeC1 = seaControlPoints[edge.id]?.c1 || c1;
-                const activeC2 = seaControlPoints[edge.id]?.c2 || c2;
-                
-                // 使用控制點進行更精準的距離估算
-                const d1 = calcDistanceKm(edge.from.lat, edge.from.lon, activeC1.lat, activeC1.lon);
-                const d2 = calcDistanceKm(activeC1.lat, activeC1.lon, activeC2.lat, activeC2.lon);
-                const d3 = calcDistanceKm(activeC2.lat, activeC2.lon, edge.to.lat, edge.to.lon);
-                const dist = d1 + d2 + d3;
-                
-                seaRoutes.push({ ...edge, distance: dist, label: `海運 (${dist.toFixed(0)}km)`, c1: activeC1, c2: activeC2 });
+                seaRoutes.push({ ...edge, distance: dist, label: `海運 (${Number(dist||0).toFixed(0)}km)`, c1, c2 });
             } else {
                 let nodesForRoute = currentRouteNodes[edge.id];
                 if (!nodesForRoute) {
                     const dx = edge.to.lon - edge.from.lon; const dy = edge.to.lat - edge.from.lat;
                     const midNode = { lon: edge.from.lon + dx * 0.5 + (dx > 0 ? 0.05 : -0.05), lat: edge.from.lat + dy * 0.5 };
                     nodesForRoute = [edge.from, midNode, edge.to];
-                    setRouteNodes(prev => ({ ...prev, [edge.id]: nodesForRoute }));
                 } else {
                     nodesForRoute[0] = edge.from; 
                     nodesForRoute[nodesForRoute.length - 1] = edge.to;
@@ -996,9 +957,9 @@ const CcusDashboard = () => {
     const scope1Stats = useMemo(() => {
         let totalS1 = 0, totalS2 = 0, total = 0; const zones = {};
         scope1Data.forEach(d => {
-            totalS1 += d.Scope1; totalS2 += d.Scope2; total += d.TotalScope;
+            totalS1 += (Number(d.Scope1) || 0); totalS2 += (Number(d.Scope2) || 0); total += (Number(d.TotalScope) || 0);
             if(!zones[d.zone]) zones[d.zone] = { name: d.zone, Scope1: 0, Scope2: 0, Total: 0, region: d.Region };
-            zones[d.zone].Scope1 += d.Scope1; zones[d.zone].Scope2 += d.Scope2; zones[d.zone].Total += d.TotalScope;
+            zones[d.zone].Scope1 += (Number(d.Scope1) || 0); zones[d.zone].Scope2 += (Number(d.Scope2) || 0); zones[d.zone].Total += (Number(d.TotalScope) || 0);
         });
         return { total, totalS1, totalS2, topZones: Object.values(zones).sort((a,b)=>b.Total - a.Total) };
     }, [scope1Data]);
@@ -1008,10 +969,21 @@ const CcusDashboard = () => {
         dataToUse.forEach(d => {
             if (listRegion !== 'ALL' && d.Region !== listRegion) return;
             const ind = d.Industry || '其他產業';
-            if(!industryMap[ind]) industryMap[ind] = 0; industryMap[ind] += d.Scope1;
+            if(!industryMap[ind]) industryMap[ind] = 0; industryMap[ind] += (Number(d.Scope1) || 0);
         });
         return Object.keys(industryMap).map(k => ({ name: k, value: industryMap[k] })).sort((a,b) => b.value - a.value);
     }, [ccsTopology, scope1Data, listRegion]);
+
+    const { totalCapture, totalFuturePotential, totalExpectedDemand, avgCost } = useMemo(() => {
+        const tCap = fCapture.reduce((sum, row) => sum + (Number(row.Net_Capture_Volume) || 0), 0);
+        const tFuture = fCapture.reduce((sum, row) => sum + (Number(row.Future_Emission_Volume) || 0), 0);
+        const tDemand = fUtil.reduce((sum, row) => sum + (Number(row.Expected_Demand) || 0), 0);
+        let costSum = 0, volSum = 0;
+        fStorage.filter(row => transportMode === 'ALL' || row.Transport_Method.includes(transportMode)).forEach(row => {
+            if ((Number(row.Cost_USD_Per_Ton) || 0) > 0 && (Number(row.Capturable_Volume) || 0) > 0) { costSum += (Number(row.Cost_USD_Per_Ton)||0) * (Number(row.Capturable_Volume)||0); volSum += (Number(row.Capturable_Volume)||0); }
+        });
+        return { totalCapture: tCap, totalFuturePotential: tFuture, totalExpectedDemand: tDemand, avgCost: volSum > 0 ? (costSum / volSum) : 0 };
+    }, [fCapture, fUtil, fStorage, transportMode]);
 
     const availableIndustries = useMemo(() => ['ALL', ...Array.from(new Set(scope1Data.map(d => d.Industry))).filter(Boolean)], [scope1Data]);
     const filteredScope1Data = useMemo(() => {
@@ -1020,7 +992,7 @@ const CcusDashboard = () => {
 
     const selectedHubSources = useMemo(() => {
         if (!ccsTopology || !ccsTopology.hubSources[selectedHubId]) return [];
-        return [...ccsTopology.hubSources[selectedHubId]].sort((a,b) => b.Scope1 - a.Scope1);
+        return [...ccsTopology.hubSources[selectedHubId]].sort((a,b) => (Number(b.Scope1)||0) - (Number(a.Scope1)||0));
     }, [ccsTopology, selectedHubId]);
 
     const selectedHubTotalEmissions = useMemo(() => {
@@ -1071,7 +1043,7 @@ const CcusDashboard = () => {
                     </div>
 
                     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
-                        <div className="lg:col-span-7 bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col h-[750px] min-h-[750px]">
+                        <div className="lg:col-span-7 bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col min-h-[750px]">
                             <h3 className="font-bold text-slate-700 text-sm mb-4 border-b pb-2 flex items-center gap-2"><Map size={16} className="text-indigo-500"/> CCS 案場與共通管線拓樸分析</h3>
                             <div className="flex-1 w-full h-full relative min-h-0">
                                 <ErrorBoundary>
@@ -1080,8 +1052,8 @@ const CcusDashboard = () => {
                             </div>
                         </div>
 
-                        <div className="lg:col-span-5 flex flex-col gap-6 h-[750px]">
-                            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col h-[350px] min-h-[350px]">
+                        <div className="lg:col-span-5 flex flex-col gap-6">
+                            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col min-h-[350px]">
                                 <h3 className="font-bold text-slate-700 text-sm mb-3 border-b pb-2 flex items-center gap-2"><Route size={16} className="text-sky-500"/> 區域管線佈建可行性分析</h3>
                                 <div className="flex flex-col gap-2 overflow-y-auto pr-2 custom-scrollbar">
                                     <div className="bg-slate-50 p-3 rounded border border-slate-200">
@@ -1243,21 +1215,21 @@ const CcusDashboard = () => {
                 <div className="space-y-6 animate-fade-in">
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                         <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between">
-                            <div><p className="text-xs text-slate-500 font-bold mb-1 uppercase tracking-wider">現行淨捕捉量總和</p><h3 className="text-3xl font-black text-blue-800">{totalCapture.toFixed(1)} <span className="text-sm font-medium text-slate-500">萬噸/年</span></h3></div>
+                            <div><p className="text-xs text-slate-500 font-bold mb-1 uppercase tracking-wider">現行淨捕捉量總和</p><h3 className="text-3xl font-black text-blue-800">{Number(totalCapture||0).toFixed(1)} <span className="text-sm font-medium text-slate-500">萬噸/年</span></h3></div>
                             <div className="w-14 h-14 rounded-full bg-blue-100 flex items-center justify-center text-blue-600"><Leaf size={28}/></div>
                         </div>
                         <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between">
-                            <div><p className="text-xs text-slate-500 font-bold mb-1 uppercase tracking-wider">預期再利用 CO₂ 總需求</p><h3 className="text-3xl font-black text-emerald-800">{totalExpectedDemand.toFixed(1)} <span className="text-sm font-medium text-slate-500">萬噸/年</span></h3></div>
+                            <div><p className="text-xs text-slate-500 font-bold mb-1 uppercase tracking-wider">預期再利用 CO₂ 總需求</p><h3 className="text-3xl font-black text-emerald-800">{Number(totalExpectedDemand||0).toFixed(1)} <span className="text-sm font-medium text-slate-500">萬噸/年</span></h3></div>
                             <div className="w-14 h-14 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600"><FlaskConical size={28}/></div>
                         </div>
                         <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between">
-                            <div><p className="text-xs text-slate-500 font-bold mb-1 uppercase tracking-wider">總規劃封存量</p><h3 className="text-3xl font-black text-rose-800">{fStorage.reduce((s, r)=>s+r.Capturable_Volume, 0).toFixed(1)} <span className="text-sm font-medium text-slate-500">萬噸/年</span></h3></div>
+                            <div><p className="text-xs text-slate-500 font-bold mb-1 uppercase tracking-wider">總規劃封存量</p><h3 className="text-3xl font-black text-rose-800">{Number(fStorage.reduce((s, r)=>s+(Number(r.Capturable_Volume)||0), 0)).toFixed(1)} <span className="text-sm font-medium text-slate-500">萬噸/年</span></h3></div>
                             <div className="w-14 h-14 rounded-full bg-rose-100 flex items-center justify-center text-rose-600"><Box size={28}/></div>
                         </div>
                     </div>
                     
-                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-[750px] items-stretch">
-                        <div className="lg:col-span-6 bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col h-full min-h-[750px]">
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+                        <div className="lg:col-span-6 bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col min-h-[750px]">
                             <div className="flex justify-between items-center mb-4 border-b pb-2">
                                 <h3 className="font-bold text-slate-700 text-sm flex items-center gap-2"><MapPin size={16} className="text-slate-500"/> CCUS 全價值鏈分佈</h3>
                                 <div className="flex bg-slate-100 p-1 rounded-lg text-[10px] font-bold shadow-inner">
@@ -1269,16 +1241,15 @@ const CcusDashboard = () => {
                             </div>
                             <div className="flex-1 w-full h-full relative min-h-0">
                                 <ErrorBoundary>
-                                    <TaiwanCcusMap mode="facilities" activeLayers={activeLayersMap[facilitySubTab]} captureData={fCapture} utilData={fUtil} storageData={fStorage} mapPaths={mapPaths} hubs={hubs} setHubs={setHubs} clusters={clusters} setClusters={setClusters} />
+                                    <TaiwanCcusMap mode="facilities" activeLayers={activeLayersMap[facilitySubTab]} captureData={fCapture} utilData={fUtil} storageData={fStorage} mapPaths={mapPaths} hubs={hubs} setHubs={setHubs} />
                                 </ErrorBoundary>
                             </div>
                         </div>
 
-                        <div className="lg:col-span-6 flex flex-col gap-6 h-full">
-                            {/* --- 動態渲染右側內容 --- */}
+                        <div className="lg:col-span-6 flex flex-col gap-6">
                             {facilitySubTab === 'all' && (
                                 <>
-                                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col h-[350px] min-h-[350px]">
+                                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col min-h-[350px]">
                                         <h3 className="font-bold text-slate-700 text-sm mb-3 border-b pb-2 flex items-center gap-2"><Activity size={16} className="text-blue-500"/> 企業價值鏈橫向對照 (捕捉 vs 去化)</h3>
                                         <div className="flex-1 min-h-0 w-full relative">
                                             <ErrorBoundary>
@@ -1287,7 +1258,7 @@ const CcusDashboard = () => {
                                                         <CartesianGrid strokeDasharray="3 3" vertical={false} />
                                                         <XAxis dataKey="Company" tick={{fontSize: 10}} interval={0} angle={-30} textAnchor="end" />
                                                         <YAxis yAxisId="left" tick={{fontSize: 10}} />
-                                                        <Tooltip contentStyle={{fontSize: '12px', borderRadius: '8px'}} formatter={v => Number(v).toFixed(1)} />
+                                                        <Tooltip contentStyle={{fontSize: '12px', borderRadius: '8px'}} formatter={v => Number(v||0).toFixed(1)} />
                                                         <Legend wrapperStyle={{fontSize: '10px'}}/>
                                                         <Bar yAxisId="left" dataKey="Capture" name="淨捕捉量" fill="#3b82f6" radius={[2, 2, 0, 0]} barSize={15} />
                                                         <Bar yAxisId="left" dataKey="Future" name="未來擴充潛力" fill="#93c5fd" radius={[2, 2, 0, 0]} barSize={15} />
@@ -1309,10 +1280,10 @@ const CcusDashboard = () => {
                                                     {valueChainData.map((row, i) => (
                                                         <tr key={i} className="hover:bg-slate-50 transition-colors">
                                                             <td className="p-2 font-bold text-slate-700">{row.Company}</td>
-                                                            <td className="p-2 text-right font-mono text-blue-600">{row.Capture > 0 ? row.Capture.toFixed(1) : '-'}</td>
-                                                            <td className="p-2 text-right font-mono text-blue-400">{row.Future > 0 ? row.Future.toFixed(1) : '-'}</td>
-                                                            <td className="p-2 text-right font-mono text-emerald-600">{row.Util > 0 ? row.Util.toFixed(1) : '-'}</td>
-                                                            <td className="p-2 text-right font-mono text-amber-600">{row.Storage > 0 ? row.Storage.toFixed(1) : '-'}</td>
+                                                            <td className="p-2 text-right font-mono text-blue-600">{(Number(row.Capture)||0) > 0 ? Number(row.Capture).toFixed(1) : '-'}</td>
+                                                            <td className="p-2 text-right font-mono text-blue-400">{(Number(row.Future)||0) > 0 ? Number(row.Future).toFixed(1) : '-'}</td>
+                                                            <td className="p-2 text-right font-mono text-emerald-600">{(Number(row.Util)||0) > 0 ? Number(row.Util).toFixed(1) : '-'}</td>
+                                                            <td className="p-2 text-right font-mono text-amber-600">{(Number(row.Storage)||0) > 0 ? Number(row.Storage).toFixed(1) : '-'}</td>
                                                         </tr>
                                                     ))}
                                                 </tbody>
@@ -1324,15 +1295,15 @@ const CcusDashboard = () => {
 
                             {facilitySubTab === 'capture' && (
                                 <>
-                                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col h-[350px] min-h-[350px]">
+                                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col min-h-[350px]">
                                         <h3 className="font-bold text-slate-700 text-sm mb-3 border-b pb-2 flex items-center gap-2"><Activity size={16} className="text-blue-500"/> 技術解析：總捕捉量 vs 設備耗能</h3>
                                         <div className="flex-1 min-h-0 w-full relative">
                                             <ErrorBoundary>
                                                 <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
-                                                    <BarChart data={fCapture.filter(r => r.Capture_Volume > 0).sort((a,b) => b.Capture_Volume - a.Capture_Volume)} layout="vertical" margin={{ top: 5, right: 30, left: 10, bottom: 5 }} barGap={2} barSize={20}>
+                                                    <BarChart data={fCapture.filter(r => (Number(r.Capture_Volume)||0) > 0).sort((a,b) => (Number(b.Capture_Volume)||0) - (Number(a.Capture_Volume)||0))} layout="vertical" margin={{ top: 5, right: 30, left: 10, bottom: 5 }} barGap={2} barSize={20}>
                                                         <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false}/>
                                                         <XAxis type="number" fontSize={10} unit=" 萬噸"/>
-                                                        <YAxis dataKey="Label" type="category" width={120} interval={0} tick={<CaptureYAxisTick data={fCapture.filter(r => r.Capture_Volume > 0)} />}/>
+                                                        <YAxis dataKey="Label" type="category" width={120} interval={0} tick={<CaptureYAxisTick data={fCapture.filter(r => (Number(r.Capture_Volume)||0) > 0)} />}/>
                                                         <Tooltip content={<CaptureTooltip />}/>
                                                         <Legend wrapperStyle={{fontSize:'10px'}} verticalAlign="top"/>
                                                         <Bar dataKey="Net_Capture_Volume" name="淨捕捉量" stackId="capture" fill="#10b981"><LabelList dataKey="Net_Capture_Volume" position="insideLeft" fill="white" fontSize={10} fontWeight="bold" formatter={(v) => Number(v||0) > 0 ? `淨 ${Number(v||0).toFixed(1)}` : ''}/></Bar>
@@ -1350,7 +1321,7 @@ const CcusDashboard = () => {
                                                     <tr><th className="p-2">公司廠區</th><th className="p-2">捕捉技術</th><th className="p-2">TRL</th><th className="p-2 text-right">總捕捉量</th><th className="p-2 text-right text-rose-500">耗能扣除</th><th className="p-2 text-right font-bold text-emerald-600">淨捕捉量</th></tr>
                                                 </thead>
                                                 <tbody className="divide-y divide-slate-100">
-                                                    {fCapture.filter(r => r.Capture_Volume > 0).map((row, i) => (
+                                                    {fCapture.filter(r => (Number(r.Capture_Volume)||0) > 0).map((row, i) => (
                                                         <tr key={i} className="hover:bg-slate-50 transition-colors">
                                                             <td className="p-2 font-bold text-slate-700">{row.Label}</td>
                                                             <td className="p-2"><span className="px-2 py-0.5 bg-white border border-blue-200 text-blue-700 rounded">{row.Capture_Tech}</span></td>
@@ -1374,7 +1345,7 @@ const CcusDashboard = () => {
                                         <div className="flex-1 overflow-auto custom-scrollbar pr-2 space-y-3">
                                             {fUtil.map((item, idx) => {
                                                 const trlNum = parseInt(String(item.TRL).split('-')[0]) || 0;
-                                                const isDeveloping = trlNum < 6 || item.Current_Demand === 0;
+                                                const isDeveloping = trlNum < 6 || (Number(item.Current_Demand)||0) === 0;
                                                 return (
                                                     <div key={idx} className={`flex flex-col sm:flex-row items-stretch w-full rounded-xl border shadow-sm overflow-hidden relative ${isDeveloping ? 'bg-slate-50 border-dashed border-slate-300 opacity-80' : 'bg-white border-slate-200'}`}>
                                                         <div className="flex-1 p-3 flex flex-col items-center justify-center border-r border-slate-100 relative">
@@ -1382,7 +1353,7 @@ const CcusDashboard = () => {
                                                             <div className="font-bold text-slate-700 mb-1 text-center text-sm">{item.Target_Company} {item.Target_Plant}</div>
                                                             <div className="flex gap-2">
                                                                 <div className="bg-emerald-50 border border-emerald-100 rounded px-2 py-1 text-center"><div className="text-sm font-mono font-black text-emerald-600">{Number(item.Expected_Demand||0).toFixed(1)}</div><div className="text-[9px] text-emerald-500 font-bold">預期需求</div></div>
-                                                                <div className="bg-slate-50 border border-slate-100 rounded px-2 py-1 text-center"><div className={`text-sm font-mono font-black ${item.Current_Demand > 0 ? 'text-slate-600' : 'text-slate-300'}`}>{Number(item.Current_Demand||0).toFixed(1)}</div><div className="text-[9px] text-slate-500 font-bold">當前需求</div></div>
+                                                                <div className="bg-slate-50 border border-slate-100 rounded px-2 py-1 text-center"><div className={`text-sm font-mono font-black ${Number(item.Current_Demand||0) > 0 ? 'text-slate-600' : 'text-slate-300'}`}>{Number(item.Current_Demand||0).toFixed(1)}</div><div className="text-[9px] text-slate-500 font-bold">當前需求</div></div>
                                                             </div>
                                                         </div>
                                                         <div className={`w-32 text-white flex flex-col items-center justify-center p-2 relative shadow-inner ${isDeveloping ? 'bg-slate-500' : 'bg-slate-800'}`}>
@@ -1407,7 +1378,7 @@ const CcusDashboard = () => {
 
                             {facilitySubTab === 'storage' && (
                                 <>
-                                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col h-[350px] min-h-[350px]">
+                                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col min-h-[350px]">
                                         <div className="flex justify-between items-center mb-3 border-b pb-2">
                                             <h3 className="font-bold text-slate-700 text-sm flex items-center gap-2"><Box size={16} className="text-amber-500"/> 封存成本與距離矩陣</h3>
                                             <select value={transportMode} onChange={(e) => setTransportMode(e.target.value)} className="text-xs border rounded p-1 bg-slate-50 outline-none">
@@ -1427,7 +1398,7 @@ const CcusDashboard = () => {
                                                             <Label value="全價值鏈成本 (USD/噸)" angle={-90} position="insideLeft" offset={10} fontSize={11} fill="#475569" fontWeight="bold"/>
                                                         </YAxis>
                                                         <ZAxis type="number" dataKey="Capturable_Volume" range={[100, 1000]} name="封存量" />
-                                                        <Tooltip cursor={{strokeDasharray:'3 3'}} formatter={(v, n) => [Number(v).toFixed(1), n]} contentStyle={{borderRadius:'8px', fontSize:'12px'}}/>
+                                                        <Tooltip cursor={{strokeDasharray:'3 3'}} formatter={(v, n) => [Number(v||0).toFixed(1), n]} contentStyle={{borderRadius:'8px', fontSize:'12px'}}/>
                                                         <Scatter name="封存專案" data={fStorage.filter(r => transportMode === 'ALL' || r.Transport_Method.includes(transportMode))}>
                                                             <LabelList dataKey="Storage_Site" position="top" style={{fontSize:10, fill:'#334155', fontWeight:'bold'}} />
                                                             {fStorage.filter(r => transportMode === 'ALL' || r.Transport_Method.includes(transportMode)).map((entry, index) => {
@@ -1451,7 +1422,7 @@ const CcusDashboard = () => {
                                                     <tr><th className="p-2">碳源 ➔ 封存場</th><th className="p-2 text-center">方式</th><th className="p-2 text-right">距離</th><th className="p-2 text-right">封存量</th><th className="p-2 text-right">成本(USD)</th></tr>
                                                 </thead>
                                                 <tbody className="divide-y divide-slate-100">
-                                                    {[...fStorage].filter(r => transportMode === 'ALL' || r.Transport_Method.includes(transportMode)).sort((a,b) => a.Cost_USD_Per_Ton - b.Cost_USD_Per_Ton).map((row, i) => (
+                                                    {[...fStorage].filter(r => transportMode === 'ALL' || r.Transport_Method.includes(transportMode)).sort((a,b) => (Number(a.Cost_USD_Per_Ton)||0) - (Number(b.Cost_USD_Per_Ton)||0)).map((row, i) => (
                                                         <tr key={i} className="hover:bg-amber-50/50 transition-colors">
                                                             <td className="p-2 font-bold text-slate-700 truncate max-w-[120px]">{row.Source_Company} ➔ {row.Storage_Site}</td>
                                                             <td className="p-2 text-center"><span className="px-1.5 py-0.5 rounded border border-slate-200 bg-white font-bold">{row.Transport_Method}</span></td>
