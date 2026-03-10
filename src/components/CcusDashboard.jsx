@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, 
-  ScatterChart, Scatter, ZAxis, Cell, LabelList, ComposedChart, Line, PieChart, Pie
+  ScatterChart, Scatter, ZAxis, Cell, LabelList, ComposedChart, Line, PieChart, Pie, Label
 } from 'recharts';
 import { 
   Leaf, RefreshCw, Target, Activity, MapPin, DollarSign, Box, AlertTriangle, 
@@ -849,7 +849,6 @@ const CcusDashboard = () => {
 
     const ccsTopology = useMemo(() => {
         if (!scope1Data || scope1Data.length === 0) return null;
-        const countyMap = { '基隆': 'C_TPE', '台北': 'C_TPE', '臺北': 'C_TPE', '新北': 'C_TPE', '桃園': 'C_TYN_COAST', '新竹': 'C_HSZ', '苗栗': 'C_MIA', '台中': 'C_TXG', '臺中': 'C_TXG', '南投': 'C_TXG', '雲林': 'C_YUN_IN', '嘉義': 'C_CYI', '台南': 'C_TNN', '臺南': 'C_TNN', '高雄': 'C_KHH_N', '屏東': 'C_PTG', '宜蘭': 'C_YIL', '花蓮': 'C_HUA', '台東': 'C_TTT', '臺東': 'C_TTT' };
 
         const activeClusters = JSON.parse(JSON.stringify(clusters));
         Object.keys(activeClusters).forEach(k => { activeClusters[k].id = k; activeClusters[k].emissions = 0; activeClusters[k].sources = []; });
@@ -863,6 +862,8 @@ const CcusDashboard = () => {
         Object.values(hubs).forEach(h => allMainNodes.push({id: h.id, lat: h.lat, lon: h.lon, name: h.name}));
         
         const currentRouteNodes = { ...routeNodes };
+
+        const countyMap = { '基隆': 'C_TPE', '台北': 'C_TPE', '臺北': 'C_TPE', '新北': 'C_TPE', '桃園': 'C_TYN_COAST', '新竹': 'C_HSZ', '苗栗': 'C_MIA', '台中': 'C_TXG', '臺中': 'C_TXG', '南投': 'C_TXG', '雲林': 'C_YUN_IN', '嘉義': 'C_CYI', '台南': 'C_TNN', '臺南': 'C_TNN', '高雄': 'C_KHH_N', '屏東': 'C_PTG', '宜蘭': 'C_YIL', '花蓮': 'C_HUA', '台東': 'C_TTT', '臺東': 'C_TTT' };
 
         scope1Data.forEach(d => {
             d.isPriority = d.Scope1 >= 25000;
@@ -926,7 +927,16 @@ const CcusDashboard = () => {
                 if (edge.from.id === 'C_KEE_PORT' && edge.to.id === 'NORTH_HUB') { c1 = {lat: 25.4, lon: 121.7}; c2 = {lat: 25.4, lon: 121.4}; }
                 if (edge.from.id === 'C_YIL' && edge.to.id === 'NORTH_HUB') { c1 = {lat: 25.2, lon: 122.1}; c2 = {lat: 25.4, lon: 121.8}; }
                 if (edge.from.id === 'C_TTT' && edge.to.id === 'SOUTH_HUB') { c1 = {lat: 21.8, lon: 121.2}; c2 = {lat: 21.8, lon: 120.5}; }
-                seaRoutes.push({ ...edge, distance: dist, label: `海運 (${Number(dist||0).toFixed(0)}km)`, c1, c2 });
+                
+                const activeC1 = seaControlPoints[edge.id]?.c1 || c1;
+                const activeC2 = seaControlPoints[edge.id]?.c2 || c2;
+                
+                const d1 = calcDistanceKm(edge.from.lat, edge.from.lon, activeC1.lat, activeC1.lon);
+                const d2 = calcDistanceKm(activeC1.lat, activeC1.lon, activeC2.lat, activeC2.lon);
+                const d3 = calcDistanceKm(activeC2.lat, activeC2.lon, edge.to.lat, edge.to.lon);
+                const totalSeaDist = d1 + d2 + d3;
+                
+                seaRoutes.push({ ...edge, distance: totalSeaDist, label: `海運 (${Number(totalSeaDist||0).toFixed(0)}km)`, c1: activeC1, c2: activeC2 });
             } else {
                 let nodesForRoute = currentRouteNodes[edge.id];
                 if (!nodesForRoute) {
