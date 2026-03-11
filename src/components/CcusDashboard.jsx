@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, 
-  ScatterChart, Scatter, ZAxis, Cell, LabelList, ComposedChart, Line, PieChart, Pie, Label
+  ScatterChart, Scatter, ZAxis, Cell, LabelList, ComposedChart, Line, PieChart, Pie
 } from 'recharts';
 import { 
   Leaf, RefreshCw, Target, Activity, MapPin, DollarSign, Box, AlertTriangle, 
@@ -129,6 +129,7 @@ const getApproximateCoordinates = (plant, company, county) => {
     };
     const offsetLat = pseudoRandom(n + "lat"); const offsetLon = pseudoRandom(n + "lon");
 
+    // 大型電廠與特定廠區定位
     if (company?.includes('台電') || n.includes('發電廠')) {
         if (n.includes('台中') || n.includes('臺中')) return { lat: 24.21 + offsetLat, lon: 120.48 + offsetLon };
         if (n.includes('興達')) return { lat: 22.85 + offsetLat, lon: 120.19 + offsetLon };
@@ -140,6 +141,11 @@ const getApproximateCoordinates = (plant, company, county) => {
         if (n.includes('協和')) return { lat: 25.15 + offsetLat, lon: 121.74 + offsetLon };
         if (n.includes('和平')) return { lat: 24.30 + offsetLat, lon: 121.75 + offsetLon };
     }
+
+    // 奇美實業定位於台南仁德
+    if (company?.includes('奇美')) return { lat: 22.934 + offsetLat, lon: 120.254 + offsetLon };
+    // 高雄聚酯定位
+    if (n.includes('聚酯') && (cty.includes('高雄') || n.includes('高雄'))) return { lat: 22.62 + offsetLat, lon: 120.31 + offsetLon };
 
     if (company?.includes('台鹽') || company?.includes('臺鹽') || plant?.includes('通霄')) {
         if (cty.includes('台南')) return { lat: 23.14 + offsetLat, lon: 120.10 + offsetLon };
@@ -186,7 +192,7 @@ const INITIAL_CCS_HUBS = {
     'CENTRAL_HUB_1': { id: 'CENTRAL_HUB_1', name: '台中港接收站 (陸地轉海域)', type: '🛢️ 本土外海封存', lat: 24.25, lon: 120.45, region: '中區' },
     'CENTRAL_HUB_2': { id: 'CENTRAL_HUB_2', name: '麥寮外海 (陸地轉海域)', type: '🛢️ 本土外海封存', lat: 23.80, lon: 120.10, region: '中區' },
     'CENTRAL_HUB_LAND': { id: 'CENTRAL_HUB_LAND', name: '苗栗鐵砧山 (陸地封存)', type: '⛰️ 陸地封存場域', lat: 24.45, lon: 120.68, region: '中區' }, 
-    'SOUTH_HUB': { id: 'SOUTH_HUB', name: '高雄港接收站 (輸出轉運)', type: '🚢 港口接收轉運', lat: 22.55, lon: 120.25, region: '南區' },
+    'SOUTH_HUB': { id: 'SOUTH_HUB', name: '高雄港接收站 (輸出轉運)', type: '🚢 港口接收轉運', lat: 22.55, lon: 120.32, region: '南區' },
     'EAST_HUB': { id: 'EAST_HUB', name: '花蓮港接收站 (輸出北送)', type: '🚢 港口接收轉運', lat: 23.98, lon: 121.62, region: '東區' },
     'SOUTHEAST_HUB': { id: 'SOUTHEAST_HUB', name: '台東接收站 (南迴轉運)', type: '🚢 港口接收轉運', lat: 22.75, lon: 121.15, region: '南區' } 
 };
@@ -206,7 +212,7 @@ const INITIAL_CLUSTERS = {
     'C_TNN': { id: 'C_TNN', name: '台南聚落', lat: 23.10, lon: 120.25, next: 'C_KHH_N', type: 'land' },
     'C_KHH_IN': { id: 'C_KHH_IN', name: '高雄內陸(大樹等)', lat: 22.70, lon: 120.40, next: 'C_KHH_N', type: 'land' },
     'C_KHH_N': { id: 'C_KHH_N', name: '北高雄(仁武大社)', lat: 22.72, lon: 120.35, next: 'SOUTH_HUB', type: 'land' },
-    'C_KHH_S': { id: 'C_KHH_S', name: '南高雄(林園小港)', lat: 22.53, lon: 120.38, next: 'SOUTH_HUB', type: 'land' },
+    'C_KHH_S': { id: 'C_KHH_S', name: '南高雄(林園大發)', lat: 22.53, lon: 120.38, next: 'SOUTH_HUB', type: 'land' },
     'C_PTG': { id: 'C_PTG', name: '屏東聚落', lat: 22.50, lon: 120.45, next: 'C_KHH_S', type: 'land' },
     'C_YIL': { id: 'C_YIL', name: '宜蘭聚落', lat: 24.70, lon: 121.75, next: 'NORTH_HUB', type: 'sea' }, 
     'C_HUA': { id: 'C_HUA', name: '花蓮聚落', lat: 23.98, lon: 121.60, next: 'C_KEE_PORT', type: 'sea' }, 
@@ -228,17 +234,6 @@ export const projectBase = (lon, lat) => {
     return [(lon - MAP_CONSTANTS.centerLon) * MAP_CONSTANTS.baseScale, -(lat - MAP_CONSTANTS.centerLat) * MAP_CONSTANTS.baseScale * 1.1];
 };
 
-const generateTreePath = (x1, y1, x2, y2, isBranch, inlandCurve = false) => {
-    if (isBranch) {
-        let cx = (x1 + x2) / 2; if (inlandCurve) cx += 15; const cy = (y1 + y2) / 2;
-        return `M ${x1} ${y1} Q ${cx} ${cy}, ${x2} ${y2}`;
-    } else {
-        let cx1 = x1, cy1 = (y1 + y2) / 2; let cx2 = x2, cy2 = (y1 + y2) / 2;
-        if (inlandCurve) { cx1 += 30; cx2 += 30; }
-        return `M ${x1} ${y1} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${x2} ${y2}`;
-    }
-};
-
 const CaptureYAxisTick = ({ x, y, payload, data }) => {
     const item = data && data.find(d => d.Label === payload.value);
     const tech = item ? item.Capture_Tech : '';
@@ -254,7 +249,7 @@ const CaptureTooltip = ({ active, payload }) => {
     if (active && payload && payload.length) {
         const data = payload[0].payload;
         return (
-            <div className="bg-white/95 backdrop-blur border border-slate-200 p-3 rounded-lg shadow-xl text-xs w-64 pointer-events-auto">
+            <div className="bg-white/95 backdrop-blur border border-slate-200 p-3 rounded-lg shadow-xl text-xs w-64 pointer-events-auto z-50 relative">
                 <p className="font-bold text-slate-800 mb-2 border-b pb-1 flex items-center gap-1"><Factory size={14} className="text-blue-600"/> {data.Label}</p>
                 <p className="mb-1 font-bold text-blue-600">技術: {data.Capture_Tech} (TRL {data.TRL})</p>
                 <div className="text-slate-600 mb-2 grid grid-cols-2 gap-x-2 gap-y-1 bg-slate-50 p-1.5 rounded">
@@ -273,6 +268,9 @@ const CaptureTooltip = ({ active, payload }) => {
     return null;
 };
 
+// ==========================================
+// 台灣地圖核心模組 (支援 activeLayers 與節點拖曳/增刪)
+// ==========================================
 const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], storageData = [], scope1Data = [], mapPaths = [], ccsTopology = null, hubs, setHubs, clusters, setClusters, routeNodes, setRouteNodes, seaControlPoints, setSeaControlPoints }) => {
     const mapRef = useRef(null); const containerRef = useRef(null); 
     const [zoom, setZoom] = useState(1); const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -293,6 +291,37 @@ const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], sto
             setDragState({ id, routeId: extraId, type, startX: e.clientX, startY: e.clientY, startLat: routeNodes[extraId][id].lat, startLon: routeNodes[extraId][id].lon });
         } else if (type === 'seaControl') {
             setDragState({ id, routeId: extraId, type, startX: e.clientX, startY: e.clientY, startLat: seaControlPoints[extraId][id].lat, startLon: seaControlPoints[extraId][id].lon });
+        }
+    };
+
+    // 右鍵刪除節點
+    const handleNodeContextMenu = (e, routeId, nodeIndex) => {
+        e.preventDefault(); e.stopPropagation();
+        if (setRouteNodes) {
+            setRouteNodes(prev => {
+                const currentNodes = prev[routeId];
+                if (!currentNodes || currentNodes.length <= 3) return prev; 
+                const newNodes = [...currentNodes];
+                newNodes.splice(nodeIndex, 1);
+                return { ...prev, [routeId]: newNodes };
+            });
+        }
+    };
+
+    // 點擊線段新增節點
+    const handleAddNode = (routeId, insertIndex) => {
+        if (setRouteNodes && ccsTopology) {
+            setRouteNodes(prev => {
+                const routeInfo = ccsTopology.mainRoutes.find(r => r.id === routeId);
+                const currentNodes = prev[routeId] || (routeInfo ? routeInfo.nodes : []);
+                if (!currentNodes || currentNodes.length < 2) return prev;
+                const prevNode = currentNodes[insertIndex - 1];
+                const nextNode = currentNodes[insertIndex];
+                const newNode = { lat: (prevNode.lat + nextNode.lat) / 2, lon: (prevNode.lon + nextNode.lon) / 2 };
+                const newNodes = [...currentNodes];
+                newNodes.splice(insertIndex, 0, newNode);
+                return { ...prev, [routeId]: newNodes };
+            });
         }
     };
 
@@ -336,8 +365,9 @@ const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], sto
     const handleMouseUp = () => { setIsDragging(false); setDragState(null); };
     const handleMouseLeave = () => { setIsDragging(false); setDragState(null); };
 
+    // 精確擷取 SVG 高解析度圖檔 (修正無法截圖問題)
     const exportMapAsImage = () => {
-        const svgElement = containerRef.current?.querySelector('svg#ccus-main-map');
+        const svgElement = document.getElementById('ccus-main-map');
         if (!svgElement) return;
 
         const clonedSvg = svgElement.cloneNode(true);
@@ -363,7 +393,7 @@ const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], sto
         img.onload = () => {
             ctx.drawImage(img, 0, 0, 800, 900); 
             const a = document.createElement('a'); 
-            a.download = 'CCUS_Pipeline_Map.png'; 
+            a.download = 'CCUS_Pipeline_Map_HighRes.png'; 
             a.href = canvas.toDataURL('image/png'); 
             a.click();
         }; 
@@ -414,7 +444,7 @@ const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], sto
                         </div>
                         <div className="space-y-1.5 text-xs text-slate-600">
                             <div className="flex justify-between items-center"><span className="text-slate-400">隸屬聚落</span> <span className="font-bold text-slate-700">{hoveredNode.zone}</span></div>
-                            <div className="flex justify-between items-center"><span className="text-slate-400">管線狀態</span> <span className={`font-bold ${hoveredNode.distanceToHub < 0 ? 'text-slate-400' : 'text-emerald-600'}`}>{hoveredNode.distanceToHub < 0 ? '距離過遠，未納入管網' : `已連線 (${(Number(hoveredNode.distanceToHub)||0).toFixed(1)}km)`}</span></div>
+                            <div className="flex justify-between items-center"><span className="text-slate-400">管線狀態</span> <span className={`font-bold ${hoveredNode.distanceToHub < 0 ? 'text-slate-400' : 'text-emerald-600'}`}>{hoveredNode.distanceToHub < 0 ? '距離過遠，未納入管網' : `最短直線接入 (${(Number(hoveredNode.distanceToCenter)||0).toFixed(1)}km)`}</span></div>
                             <div className="mt-2 bg-rose-50 p-2 rounded-lg border border-rose-100 flex flex-col gap-1">
                                 <div className="flex justify-between items-center"><span className="text-rose-800 font-bold">總排 (範1+2)</span><span className="font-mono font-black text-rose-600 text-sm">{(Number(hoveredNode.TotalScope || 0) / 10000).toFixed(1)} <span className="text-[10px] font-normal">萬噸</span></span></div>
                                 <div className="flex justify-between items-center text-xs mt-1 pt-1 border-t border-rose-200/50"><span className="text-rose-600 font-bold">範疇一 (可CCS)</span><span className="font-mono text-rose-600 font-bold">{(Number(hoveredNode.Scope1 || 0) / 10000).toFixed(1)} 萬噸</span></div>
@@ -485,7 +515,7 @@ const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], sto
                 <button onClick={() => setZoom(prev => Math.max(prev / 1.3, 0.5))} className="p-2 bg-slate-50 hover:bg-slate-200 rounded-md text-slate-600 transition-colors" title="縮小"><ZoomOut size={18}/></button>
                 <button onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }} className="p-2 bg-slate-50 hover:bg-slate-200 rounded-md text-slate-600 transition-colors" title="重置畫面"><Maximize size={18}/></button>
                 <div className="w-full h-px bg-slate-200 my-1"></div>
-                <button onClick={exportMapAsImage} className="p-2 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-md transition-colors" title="輸出高品質圖片"><DownloadCloud size={18}/></button>
+                <button onClick={exportMapAsImage} className="p-2 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-md transition-colors font-bold flex items-center justify-center" title="輸出高品質圖片"><DownloadCloud size={18}/></button>
             </div>
 
             <svg id="ccus-main-map" viewBox={`0 0 ${baseWidth} ${baseHeight}`} className={`w-full h-full select-none ${isDragging ? 'cursor-grabbing' : 'cursor-grab'} ${dragState ? 'cursor-move' : ''}`} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave={handleMouseLeave} ref={mapRef}>
@@ -494,6 +524,7 @@ const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], sto
 
                     {activeLayers.includes('planning') && ccsTopology && (
                         <>
+                            {/* 海運航線 */}
                             {ccsTopology.seaRoutes.map((route, i) => {
                                 const [x1, y1] = projectBase(route.from.lon, route.from.lat); const [x2, y2] = projectBase(route.to.lon, route.to.lat);
                                 const currentC1 = seaControlPoints[route.id]?.c1 || route.c1;
@@ -518,14 +549,16 @@ const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], sto
                                 );
                             })}
                             
+                            {/* 廠區支線 (最短直線) */}
                             {ccsTopology.branchRoutes.map((route, i) => {
                                 const [x1, y1] = projectBase(route.from.lon, route.from.lat); const [x2, y2] = projectBase(route.to.lon, route.to.lat);
                                 if (x1 === -9999 || x2 === -9999) return null;
                                 const strokeColor = route.isPriority ? "#94a3b8" : "#cbd5e1"; const strokeW = (route.isPriority ? 1.5 : 1) / zoom;
                                 const opac = route.isPriority ? 0.6 : 0.4; const dash = route.isPriority ? "none" : `${3/zoom} ${3/zoom}`;
-                                return (<path key={`branch-${i}`} d={generateTreePath(x1, y1, x2, y2, true, route.inlandCurve)} stroke={strokeColor} strokeWidth={strokeW} strokeDasharray={dash} fill="none" opacity={opac} />);
+                                return (<path key={`branch-${i}`} d={`M ${x1} ${y1} L ${x2} ${y2}`} stroke={strokeColor} strokeWidth={strokeW} strokeDasharray={dash} fill="none" opacity={opac} />);
                             })}
                             
+                            {/* 多節點主管線 */}
                             {ccsTopology.mainRoutes.map((route, i) => {
                                 const currentNodes = routeNodes[route.id] || route.nodes;
                                 const pathNodes = currentNodes.map(n => projectBase(n.lon, n.lat));
@@ -543,12 +576,26 @@ const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], sto
                                     <g key={`main-route-${i}`}>
                                         <path d={pathD} stroke={strokeColor} strokeWidth={Math.max(2, Math.log10(Math.max(10000, route.weight)))/zoom} strokeDasharray={`${6/zoom} ${4/zoom}`} fill="none" strokeLinejoin="round" opacity={isUnrealistic ? 0.7 : 0.85}/>
                                         
+                                        {/* 新增節點的交互熱區 */}
+                                        {currentNodes.slice(0, -1).map((n, idx) => {
+                                            const n1 = projectBase(n.lon, n.lat); const n2 = projectBase(currentNodes[idx+1].lon, currentNodes[idx+1].lat);
+                                            const mx = (n1[0] + n2[0]) / 2; const my = (n1[1] + n2[1]) / 2;
+                                            return (
+                                                <g key={`add-${idx}`} className="cursor-pointer opacity-0 hover:opacity-100 transition-opacity" onClick={(e) => { e.stopPropagation(); handleAddNode(route.id, idx + 1); }}>
+                                                    <circle cx={mx} cy={my} r={6/zoom} fill="white" stroke="#10b981" strokeWidth={1.5/zoom} strokeDasharray="2 1"/>
+                                                    <line x1={mx - 3/zoom} y1={my} x2={mx + 3/zoom} y2={my} stroke="#10b981" strokeWidth={1.5/zoom} />
+                                                    <line x1={mx} y1={my - 3/zoom} x2={mx} y2={my + 3/zoom} stroke="#10b981" strokeWidth={1.5/zoom} />
+                                                </g>
+                                            );
+                                        })}
+
+                                        {/* 繪製可拖曳與右鍵刪除的節點 */}
                                         {currentNodes.slice(1, -1).map((n, idx) => {
                                             const [cx, cy] = projectBase(n.lon, n.lat);
                                             const actualIdx = idx + 1;
                                             const isDragged = dragState && dragState.id === actualIdx && dragState.routeId === route.id;
                                             return (
-                                                <circle key={`node-${idx}`} cx={cx} cy={cy} r={isDragged ? 4/zoom : 3/zoom} fill="#fff" stroke={isDragged ? "#fcd34d" : strokeColor} strokeWidth={isDragged ? 2/zoom : 1.5/zoom} className={isDragged ? "cursor-grabbing" : "cursor-grab hover:scale-125 transition-transform"} onMouseDown={(e) => handleNodeMouseDown(e, actualIdx, 'routeNode', route.id)}/>
+                                                <circle key={`node-${idx}`} cx={cx} cy={cy} r={isDragged ? 4/zoom : 3/zoom} fill="#fff" stroke={isDragged ? "#fcd34d" : strokeColor} strokeWidth={isDragged ? 2/zoom : 1.5/zoom} className={isDragged ? "cursor-grabbing" : "cursor-grab hover:scale-125 transition-transform"} onMouseDown={(e) => handleNodeMouseDown(e, actualIdx, 'routeNode', route.id)} onContextMenu={(e) => handleNodeContextMenu(e, route.id, actualIdx)}/>
                                             );
                                         })}
                                         <text x={midX} y={midY - (8/zoom)} fontSize={10/zoom} fill={textColor} textAnchor="middle" fontWeight="bold" style={{textShadow: '0 0 3px white', pointerEvents: 'none'}}>{Number(dist||0).toFixed(0)} km</text>
@@ -556,6 +603,7 @@ const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], sto
                                 );
                             })}
                             
+                            {/* 中繼聚落點 (可拖曳) */}
                             {clusters && Object.values(clusters).map((cluster, i) => {
                                 if (cluster.emissions <= 0) return null;
                                 const [cx, cy] = projectBase(cluster.lon, cluster.lat);
@@ -568,6 +616,7 @@ const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], sto
                                 );
                             })}
                             
+                            {/* 樞紐站 (可拖曳) */}
                             {hubs && Object.values(hubs).map((hub, i) => {
                                 const [cx, cy] = projectBase(hub.lon, hub.lat);
                                 if (cx === -9999) return null;
@@ -580,6 +629,7 @@ const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], sto
                                 );
                             })}
                             
+                            {/* 廠區排放點源 (優先級視覺強化) */}
                             {ccsTopology.validSources.map((d, i) => {
                                 const [cx, cy] = projectBase(d.lon, d.lat);
                                 if (cx === -9999) return null;
@@ -657,9 +707,10 @@ const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], sto
                     })}
                 </g>
 
+                {/* 寫入原生的 SVG 圖例 */}
                 {activeLayers.includes('planning') && (
-                    <g transform={`translate(20, ${baseHeight - 270})`}>
-                        <rect x="0" y="0" width="310" height="250" fill="rgba(255,255,255,0.95)" rx="10" stroke="#e2e8f0" strokeWidth="1.5" />
+                    <g transform={`translate(20, ${baseHeight - 300})`}>
+                        <rect x="0" y="0" width="310" height="280" fill="rgba(255,255,255,0.95)" rx="10" stroke="#e2e8f0" strokeWidth="1.5" />
                         <rect x="15" y="20" width="12" height="12" fill="#0ea5e9" stroke="white" strokeWidth="1" />
                         <text x="35" y="30" fontSize="12" fill="#334155" fontWeight="bold">海洋接收站 / 本土封存樞紐 (可拖曳)</text>
                         <rect x="15" y="45" width="12" height="12" fill="#b45309" stroke="white" strokeWidth="1" />
@@ -671,15 +722,16 @@ const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], sto
                         <text x="35" y="115" fontSize="12" fill="#334155" fontWeight="bold">次要碳源 (&lt; 2.5萬噸)</text>
                         <line x1="15" y1="130" x2="295" y2="130" stroke="#e2e8f0" strokeWidth="1" />
                         <polygon points="21,146 25,152 21,158 17,152" fill="#818cf8" stroke="white" strokeWidth="1" />
-                        <text x="35" y="156" fontSize="12" fill="#334155" fontWeight="bold">內陸中繼節點 (可拖曳修改路徑)</text>
+                        <text x="35" y="156" fontSize="12" fill="#334155" fontWeight="bold">內陸聚落節點 (可拖曳)</text>
                         <line x1="15" y1="175" x2="40" y2="175" stroke="#3b82f6" strokeWidth="3" strokeDasharray="6 4" />
-                        <text x="45" y="179" fontSize="12" fill="#334155" fontWeight="bold">擬真主幹預估 (&gt;50km以橘色警告)</text>
+                        <text x="45" y="179" fontSize="12" fill="#334155" fontWeight="bold">自訂多節點主幹管線</text>
                         <circle cx="27" cy="175" r="3" fill="white" stroke="#3b82f6" strokeWidth="1.5" />
-                        <text x="160" y="193" fontSize="10" fill="#64748b">(主幹與海運控制點皆可拖曳)</text>
-                        <path d="M 15 200 Q 27.5 200, 40 195" stroke="#94a3b8" strokeWidth="2" fill="none" />
-                        <text x="45" y="204" fontSize="12" fill="#334155" fontWeight="bold">廠區就近支線 (優先≤50km,次要≤20km)</text>
-                        <line x1="15" y1="225" x2="40" y2="225" stroke="#0284c7" strokeWidth="2" strokeDasharray="6 6" opacity="0.6" />
-                        <text x="45" y="229" fontSize="12" fill="#334155" fontWeight="bold">樞紐海運外繞航線</text>
+                        <text x="45" y="196" fontSize="10" fill="#64748b">管線節點 (左鍵點線新增，右鍵刪除)</text>
+                        <path d="M 15 215 L 40 215" stroke="#94a3b8" strokeWidth="2" fill="none" />
+                        <text x="45" y="219" fontSize="12" fill="#334155" fontWeight="bold">最短直線就近上管 (≤50km)</text>
+                        <line x1="15" y1="240" x2="40" y2="240" stroke="#0284c7" strokeWidth="2" strokeDasharray="6 6" opacity="0.6" />
+                        <circle cx="27" cy="240" r="4" fill="transparent" stroke="#0284c7" strokeWidth="1" />
+                        <text x="45" y="244" fontSize="12" fill="#334155" fontWeight="bold">樞紐海運外繞 (控制點可拖曳)</text>
                     </g>
                 )}
 
@@ -733,6 +785,10 @@ const CcusDashboard = () => {
     const [selectedYear, setSelectedYear] = useState('ALL');
     const [transportMode, setTransportMode] = useState('ALL');
     
+    // Toggles
+    const [showFuturePotential, setShowFuturePotential] = useState(false);
+
+    // Draggable Maps States
     const [hubs, setHubs] = useState(INITIAL_CCS_HUBS);
     const [clusters, setClusters] = useState(INITIAL_CLUSTERS);
     const [routeNodes, setRouteNodes] = useState({});
@@ -844,11 +900,12 @@ const CcusDashboard = () => {
         fCapture.forEach(d => { add(d.Company, 'Capture', d.Net_Capture_Volume); add(d.Company, 'Future', d.Future_Emission_Volume); });
         fUtil.forEach(d => { add(d.Target_Company, 'Util', d.Expected_Demand); });
         fStorage.forEach(d => { add(d.Source_Company, 'Storage', d.Capturable_Volume); });
-        return Object.values(map).filter(d => d.Capture > 0 || d.Util > 0 || d.Storage > 0 || d.Future > 0).sort((a,b) => (b.Capture+b.Util+b.Storage) - (a.Capture+a.Util+a.Storage));
-    }, [fCapture, fUtil, fStorage]);
+        return Object.values(map).filter(d => d.Capture > 0 || d.Util > 0 || d.Storage > 0 || (showFuturePotential && d.Future > 0)).sort((a,b) => (b.Capture+b.Util+b.Storage) - (a.Capture+a.Util+a.Storage));
+    }, [fCapture, fUtil, fStorage, showFuturePotential]);
 
     const ccsTopology = useMemo(() => {
         if (!scope1Data || scope1Data.length === 0) return null;
+        const countyMap = { '基隆': 'C_TPE', '台北': 'C_TPE', '臺北': 'C_TPE', '新北': 'C_TPE', '桃園': 'C_TYN_COAST', '新竹': 'C_HSZ', '苗栗': 'C_MIA', '台中': 'C_TXG', '臺中': 'C_TXG', '南投': 'C_TXG', '雲林': 'C_YUN_IN', '嘉義': 'C_CYI', '台南': 'C_TNN', '臺南': 'C_TNN', '高雄': 'C_KHH_N', '屏東': 'C_PTG', '宜蘭': 'C_YIL', '花蓮': 'C_HUA', '台東': 'C_TTT', '臺東': 'C_TTT' };
 
         const activeClusters = JSON.parse(JSON.stringify(clusters));
         Object.keys(activeClusters).forEach(k => { activeClusters[k].id = k; activeClusters[k].emissions = 0; activeClusters[k].sources = []; });
@@ -862,8 +919,12 @@ const CcusDashboard = () => {
         Object.values(hubs).forEach(h => allMainNodes.push({id: h.id, lat: h.lat, lon: h.lon, name: h.name}));
         
         const currentRouteNodes = { ...routeNodes };
-
-        const countyMap = { '基隆': 'C_TPE', '台北': 'C_TPE', '臺北': 'C_TPE', '新北': 'C_TPE', '桃園': 'C_TYN_COAST', '新竹': 'C_HSZ', '苗栗': 'C_MIA', '台中': 'C_TXG', '臺中': 'C_TXG', '南投': 'C_TXG', '雲林': 'C_YUN_IN', '嘉義': 'C_CYI', '台南': 'C_TNN', '臺南': 'C_TNN', '高雄': 'C_KHH_N', '屏東': 'C_PTG', '宜蘭': 'C_YIL', '花蓮': 'C_HUA', '台東': 'C_TTT', '臺東': 'C_TTT' };
+        
+        Object.values(currentRouteNodes).forEach(nodesArray => {
+            nodesArray.slice(1, -1).forEach((node, idx) => {
+                 allMainNodes.push({id: `route_node_${idx}`, lat: node.lat, lon: node.lon, name: '管線節點'});
+            });
+        });
 
         scope1Data.forEach(d => {
             d.isPriority = d.Scope1 >= 25000;
@@ -883,8 +944,8 @@ const CcusDashboard = () => {
             const maxDist = d.isPriority ? 50 : 20; 
             if (minDist <= maxDist) {
                 targetCluster.emissions += d.Scope1; targetCluster.sources.push({...d, distToCenter: minDist}); 
-                validSources.push({...d, distToCenter: minDist, initialClusterId: cId}); 
-                if (minDist > 0.002) branchRoutes.push({ from: d, to: bestNode, isPriority: d.isPriority, inlandCurve: d.lon < 121.5 });
+                validSources.push({...d, distToCenter: minDist, initialClusterId: cId, distanceToHub: minDist}); 
+                if (minDist > 0.002) branchRoutes.push({ from: d, to: bestNode, isPriority: d.isPriority });
             } else {
                 validSources.push({...d, distanceToHub: -1});
             }
@@ -984,15 +1045,14 @@ const CcusDashboard = () => {
         return Object.keys(industryMap).map(k => ({ name: k, value: industryMap[k] })).sort((a,b) => b.value - a.value);
     }, [ccsTopology, scope1Data, listRegion]);
 
-    const { totalCapture, totalFuturePotential, totalExpectedDemand, avgCost } = useMemo(() => {
+    const { totalCapture, totalExpectedDemand, avgCost } = useMemo(() => {
         const tCap = fCapture.reduce((sum, row) => sum + (Number(row.Net_Capture_Volume) || 0), 0);
-        const tFuture = fCapture.reduce((sum, row) => sum + (Number(row.Future_Emission_Volume) || 0), 0);
         const tDemand = fUtil.reduce((sum, row) => sum + (Number(row.Expected_Demand) || 0), 0);
         let costSum = 0, volSum = 0;
         fStorage.filter(row => transportMode === 'ALL' || row.Transport_Method.includes(transportMode)).forEach(row => {
             if ((Number(row.Cost_USD_Per_Ton) || 0) > 0 && (Number(row.Capturable_Volume) || 0) > 0) { costSum += (Number(row.Cost_USD_Per_Ton)||0) * (Number(row.Capturable_Volume)||0); volSum += (Number(row.Capturable_Volume)||0); }
         });
-        return { totalCapture: tCap, totalFuturePotential: tFuture, totalExpectedDemand: tDemand, avgCost: volSum > 0 ? (costSum / volSum) : 0 };
+        return { totalCapture: tCap, totalExpectedDemand: tDemand, avgCost: volSum > 0 ? (costSum / volSum) : 0 };
     }, [fCapture, fUtil, fStorage, transportMode]);
 
     const availableIndustries = useMemo(() => ['ALL', ...Array.from(new Set(scope1Data.map(d => d.Industry))).filter(Boolean)], [scope1Data]);
@@ -1260,7 +1320,13 @@ const CcusDashboard = () => {
                             {facilitySubTab === 'all' && (
                                 <>
                                     <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col min-h-[350px]">
-                                        <h3 className="font-bold text-slate-700 text-sm mb-3 border-b pb-2 flex items-center gap-2"><Activity size={16} className="text-blue-500"/> 企業價值鏈橫向對照 (捕捉 vs 去化)</h3>
+                                        <div className="flex justify-between items-center mb-3 border-b pb-2">
+                                            <h3 className="font-bold text-slate-700 text-sm flex items-center gap-2"><Activity size={16} className="text-blue-500"/> 企業價值鏈橫向對照 (捕捉 vs 去化)</h3>
+                                            <label className="flex items-center gap-2 text-xs font-bold text-slate-600 cursor-pointer">
+                                                <input type="checkbox" checked={showFuturePotential} onChange={e => setShowFuturePotential(e.target.checked)} className="rounded text-blue-600 focus:ring-blue-500" />
+                                                顯示未來擴充潛力
+                                            </label>
+                                        </div>
                                         <div className="flex-1 min-h-0 w-full relative">
                                             <ErrorBoundary>
                                                 <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
@@ -1271,7 +1337,7 @@ const CcusDashboard = () => {
                                                         <Tooltip contentStyle={{fontSize: '12px', borderRadius: '8px'}} formatter={v => Number(v||0).toFixed(1)} />
                                                         <Legend wrapperStyle={{fontSize: '10px'}}/>
                                                         <Bar yAxisId="left" dataKey="Capture" name="淨捕捉量" fill="#3b82f6" radius={[2, 2, 0, 0]} barSize={15} />
-                                                        <Bar yAxisId="left" dataKey="Future" name="未來擴充潛力" fill="#93c5fd" radius={[2, 2, 0, 0]} barSize={15} />
+                                                        {showFuturePotential && <Bar yAxisId="left" dataKey="Future" name="未來擴充潛力" fill="#93c5fd" radius={[2, 2, 0, 0]} barSize={15} />}
                                                         <Line yAxisId="left" type="monotone" dataKey="Util" name="再利用需求" stroke="#10b981" strokeWidth={2} dot={{r: 4}} />
                                                         <Line yAxisId="left" type="monotone" dataKey="Storage" name="可封存量" stroke="#f59e0b" strokeWidth={2} dot={{r: 4}} />
                                                     </ComposedChart>
