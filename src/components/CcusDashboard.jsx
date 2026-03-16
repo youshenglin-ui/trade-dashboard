@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, 
-  ScatterChart, Scatter, ZAxis, Cell, LabelList, ComposedChart, Line, PieChart, Pie, Label
+  ScatterChart, Scatter, ZAxis, Cell, LabelList, ComposedChart, Line, PieChart, Pie
 } from 'recharts';
 import { 
   Leaf, RefreshCw, Target, Activity, MapPin, DollarSign, Box, AlertTriangle, 
@@ -197,6 +197,7 @@ const INITIAL_CCS_HUBS = {
     'SOUTHEAST_HUB': { id: 'SOUTHEAST_HUB', name: '台東接收站 (南迴轉運)', type: '🚢 港口接收轉運', lat: 22.75, lon: 121.15, region: '南區' } 
 };
 
+// 所有中繼站統一視為管線節點 (自由編輯與增刪)
 const INITIAL_CLUSTERS = {
     'C_KEE_PORT': { id: 'C_KEE_PORT', name: '基隆港轉運站', lat: 25.15, lon: 121.74, next: 'NORTH_HUB', type: 'sea' },
     'C_TPE': { id: 'C_TPE', name: '北北基聚落', lat: 25.05, lon: 121.45, next: 'NORTH_HUB', type: 'land' },
@@ -277,7 +278,7 @@ const CaptureTooltip = ({ active, payload }) => {
 };
 
 // ==========================================
-// 台灣地圖核心模組 (支援點擊管線新增節點與右鍵刪除)
+// 台灣地圖核心模組 (優化視覺尺度與操作靈敏度)
 // ==========================================
 const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], storageData = [], scope1Data = [], mapPaths = [], ccsTopology = null, hubs, setHubs, clusters, setClusters, routeNodes, setRouteNodes, seaControlPoints, setSeaControlPoints }) => {
     const mapRef = useRef(null); const containerRef = useRef(null); 
@@ -285,7 +286,7 @@ const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], sto
     const [isDragging, setIsDragging] = useState(false); const [dragState, setDragState] = useState(null); 
     const [lastPos, setLastPos] = useState({ x: 0, y: 0 }); const [hoveredNode, setHoveredNode] = useState(null);
     
-    // 專屬節點操作選單
+    // 專屬節點操作選單 (優化尺寸與視覺)
     const [nodeMenu, setNodeMenu] = useState(null);
 
     const { baseWidth, baseHeight } = MAP_CONSTANTS;
@@ -488,67 +489,67 @@ const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], sto
 
     return (
         <div className="w-full h-full relative bg-slate-50/80 rounded-lg overflow-hidden border border-slate-200 min-h-[400px]" ref={containerRef} onContextMenu={(e)=>e.preventDefault()}>
-            <div className="absolute top-4 left-4 z-20 bg-white/95 backdrop-blur shadow-2xl rounded-xl border border-slate-200 p-4 transition-all duration-300 w-80 pointer-events-none" style={{ opacity: hoveredNode && !nodeMenu ? 1 : 0, transform: hoveredNode && !nodeMenu ? 'translateY(0)' : 'translateY(-10px)' }}>
+            <div className="absolute top-4 left-4 z-20 bg-white/95 backdrop-blur shadow-2xl rounded-xl border border-slate-200 p-3 transition-all duration-300 w-64 pointer-events-none" style={{ opacity: hoveredNode && !nodeMenu ? 1 : 0, transform: hoveredNode && !nodeMenu ? 'translateY(0)' : 'translateY(-10px)' }}>
                 {hoveredNode && hoveredNode.nodeType === 'hub' && (
                     <div>
-                        <div className="flex items-center gap-2 mb-3 border-b border-blue-100 pb-2">
-                            {hoveredNode.name.includes('接收站') ? <Ship size={18} className="text-blue-600"/> : hoveredNode.name.includes('鐵砧山') ? <MapPin size={18} className="text-amber-700"/> : <Anchor size={18} className="text-blue-600"/>}
-                            <h3 className="font-bold text-slate-800 text-sm">{hoveredNode.name}</h3>
+                        <div className="flex items-center gap-2 mb-2 border-b border-blue-100 pb-1.5">
+                            {hoveredNode.name.includes('接收站') ? <Ship size={16} className="text-blue-600"/> : hoveredNode.name.includes('鐵砧山') ? <MapPin size={16} className="text-amber-700"/> : <Anchor size={16} className="text-blue-600"/>}
+                            <h3 className="font-bold text-slate-800 text-sm truncate">{hoveredNode.name}</h3>
                         </div>
                         <div className="bg-blue-50 p-2 rounded border border-blue-100 mb-2">
-                            <div className="text-xs font-bold text-blue-800 mb-1">樞紐定位 (可拖曳)</div>
+                            <div className="text-[10px] font-bold text-blue-800 mb-0.5">樞紐定位 (可拖曳)</div>
                             <div className="text-xs text-blue-700">{hoveredNode.hubType}</div>
                         </div>
                         {ccsTopology && ccsTopology.hubEmissions && ccsTopology.hubEmissions[hoveredNode.id] > 0 && (
                              <div className="bg-slate-50 p-2 rounded border border-slate-200 flex justify-between items-center">
-                                 <span className="text-slate-600 text-xs font-bold">預估接收總量</span><span className="font-mono font-black text-blue-600 text-sm">{(Number(ccsTopology.hubEmissions[hoveredNode.id] || 0) / 10000).toFixed(1)} 萬噸</span>
+                                 <span className="text-slate-600 text-[10px] font-bold">預估接收總量</span><span className="font-mono font-black text-blue-600 text-xs">{(Number(ccsTopology.hubEmissions[hoveredNode.id] || 0) / 10000).toFixed(1)} 萬噸</span>
                              </div>
                         )}
                     </div>
                 )}
                 {hoveredNode && hoveredNode.nodeType === 'cluster' && (
                     <div>
-                        <div className="flex items-center gap-2 mb-3 border-b border-indigo-100 pb-2">
-                            <Layers size={18} className="text-indigo-600"/>
-                            <h3 className="font-bold text-slate-800 text-sm">{hoveredNode.name}</h3>
+                        <div className="flex items-center gap-2 mb-2 border-b border-indigo-100 pb-1.5">
+                            <Layers size={16} className="text-indigo-600"/>
+                            <h3 className="font-bold text-slate-800 text-sm truncate">{hoveredNode.name}</h3>
                         </div>
                         <div className="bg-indigo-50 p-2 rounded border border-indigo-100 mb-2">
-                            <div className="text-xs font-bold text-indigo-800 mb-1">中繼管線節點 (可拖曳)</div>
+                            <div className="text-[10px] font-bold text-indigo-800 mb-0.5">中繼管線節點 (可拖曳)</div>
                             <div className="text-xs text-indigo-700">區域管線匯集與轉折</div>
                         </div>
                         <div className="bg-slate-50 p-2 rounded border border-slate-200 flex justify-between items-center">
-                            <span className="text-slate-600 text-xs font-bold">區域匯集碳排</span><span className="font-mono font-black text-indigo-600 text-sm">{(Number(hoveredNode.emissions || 0) / 10000).toFixed(1)} 萬噸</span>
+                            <span className="text-slate-600 text-[10px] font-bold">區域匯集碳排</span><span className="font-mono font-black text-indigo-600 text-xs">{(Number(hoveredNode.emissions || 0) / 10000).toFixed(1)} 萬噸</span>
                         </div>
                     </div>
                 )}
                 {hoveredNode && hoveredNode.nodeType === 'planning_source' && (
                     <div>
-                        <div className="flex items-center gap-2 mb-3 border-b border-rose-100 pb-2">
+                        <div className="flex items-center gap-2 mb-2 border-b border-rose-100 pb-1.5">
                             <Factory size={16} className={hoveredNode.isPowerPlant ? "text-purple-600" : (hoveredNode.isPriority ? "text-rose-600" : "text-orange-500")}/>
                             <h3 className="font-bold text-slate-800 text-sm truncate">{hoveredNode.Company} <span className="text-slate-500 font-medium">{hoveredNode.Plant}</span></h3>
                         </div>
-                        <div className="space-y-1.5 text-xs text-slate-600">
-                            <div className="flex justify-between items-center"><span className="text-slate-400">隸屬聚落</span> <span className="font-bold text-slate-700">{hoveredNode.zone}</span></div>
+                        <div className="space-y-1 text-xs text-slate-600">
+                            <div className="flex justify-between items-center"><span className="text-slate-400">隸屬聚落</span> <span className="font-bold text-slate-700 truncate max-w-[100px]">{hoveredNode.zone}</span></div>
                             <div className="flex justify-between items-center"><span className="text-slate-400">管線狀態</span> <span className={`font-bold ${hoveredNode.distanceToHub < 0 ? (hoveredNode.landDist > 0 ? 'text-amber-600' : 'text-slate-400') : 'text-emerald-600'}`}>
-                                {hoveredNode.distanceToHub < 0 ? (hoveredNode.landDist > 0 ? `陸運接駁 (${(Number(hoveredNode.landDist)||0).toFixed(1)}km)` : '距離過遠無法納入') : `最短直線接入 (${(Number(hoveredNode.distanceToCenter)||0).toFixed(1)}km)`}
+                                {hoveredNode.distanceToHub < 0 ? (hoveredNode.landDist > 0 ? `陸運接駁 (${(Number(hoveredNode.landDist)||0).toFixed(1)}km)` : '距離過遠無法納入') : `直線接入 (${(Number(hoveredNode.distanceToCenter)||0).toFixed(1)}km)`}
                             </span></div>
-                            <div className="mt-2 bg-slate-50 p-2 rounded-lg border border-slate-200 flex flex-col gap-1">
-                                <div className="flex justify-between items-center"><span className="text-slate-600 font-bold">總排 (範1+2)</span><span className="font-mono font-black text-slate-600 text-sm">{(Number(hoveredNode.TotalScope || 0) / 10000).toFixed(1)} <span className="text-[10px] font-normal">萬噸</span></span></div>
-                                <div className="flex justify-between items-center text-xs mt-1 pt-1 border-t border-slate-200"><span className="text-rose-600 font-bold">範疇一 (可CCS)</span><span className="font-mono text-rose-600 font-bold">{(Number(hoveredNode.Scope1 || 0) / 10000).toFixed(1)} 萬噸</span></div>
+                            <div className="mt-1.5 bg-slate-50 p-2 rounded-lg border border-slate-200 flex flex-col gap-1">
+                                <div className="flex justify-between items-center"><span className="text-slate-600 font-bold">總排 (範1+2)</span><span className="font-mono font-black text-slate-600 text-xs">{(Number(hoveredNode.TotalScope || 0) / 10000).toFixed(1)} <span className="text-[9px] font-normal">萬噸</span></span></div>
+                                <div className="flex justify-between items-center text-[10px] mt-1 pt-1 border-t border-slate-200"><span className="text-rose-600 font-bold">範疇一 (可CCS)</span><span className="font-mono text-rose-600 font-bold">{(Number(hoveredNode.Scope1 || 0) / 10000).toFixed(1)} 萬噸</span></div>
                             </div>
                         </div>
                     </div>
                 )}
                 {hoveredNode && hoveredNode.nodeType === 'capture' && (
                     <div>
-                        <div className="flex items-center gap-2 mb-3 border-b border-slate-100 pb-2">
+                        <div className="flex items-center gap-2 mb-2 border-b border-slate-100 pb-1.5">
                             <Factory size={16} className="text-blue-600"/>
                             <h3 className="font-bold text-slate-800 text-sm truncate">{hoveredNode.Company} <span className="text-slate-500 font-medium">{hoveredNode.Plant}</span></h3>
                         </div>
-                        <div className="space-y-1.5 text-xs text-slate-600">
-                            <div className="flex justify-between items-center"><span className="text-slate-400">來源製程</span> <span className="font-bold text-slate-700">{hoveredNode.Capture_Source || '-'}</span></div>
-                            <div className="flex justify-between items-center"><span className="text-slate-400">捕捉技術</span> <span className="font-bold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded">{hoveredNode.Capture_Tech || '-'} (TRL {hoveredNode.TRL})</span></div>
-                            <div className="mt-2 bg-blue-50 p-2 rounded-lg border border-blue-100 space-y-1 text-xs">
+                        <div className="space-y-1 text-xs text-slate-600">
+                            <div className="flex justify-between items-center"><span className="text-slate-400">來源製程</span> <span className="font-bold text-slate-700 truncate max-w-[100px]">{hoveredNode.Capture_Source || '-'}</span></div>
+                            <div className="flex justify-between items-center"><span className="text-slate-400">捕捉技術</span> <span className="font-bold text-blue-700 bg-blue-50 px-1 py-0.5 rounded truncate max-w-[100px]">{hoveredNode.Capture_Tech || '-'} (TRL {hoveredNode.TRL})</span></div>
+                            <div className="mt-1.5 bg-blue-50 p-2 rounded-lg border border-blue-100 space-y-1 text-[10px]">
                                 <div className="flex justify-between"><span className="text-slate-500">總捕捉量(A):</span><span className="font-mono font-bold text-slate-700">{Number(hoveredNode.Capture_Volume||0).toFixed(2)} 萬噸</span></div>
                                 <div className="flex justify-between"><span className="text-rose-500">設備耗能(B):</span><span className="font-mono font-bold text-rose-600">-{Number(hoveredNode.Captur_energy||0).toFixed(2)} 萬噸</span></div>
                                 <div className="flex justify-between pt-1 border-t border-blue-200 mt-1"><span className="text-blue-800 font-bold">淨捕捉量(=A-B)</span><span className="font-mono font-black text-blue-700">{Number(hoveredNode.Net_Capture_Volume||0).toFixed(2)} 萬噸</span></div>
@@ -558,54 +559,54 @@ const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], sto
                 )}
                 {hoveredNode && hoveredNode.nodeType === 'future' && (
                      <div>
-                        <div className="flex items-center gap-2 mb-3 border-b border-amber-100 pb-2">
+                        <div className="flex items-center gap-2 mb-2 border-b border-amber-100 pb-1.5">
                             <Rocket size={16} className="text-amber-600"/><h3 className="font-bold text-slate-800 text-sm truncate">{hoveredNode.Company} <span className="text-slate-500 font-medium">{hoveredNode.Plant}</span></h3>
                         </div>
-                        <div className="space-y-1.5 text-xs text-slate-600">
-                            <div className="flex justify-between items-center"><span className="text-slate-400">潛在安裝來源</span> <span className="font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded">{hoveredNode.Potential_Source || '-'}</span></div>
-                            <div className="mt-2 flex justify-between items-center bg-amber-50 p-2 rounded-lg border border-amber-200">
-                                <span className="text-amber-800 font-bold">未來總排放潛力</span><span className="font-mono font-black text-amber-600 text-sm">{Number(hoveredNode.Future_Emission_Volume||0).toFixed(1)} <span className="text-[10px] font-normal">萬噸</span></span>
+                        <div className="space-y-1 text-xs text-slate-600">
+                            <div className="flex justify-between items-center"><span className="text-slate-400">潛在安裝來源</span> <span className="font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded truncate max-w-[120px]">{hoveredNode.Potential_Source || '-'}</span></div>
+                            <div className="mt-1.5 flex justify-between items-center bg-amber-50 p-2 rounded-lg border border-amber-200">
+                                <span className="text-amber-800 font-bold">未來總排放潛力</span><span className="font-mono font-black text-amber-600 text-xs">{Number(hoveredNode.Future_Emission_Volume||0).toFixed(1)} <span className="text-[9px] font-normal">萬噸</span></span>
                             </div>
                         </div>
                      </div>
                 )}
                 {hoveredNode && hoveredNode.nodeType === 'util' && (
                     <div>
-                        <div className="flex items-center gap-2 mb-3 border-b border-slate-100 pb-2">
+                        <div className="flex items-center gap-2 mb-2 border-b border-slate-100 pb-1.5">
                             <FlaskConical size={16} className="text-emerald-600"/><h3 className="font-bold text-slate-800 text-sm truncate">{hoveredNode.Target_Company} <span className="text-slate-500 font-medium">{hoveredNode.Target_Plant}</span></h3>
                         </div>
-                        <div className="space-y-1.5 text-xs text-slate-600">
-                            <div className="flex justify-between items-center"><span className="text-slate-400">再利用技術</span> <span className="font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded">{hoveredNode.Conversion_Tech || '-'}</span></div>
-                            <div className="mt-2 flex justify-between items-center bg-emerald-50 p-2 rounded-lg border border-emerald-100">
-                                <span className="text-emerald-800 font-bold">預期總需求</span><span className="font-mono font-black text-emerald-600 text-sm">{Number(hoveredNode.Expected_Demand||0).toFixed(1)} <span className="text-[10px] font-normal">萬噸</span></span>
+                        <div className="space-y-1 text-xs text-slate-600">
+                            <div className="flex justify-between items-center"><span className="text-slate-400">再利用技術</span> <span className="font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded truncate max-w-[120px]">{hoveredNode.Conversion_Tech || '-'}</span></div>
+                            <div className="mt-1.5 flex justify-between items-center bg-emerald-50 p-2 rounded-lg border border-emerald-100">
+                                <span className="text-emerald-800 font-bold">預期總需求</span><span className="font-mono font-black text-emerald-600 text-xs">{Number(hoveredNode.Expected_Demand||0).toFixed(1)} <span className="text-[9px] font-normal">萬噸</span></span>
                             </div>
                         </div>
                     </div>
                 )}
                 {hoveredNode && hoveredNode.nodeType === 'storage' && (
                     <div>
-                        <div className="flex items-center gap-2 mb-3 border-b border-slate-100 pb-2">
+                        <div className="flex items-center gap-2 mb-2 border-b border-slate-100 pb-1.5">
                             <Box size={16} className="text-rose-600"/><h3 className="font-bold text-slate-800 text-sm truncate">{hoveredNode.Storage_Site}</h3>
                         </div>
-                        <div className="space-y-1.5 text-xs text-slate-600">
-                            <div className="flex justify-between items-center"><span className="text-slate-400">碳源公司</span> <span className="font-bold text-slate-700">{hoveredNode.Source_Company}</span></div>
-                            <div className="mt-2 flex justify-between items-center bg-rose-50 p-2 rounded-lg border border-rose-100">
-                                <span className="text-rose-800 font-bold">可封存總量</span><span className="font-mono font-black text-rose-600 text-sm">{Number(hoveredNode.Capturable_Volume||0).toFixed(1)} <span className="text-[10px] font-normal">萬噸</span></span>
+                        <div className="space-y-1 text-xs text-slate-600">
+                            <div className="flex justify-between items-center"><span className="text-slate-400">碳源公司</span> <span className="font-bold text-slate-700 truncate max-w-[120px]">{hoveredNode.Source_Company}</span></div>
+                            <div className="mt-1.5 flex justify-between items-center bg-rose-50 p-2 rounded-lg border border-rose-100">
+                                <span className="text-rose-800 font-bold">可封存總量</span><span className="font-mono font-black text-rose-600 text-xs">{Number(hoveredNode.Capturable_Volume||0).toFixed(1)} <span className="text-[9px] font-normal">萬噸</span></span>
                             </div>
                         </div>
                     </div>
                 )}
             </div>
 
-            {/* 專屬節點操作選單 */}
+            {/* 專屬節點操作選單 (輕量化) */}
             {nodeMenu && (
-                <div className="absolute z-50 bg-white border border-slate-200 rounded-lg shadow-xl overflow-hidden text-sm" style={{ left: nodeMenu.x + 10, top: nodeMenu.y + 10 }}>
-                    <div className="px-3 py-2 bg-slate-50 border-b border-slate-200">
-                        <span className="font-bold text-slate-700">節點資訊</span>
-                        <div className="text-xs text-blue-600 font-mono mt-0.5">乘載流量: {(Number(nodeMenu.weight||0)/10000).toFixed(1)} 萬噸</div>
+                <div className="absolute z-50 bg-white border border-slate-200 rounded-lg shadow-xl overflow-hidden text-xs w-36 pointer-events-auto" style={{ left: nodeMenu.x + 10, top: nodeMenu.y + 10 }}>
+                    <div className="px-3 py-1.5 bg-slate-50 border-b border-slate-200">
+                        <span className="font-bold text-slate-700">節點操作</span>
+                        <div className="text-[10px] text-blue-600 font-mono">流量: {(Number(nodeMenu.weight||0)/10000).toFixed(1)}萬噸</div>
                     </div>
-                    <button onClick={handleDuplicateNode} className="w-full text-left px-4 py-2 hover:bg-blue-50 text-blue-700 font-bold flex items-center gap-2 border-b border-slate-100"><Copy size={14}/> 複製節點 (新增)</button>
-                    <button onClick={handleDeleteNode} className="w-full text-left px-4 py-2 hover:bg-rose-50 text-rose-600 font-bold flex items-center gap-2"><Trash2 size={14}/> 刪除節點</button>
+                    <button onClick={handleDuplicateNode} className="w-full text-left px-3 py-1.5 hover:bg-blue-50 text-blue-700 font-bold flex items-center gap-2 border-b border-slate-100"><Copy size={12}/> 新增 (複製)</button>
+                    <button onClick={handleDeleteNode} className="w-full text-left px-3 py-1.5 hover:bg-rose-50 text-rose-600 font-bold flex items-center gap-2"><Trash2 size={12}/> 刪除此點</button>
                 </div>
             )}
 
@@ -623,6 +624,7 @@ const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], sto
 
                     {activeLayers.includes('planning') && ccsTopology && (
                         <>
+                            {/* 海運航線 */}
                             {ccsTopology.seaRoutes.map((route, i) => {
                                 const [x1, y1] = projectBase(route.from.lon, route.from.lat); const [x2, y2] = projectBase(route.to.lon, route.to.lat);
                                 const currentC1 = seaControlPoints[route.id]?.c1 || route.c1;
@@ -640,13 +642,11 @@ const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], sto
                                     <g key={`sea-route-${i}`}>
                                         <path d={`M ${x1} ${y1} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${x2} ${y2}`} stroke="#0284c7" strokeWidth={Math.max(2, Math.log10(Math.max(10000, route.weight))/zoom)} strokeDasharray={`${6/zoom} ${6/zoom}`} fill="none" opacity={0.6}/>
                                         <text x={midX} y={midY} fontSize={11/zoom} fill="#0369a1" textAnchor="middle" fontWeight="bold" style={{textShadow: '0 0 3px white', pointerEvents: 'none'}}>{route.label}</text>
-                                        
-                                        <circle cx={cx1} cy={cy1} r={4/zoom} fill="rgba(2,132,199,0.2)" stroke="#0284c7" strokeWidth={isC1Dragged ? 2/zoom : 1/zoom} strokeDasharray={`${2/zoom} ${2/zoom}`} className={isC1Dragged ? "cursor-grabbing" : "cursor-grab hover:scale-125"} onMouseDown={(e) => handleNodeMouseDown(e, 'c1', 'seaControl', route.id)}/>
-                                        <circle cx={cx2} cy={cy2} r={4/zoom} fill="rgba(2,132,199,0.2)" stroke="#0284c7" strokeWidth={isC2Dragged ? 2/zoom : 1/zoom} strokeDasharray={`${2/zoom} ${2/zoom}`} className={isC2Dragged ? "cursor-grabbing" : "cursor-grab hover:scale-125"} onMouseDown={(e) => handleNodeMouseDown(e, 'c2', 'seaControl', route.id)}/>
                                     </g>
                                 );
                             })}
                             
+                            {/* 陸運路線 (針對孤立廠區的琥珀色虛線) */}
                             {ccsTopology.landRoutes.map((route, i) => {
                                 const [x1, y1] = projectBase(route.from.lon, route.from.lat); const [x2, y2] = projectBase(route.to.lon, route.to.lat);
                                 if (x1 === -9999 || x2 === -9999) return null;
@@ -661,6 +661,7 @@ const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], sto
                                 );
                             })}
                             
+                            {/* 廠區支線 (最短直線) */}
                             {ccsTopology.branchRoutes.map((route, i) => {
                                 const [x1, y1] = projectBase(route.from.lon, route.from.lat); const [x2, y2] = projectBase(route.to.lon, route.to.lat);
                                 if (x1 === -9999 || x2 === -9999) return null;
@@ -669,6 +670,7 @@ const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], sto
                                 return (<path key={`branch-${i}`} d={`M ${x1} ${y1} L ${x2} ${y2}`} stroke={strokeColor} strokeWidth={strokeW} fill="none" opacity={opac} />);
                             })}
                             
+                            {/* 多節點主管線路徑 (不含節點圓點) */}
                             {ccsTopology.mainRoutes.map((route, i) => {
                                 const currentNodes = routeNodes[route.id] || route.nodes;
                                 const pathNodes = currentNodes.map(n => projectBase(n.lon, n.lat));
@@ -685,12 +687,38 @@ const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], sto
                                 return (
                                     <g key={`main-route-path-${i}`}>
                                         <path d={pathD} stroke={strokeColor} strokeWidth={Math.max(2, Math.log10(Math.max(10000, route.weight)))/zoom} strokeDasharray={isUnrealistic ? `${6/zoom} ${4/zoom}` : "none"} fill="none" strokeLinejoin="round" opacity={isUnrealistic ? 0.7 : 0.85}/>
-                                        <path d={pathD} stroke="transparent" strokeWidth={15/zoom} fill="none" className="cursor-crosshair" onClick={(e) => handlePathClick(e, route.id, currentNodes)} />
+                                        <path d={pathD} stroke="transparent" strokeWidth={20/zoom} fill="none" className="cursor-crosshair" onClick={(e) => handlePathClick(e, route.id, currentNodes)} />
                                         <text x={midX} y={midY - (8/zoom)} fontSize={10/zoom} fill={textColor} textAnchor="middle" fontWeight="bold" style={{textShadow: '0 0 3px white', pointerEvents: 'none'}}>{Number(dist||0).toFixed(0)} km</text>
                                     </g>
                                 );
                             })}
                             
+                            {/* 將所有可互動元素集中在最後繪製，確保位於最上層，並放大隱形感應區 */}
+                            {/* 海運控制點 (隱形大感應區 + 實體小點) */}
+                            {ccsTopology.seaRoutes.map((route) => {
+                                const currentC1 = seaControlPoints[route.id]?.c1 || route.c1;
+                                const currentC2 = seaControlPoints[route.id]?.c2 || route.c2;
+                                const [cx1, cy1] = projectBase(currentC1.lon, currentC1.lat); 
+                                const [cx2, cy2] = projectBase(currentC2.lon, currentC2.lat);
+                                if (cx1 === -9999 || cx2 === -9999) return null;
+                                const isC1Dragged = dragState && dragState.id === 'c1' && dragState.routeId === route.id;
+                                const isC2Dragged = dragState && dragState.id === 'c2' && dragState.routeId === route.id;
+
+                                return (
+                                    <g key={`sea-control-${route.id}`}>
+                                        <g className={isC1Dragged ? "cursor-grabbing" : "cursor-grab hover:scale-125"} onMouseDown={(e) => handleNodeMouseDown(e, 'c1', 'seaControl', route.id)}>
+                                            <circle cx={cx1} cy={cy1} r={16/zoom} fill="transparent" />
+                                            <circle cx={cx1} cy={cy1} r={4/zoom} fill="rgba(2,132,199,0.2)" stroke="#0284c7" strokeWidth={isC1Dragged ? 2/zoom : 1/zoom} strokeDasharray={`${2/zoom} ${2/zoom}`} pointerEvents="none"/>
+                                        </g>
+                                        <g className={isC2Dragged ? "cursor-grabbing" : "cursor-grab hover:scale-125"} onMouseDown={(e) => handleNodeMouseDown(e, 'c2', 'seaControl', route.id)}>
+                                            <circle cx={cx2} cy={cy2} r={16/zoom} fill="transparent" />
+                                            <circle cx={cx2} cy={cy2} r={4/zoom} fill="rgba(2,132,199,0.2)" stroke="#0284c7" strokeWidth={isC2Dragged ? 2/zoom : 1/zoom} strokeDasharray={`${2/zoom} ${2/zoom}`} pointerEvents="none"/>
+                                        </g>
+                                    </g>
+                                );
+                            })}
+
+                            {/* 聚落中繼站 (隱形大感應區) */}
                             {clusters && Object.values(clusters).map((cluster, i) => {
                                 if (cluster.emissions <= 0) return null;
                                 const [cx, cy] = projectBase(cluster.lon, cluster.lat);
@@ -698,11 +726,13 @@ const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], sto
                                 const isDragged = dragState && dragState.id === cluster.id;
                                 return (
                                     <g key={`cluster-${i}`} className={isDragged ? "cursor-grabbing" : "cursor-grab hover:scale-125 transition-transform"} onMouseEnter={() => setHoveredNode({...cluster, nodeType: 'cluster'})} onMouseLeave={() => setHoveredNode(null)} onMouseDown={(e) => handleNodeMouseDown(e, cluster.id, 'cluster')}>
-                                        <circle cx={cx} cy={cy} r={isDragged ? 5/zoom : 4/zoom} fill="#fff" stroke={isDragged ? "#fcd34d" : "#3b82f6"} strokeWidth={isDragged ? 2.5/zoom : 2/zoom} style={{ filter: 'drop-shadow(0px 2px 3px rgba(0,0,0,0.4))' }}/>
+                                        <circle cx={cx} cy={cy} r={16/zoom} fill="transparent" />
+                                        <circle cx={cx} cy={cy} r={isDragged ? 5/zoom : 4/zoom} fill="#fff" stroke={isDragged ? "#fcd34d" : "#3b82f6"} strokeWidth={isDragged ? 2.5/zoom : 2/zoom} style={{ filter: 'drop-shadow(0px 2px 3px rgba(0,0,0,0.4))' }} pointerEvents="none"/>
                                     </g>
                                 );
                             })}
                             
+                            {/* 主管線節點 (隱形大感應區、點擊出選單) */}
                             {ccsTopology.mainRoutes.map(route => {
                                 const currentNodes = routeNodes[route.id] || route.nodes;
                                 const dist = route.recalcDist ? route.recalcDist(currentNodes) : route.distance;
@@ -714,42 +744,46 @@ const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], sto
                                     const isDragged = dragState && dragState.id === actualIdx && dragState.routeId === route.id;
                                     return (
                                         <g key={`node-${route.id}-${idx}`} 
-                                           className={isDragged ? "cursor-grabbing" : "cursor-grab hover:scale-125 transition-transform"} 
+                                           className={isDragged ? "cursor-grabbing" : "cursor-pointer hover:scale-125 transition-transform"} 
                                            onMouseDown={(e) => handleNodeMouseDown(e, actualIdx, 'routeNode', route.id)} 
                                            onContextMenu={(e) => handleNodeContextMenu(e, route.id, actualIdx)}
+                                           onClick={(e) => handleNodeClick(e, actualIdx, 'routeNode', route.id, route.weight)}
                                         >
-                                            <circle cx={cx} cy={cy} r={12/zoom} fill="transparent" />
-                                            <circle cx={cx} cy={cy} r={isDragged ? 5/zoom : 4/zoom} fill="#fff" stroke={isDragged ? "#fcd34d" : strokeColor} strokeWidth={isDragged ? 2.5/zoom : 2/zoom} style={{ filter: 'drop-shadow(0px 2px 3px rgba(0,0,0,0.4))' }}/>
+                                            <circle cx={cx} cy={cy} r={16/zoom} fill="transparent" />
+                                            <circle cx={cx} cy={cy} r={isDragged ? 5/zoom : 4/zoom} fill="#fff" stroke={isDragged ? "#fcd34d" : strokeColor} strokeWidth={isDragged ? 2.5/zoom : 2/zoom} style={{ filter: 'drop-shadow(0px 2px 3px rgba(0,0,0,0.4))' }} pointerEvents="none"/>
                                         </g>
                                     );
                                 });
                             })}
                             
+                            {/* 樞紐站 (隱形大感應區) */}
                             {hubs && Object.values(hubs).map((hub, i) => {
                                 const [cx, cy] = projectBase(hub.lon, hub.lat);
                                 if (cx === -9999) return null;
                                 const isLandHub = hub.id === 'CENTRAL_HUB_LAND'; const isDragged = dragState && dragState.id === hub.id;
                                 return (
                                     <g key={`hub-${i}`} className={isDragged ? "cursor-grabbing" : "cursor-grab hover:scale-110 transition-transform"} onMouseEnter={() => setHoveredNode({...hub, nodeType: 'hub', hubType: hub.type})} onMouseLeave={() => setHoveredNode(null)} onMouseDown={(e) => handleNodeMouseDown(e, hub.id, 'hub')}>
-                                        <rect x={cx - 10/zoom} y={cy - 10/zoom} width={20/zoom} height={20/zoom} fill={isLandHub ? "#b45309" : "#0ea5e9"} stroke={isDragged ? "#fbbf24" : "white"} strokeWidth={isDragged ? 3/zoom : 2/zoom} style={{ filter: 'drop-shadow(0px 3px 4px rgba(0,0,0,0.4))' }} />
+                                        <rect x={cx - 16/zoom} y={cy - 16/zoom} width={32/zoom} height={32/zoom} fill="transparent" />
+                                        <rect x={cx - 10/zoom} y={cy - 10/zoom} width={20/zoom} height={20/zoom} fill={isLandHub ? "#b45309" : "#0ea5e9"} stroke={isDragged ? "#fbbf24" : "white"} strokeWidth={isDragged ? 3/zoom : 2/zoom} style={{ filter: 'drop-shadow(0px 3px 4px rgba(0,0,0,0.4))' }} pointerEvents="none" />
                                         <text x={cx + 14/zoom} y={cy + 4/zoom} fontSize={12/textScale} fill={isLandHub ? "#78350f" : "#0369a1"} fontWeight="900" paintOrder="stroke" stroke="white" strokeWidth={3/textScale} className="pointer-events-none">{hub.name}</text>
                                     </g>
                                 );
                             })}
                             
+                            {/* 廠區排放點源 (按比例縮放與電廠獨立顯色) */}
                             {ccsTopology.validSources.map((d, i) => {
                                 const [cx, cy] = projectBase(d.lon, d.lat);
                                 if (cx === -9999) return null;
-                                const r = Math.max(2, Math.min(14, (3 + Math.sqrt(Math.max(0, d.Scope1 || 0) / 100000)))) / zoom;
+                                const r = Math.max(3, Math.min(14, (3 + Math.sqrt(Math.max(0, d.Scope1 || 0) / 100000)))) / zoom;
                                 const isHovered = hoveredNode?.Company === d.Company && hoveredNode?.Plant === d.Plant;
                                 const isConnected = d.distanceToHub >= 0 || d.landDist > 0;
                                 const fillCol = d.isPowerPlant ? "#a855f7" : (d.isPriority ? "#e11d48" : "#f97316"); 
                                 const opac = isHovered ? 1 : (isConnected ? 0.9 : 0.3);
                                 return (
                                     <g key={`s1-${i}`} className="cursor-pointer transition-all" onMouseEnter={() => setHoveredNode({...d, nodeType: 'planning_source'})} onMouseLeave={() => setHoveredNode(null)}>
-                                        <circle cx={cx} cy={cy} r={Math.max(r, 12/zoom)} fill="transparent" />
-                                        {d.isPriority && isConnected && <circle cx={cx} cy={cy} r={r * 1.6} fill={fillCol} opacity={0.25} />}
-                                        <circle cx={cx} cy={cy} r={r} fill={fillCol} fillOpacity={opac} stroke={isConnected ? "white" : "transparent"} strokeWidth={(d.isPriority ? 1.5 : 1) / zoom} style={d.isPriority && isConnected ? { filter: 'drop-shadow(0px 2px 3px rgba(0,0,0,0.4))' } : {}} />
+                                        <circle cx={cx} cy={cy} r={Math.max(r, 16/zoom)} fill="transparent" />
+                                        {d.isPriority && isConnected && <circle cx={cx} cy={cy} r={r * 1.6} fill={fillCol} opacity={0.25} pointerEvents="none"/>}
+                                        <circle cx={cx} cy={cy} r={r} fill={fillCol} fillOpacity={opac} stroke={isConnected ? "white" : "transparent"} strokeWidth={(d.isPriority ? 1.5 : 1) / zoom} style={d.isPriority && isConnected ? { filter: 'drop-shadow(0px 2px 3px rgba(0,0,0,0.4))' } : {}} pointerEvents="none"/>
                                     </g>
                                 );
                             })}
@@ -765,7 +799,7 @@ const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], sto
                         return (
                             <g key={`cap-${i}`} className="cursor-pointer transition-all" onMouseEnter={() => setHoveredNode({...d, nodeType:'capture'})} onMouseLeave={() => setHoveredNode(null)}>
                                 <circle cx={cx} cy={cy} r={Math.max(r, 20/zoom)} fill="transparent" />
-                                <circle cx={cx} cy={cy} r={r} fill={stringToColor(d.Capture_Tech)} fillOpacity={isHovered ? 1 : 0.85} stroke="white" strokeWidth={1.5 / zoom} style={{ filter: 'drop-shadow(0px 2px 3px rgba(0,0,0,0.3))' }} />
+                                <circle cx={cx} cy={cy} r={r} fill={stringToColor(d.Capture_Tech)} fillOpacity={isHovered ? 1 : 0.85} stroke="white" strokeWidth={1.5 / zoom} style={{ filter: 'drop-shadow(0px 2px 3px rgba(0,0,0,0.3))' }} pointerEvents="none"/>
                                 <text x={cx + r + (4/zoom)} y={cy + (3/zoom)} fontSize={11 / textScale} fill="#1e293b" fontWeight="900" paintOrder="stroke" stroke="white" strokeWidth={3/textScale} strokeLinejoin="round" className="pointer-events-none">{d.Company}</text>
                             </g>
                         );
@@ -780,7 +814,7 @@ const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], sto
                         return (
                             <g key={`fut-${i}`} className="cursor-pointer transition-all" onMouseEnter={() => setHoveredNode({...d, nodeType:'future'})} onMouseLeave={() => setHoveredNode(null)}>
                                 <circle cx={cx} cy={cy} r={Math.max(r, 20/zoom)} fill="transparent" />
-                                <circle cx={cx} cy={cy} r={r} fill="#d97706" fillOpacity={isHovered ? 1 : 0.75} stroke="white" strokeWidth={1.5 / zoom} strokeDasharray={`${3/zoom} ${3/zoom}`} />
+                                <circle cx={cx} cy={cy} r={r} fill="#d97706" fillOpacity={isHovered ? 1 : 0.75} stroke="white" strokeWidth={1.5 / zoom} strokeDasharray={`${3/zoom} ${3/zoom}`} pointerEvents="none"/>
                             </g>
                         );
                     })}
@@ -793,7 +827,7 @@ const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], sto
                         return (
                             <g key={`util-${i}`} className="cursor-pointer transition-all" onMouseEnter={() => setHoveredNode({...d, nodeType:'util'})} onMouseLeave={() => setHoveredNode(null)}>
                                 <circle cx={cx} cy={cy} r={Math.max(r, 20/zoom)} fill="transparent" />
-                                <circle cx={cx} cy={cy} r={r} fill="#10b981" fillOpacity={isHovered ? 1 : 0.9} stroke="white" strokeWidth={2 / zoom} style={{ filter: 'drop-shadow(0px 2px 3px rgba(0,0,0,0.3))' }}/>
+                                <circle cx={cx} cy={cy} r={r} fill="#10b981" fillOpacity={isHovered ? 1 : 0.9} stroke="white" strokeWidth={2 / zoom} style={{ filter: 'drop-shadow(0px 2px 3px rgba(0,0,0,0.3))' }} pointerEvents="none"/>
                                 <text x={cx + r + (4/zoom)} y={cy + (3/zoom)} fontSize={11 / textScale} fill="#064e3b" fontWeight="900" paintOrder="stroke" stroke="white" strokeWidth={3/textScale} strokeLinejoin="round" className="pointer-events-none">{d.Target_Company}</text>
                             </g>
                         );
@@ -823,84 +857,85 @@ const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], sto
                         return (
                             <g key={`sto-${i}`} className="cursor-pointer transition-all" onMouseEnter={() => setHoveredNode({...d, nodeType:'storage'})} onMouseLeave={() => setHoveredNode(null)}>
                                 <line x1={x1} y1={y1} x2={x2} y2={y2} stroke={isPipe ? "#3b82f6" : "#f59e0b"} strokeWidth={3 / zoom} strokeDasharray={isPipe ? "0" : `${6/zoom} ${6/zoom}`} opacity={isHovered ? 1 : 0.6}/>
-                                <circle cx={x1} cy={y1} r={4 / zoom} fill="#64748b" />
-                                <circle cx={x2} cy={y2} r={10 / zoom} fill="#ef4444" fillOpacity={isHovered ? 1 : 0.9} stroke="white" strokeWidth={2 / zoom} style={{ filter: 'drop-shadow(0px 2px 3px rgba(0,0,0,0.3))' }}/>
+                                <circle cx={x1} cy={y1} r={16 / zoom} fill="transparent" />
+                                <circle cx={x1} cy={y1} r={4 / zoom} fill="#64748b" pointerEvents="none"/>
+                                <circle cx={x2} cy={y2} r={10 / zoom} fill="#ef4444" fillOpacity={isHovered ? 1 : 0.9} stroke="white" strokeWidth={2 / zoom} style={{ filter: 'drop-shadow(0px 2px 3px rgba(0,0,0,0.3))' }} pointerEvents="none"/>
                                 <text x={x2 + (12/zoom)} y={y2 + (4/zoom)} fontSize={12 / textScale} fill="#991b1b" fontWeight="900" paintOrder="stroke" stroke="white" strokeWidth={3/textScale} strokeLinejoin="round" className="pointer-events-none">{d.Storage_Site}</text>
                             </g>
                         );
                     })}
                 </g>
 
-                {/* 寫入原生的 SVG 圖例 */}
+                {/* 精簡化圖例，適應全螢幕顯示 */}
                 {activeLayers.includes('planning') && (
-                    <g transform={`translate(20, ${baseHeight - 340})`}>
-                        <rect x="0" y="0" width="310" height="320" fill="rgba(255,255,255,0.95)" rx="10" stroke="#e2e8f0" strokeWidth="1.5" />
-                        <rect x="15" y="20" width="12" height="12" fill="#0ea5e9" stroke="white" strokeWidth="1" />
-                        <text x="35" y="30" fontSize="12" fill="#334155" fontWeight="bold">海洋接收站 / 本土封存樞紐 (可拖曳)</text>
+                    <g transform={`translate(20, ${baseHeight - 310})`}>
+                        <rect x="0" y="0" width="280" height="260" fill="rgba(255,255,255,0.95)" rx="8" stroke="#e2e8f0" strokeWidth="1" />
                         
-                        <rect x="15" y="45" width="12" height="12" fill="#b45309" stroke="white" strokeWidth="1" />
-                        <text x="35" y="55" fontSize="12" fill="#334155" fontWeight="bold">陸地封存場域 (可拖曳)</text>
+                        <rect x="12" y="15" width="10" height="10" fill="#0ea5e9" stroke="white" strokeWidth="1" />
+                        <text x="30" y="24" fontSize="11" fill="#334155" fontWeight="bold">海洋接收站 / 本土封存樞紐 (可拖曳)</text>
                         
-                        <line x1="15" y1="70" x2="295" y2="70" stroke="#e2e8f0" strokeWidth="1" />
+                        <rect x="12" y="35" width="10" height="10" fill="#b45309" stroke="white" strokeWidth="1" />
+                        <text x="30" y="44" fontSize="11" fill="#334155" fontWeight="bold">陸地封存場域 (可拖曳)</text>
                         
-                        <circle cx="21" cy="85" r="5" fill="#a855f7" stroke="white" strokeWidth="1" />
-                        <text x="35" y="90" fontSize="12" fill="#334155" fontWeight="bold">大型發電廠</text>
+                        <line x1="12" y1="55" x2="268" y2="55" stroke="#e2e8f0" strokeWidth="1" />
+                        
+                        <circle cx="17" cy="70" r="5" fill="#a855f7" stroke="white" strokeWidth="1" />
+                        <text x="30" y="74" fontSize="11" fill="#334155" fontWeight="bold">大型發電廠 (按比例顯示碳排)</text>
 
-                        <circle cx="21" cy="110" r="5" fill="#e11d48" stroke="white" strokeWidth="1" />
-                        <text x="35" y="115" fontSize="12" fill="#334155" fontWeight="bold">一般優先碳源 (≥ 2.5萬噸)</text>
+                        <circle cx="17" cy="90" r="5" fill="#e11d48" stroke="white" strokeWidth="1" />
+                        <text x="30" y="94" fontSize="11" fill="#334155" fontWeight="bold">一般優先碳源 (≥ 2.5萬噸)</text>
                         
-                        <circle cx="21" cy="135" r="3" fill="#f97316" opacity="0.8" />
-                        <text x="35" y="140" fontSize="12" fill="#334155" fontWeight="bold">次要碳源 (&lt; 2.5萬噸)</text>
-                        <text x="160" y="140" fontSize="10" fill="#64748b">(註:圓點等比例對應碳排量)</text>
+                        <circle cx="17" cy="110" r="3" fill="#f97316" opacity="0.8" />
+                        <text x="30" y="114" fontSize="11" fill="#334155" fontWeight="bold">次要碳源 (&lt; 2.5萬噸)</text>
 
-                        <line x1="15" y1="155" x2="295" y2="155" stroke="#e2e8f0" strokeWidth="1" />
+                        <line x1="12" y1="125" x2="268" y2="125" stroke="#e2e8f0" strokeWidth="1" />
                         
-                        <circle cx="21" cy="170" r="4" fill="#fff" stroke="#3b82f6" strokeWidth="2" />
-                        <text x="35" y="175" fontSize="12" fill="#334155" fontWeight="bold">統一管線節點 (可拖曳)</text>
-                        <text x="35" y="190" fontSize="10" fill="#64748b">操作: 點藍線新增 / 右鍵點節點刪除</text>
+                        <circle cx="17" cy="140" r="4" fill="#fff" stroke="#3b82f6" strokeWidth="2" />
+                        <text x="30" y="144" fontSize="11" fill="#334155" fontWeight="bold">統一管線節點 (可拖曳)</text>
+                        <text x="30" y="156" fontSize="9" fill="#64748b">操作: 點藍線新增 / 左點菜單 / 右鍵刪除</text>
 
-                        <line x1="15" y1="210" x2="40" y2="210" stroke="#3b82f6" strokeWidth="3" />
-                        <text x="45" y="214" fontSize="12" fill="#334155" fontWeight="bold">自訂主幹管線 (&gt;50km以橘色警告)</text>
+                        <line x1="12" y1="175" x2="35" y2="175" stroke="#3b82f6" strokeWidth="3" />
+                        <text x="40" y="179" fontSize="11" fill="#334155" fontWeight="bold">自訂主幹管線 (&gt;50km以橘色警告)</text>
                         
-                        <path d="M 15 235 L 40 235" stroke="#94a3b8" strokeWidth="2" fill="none" />
-                        <text x="45" y="239" fontSize="12" fill="#334155" fontWeight="bold">最短直線就近上管 (優先≤50km,次要≤20km)</text>
+                        <path d="M 12 195 L 35 195" stroke="#94a3b8" strokeWidth="2" fill="none" />
+                        <text x="40" y="199" fontSize="11" fill="#334155" fontWeight="bold">直線就近上管 (優先≤50km,次要≤20km)</text>
                         
-                        <path d="M 15 260 Q 27.5 260, 40 255" stroke="#f59e0b" strokeWidth="1.5" strokeDasharray="4 4" fill="none" />
-                        <text x="45" y="264" fontSize="12" fill="#334155" fontWeight="bold">孤立廠區之陸運接駁路線</text>
+                        <path d="M 12 215 Q 23.5 215, 35 210" stroke="#f59e0b" strokeWidth="1.5" strokeDasharray="4 4" fill="none" />
+                        <text x="40" y="219" fontSize="11" fill="#334155" fontWeight="bold">孤立廠區之陸運接駁路線</text>
                         
-                        <line x1="15" y1="285" x2="40" y2="285" stroke="#0284c7" strokeWidth="2" strokeDasharray="6 6" opacity="0.6" />
-                        <circle cx="27" cy="285" r="4" fill="transparent" stroke="#0284c7" strokeWidth="1" />
-                        <text x="45" y="289" fontSize="12" fill="#334155" fontWeight="bold">樞紐海運外繞 (空心點可拖曳)</text>
+                        <line x1="12" y1="235" x2="35" y2="235" stroke="#0284c7" strokeWidth="2" strokeDasharray="6 6" opacity="0.6" />
+                        <circle cx="23" cy="235" r="3" fill="transparent" stroke="#0284c7" strokeWidth="1" />
+                        <text x="40" y="239" fontSize="11" fill="#334155" fontWeight="bold">樞紐海運外繞 (空心點可拖曳)</text>
                     </g>
                 )}
 
                 {!activeLayers.includes('planning') && (
-                    <g transform={`translate(20, ${baseHeight - (30 + activeLayers.length * 30)})`}>
-                        <rect x="0" y="0" width="220" height={20 + activeLayers.length * 30} fill="rgba(255,255,255,0.95)" rx="10" stroke="#e2e8f0" strokeWidth="1.5" />
+                    <g transform={`translate(20, ${baseHeight - (20 + activeLayers.length * 25)})`}>
+                        <rect x="0" y="0" width="180" height={15 + activeLayers.length * 25} fill="rgba(255,255,255,0.95)" rx="8" stroke="#e2e8f0" strokeWidth="1" />
                         {activeLayers.map((layer, idx) => {
-                            const yOffset = 25 + idx * 30;
+                            const yOffset = 20 + idx * 25;
                             if (layer === 'capture') return (
                                 <g key={layer} transform={`translate(15, ${yOffset})`}>
-                                    <circle cx="6" cy="-4" r="5" fill="#3b82f6" stroke="white" strokeWidth="1" />
-                                    <text x="20" y="0" fontSize="12" fill="#334155" fontWeight="bold">捕捉端 (依捕捉量)</text>
+                                    <circle cx="4" cy="-4" r="4" fill="#3b82f6" stroke="white" strokeWidth="1" />
+                                    <text x="15" y="0" fontSize="11" fill="#334155" fontWeight="bold">捕捉端 (依捕捉量)</text>
                                 </g>
                             );
                             if (layer === 'future') return (
                                 <g key={layer} transform={`translate(15, ${yOffset})`}>
-                                    <circle cx="6" cy="-4" r="5" fill="transparent" stroke="#d97706" strokeWidth="2" strokeDasharray="3 3" />
-                                    <text x="20" y="0" fontSize="12" fill="#334155" fontWeight="bold">潛力擴充點源</text>
+                                    <circle cx="4" cy="-4" r="4" fill="transparent" stroke="#d97706" strokeWidth="2" strokeDasharray="3 3" />
+                                    <text x="15" y="0" fontSize="11" fill="#334155" fontWeight="bold">潛力擴充點源</text>
                                 </g>
                             );
                             if (layer === 'util') return (
                                 <g key={layer} transform={`translate(15, ${yOffset})`}>
-                                    <circle cx="6" cy="-4" r="5" fill="#10b981" stroke="white" strokeWidth="1" />
-                                    <text x="20" y="0" fontSize="12" fill="#334155" fontWeight="bold">再利用端 (依需求量)</text>
+                                    <circle cx="4" cy="-4" r="4" fill="#10b981" stroke="white" strokeWidth="1" />
+                                    <text x="15" y="0" fontSize="11" fill="#334155" fontWeight="bold">再利用端 (依需求量)</text>
                                 </g>
                             );
                             if (layer === 'storage') return (
                                 <g key={layer} transform={`translate(15, ${yOffset})`}>
-                                    <circle cx="6" cy="-4" r="6" fill="#ef4444" stroke="white" strokeWidth="1" />
-                                    <text x="20" y="0" fontSize="12" fill="#334155" fontWeight="bold">封存場域與專案管線</text>
+                                    <circle cx="4" cy="-4" r="5" fill="#ef4444" stroke="white" strokeWidth="1" />
+                                    <text x="15" y="0" fontSize="11" fill="#334155" fontWeight="bold">封存場域與專案管線</text>
                                 </g>
                             );
                             return null;
@@ -1279,10 +1314,10 @@ const CcusDashboard = () => {
                         </div>
                     </div>
 
-                    {/* 地圖滿寬度 */}
+                    {/* 地圖滿寬度 (高度適配 viewport) */}
                     <div className="grid grid-cols-1 gap-6">
-                        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col min-h-[750px]">
-                            <h3 className="font-bold text-slate-700 text-sm mb-4 border-b pb-2 flex items-center gap-2"><Map size={16} className="text-indigo-500"/> CCS 案場與共通管線拓樸分析</h3>
+                        <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex flex-col h-[65vh] min-h-[500px] max-h-[800px]">
+                            <h3 className="font-bold text-slate-700 text-sm mb-3 border-b pb-2 flex items-center gap-2"><Map size={16} className="text-indigo-500"/> CCS 案場與共通管線拓樸分析</h3>
                             <div className="flex-1 w-full h-full relative min-h-0">
                                 <ErrorBoundary>
                                     <TaiwanCcusMap mode="planning" activeLayers={['planning']} scope1Data={scope1Data} mapPaths={mapPaths} ccsTopology={ccsTopology} hubs={hubs} setHubs={setHubs} clusters={clusters} setClusters={setClusters} routeNodes={routeNodes} setRouteNodes={setRouteNodes} seaControlPoints={seaControlPoints} setSeaControlPoints={setSeaControlPoints} />
@@ -1331,7 +1366,7 @@ const CcusDashboard = () => {
                             <div className="flex flex-col gap-2 overflow-y-auto pr-2 custom-scrollbar">
                                 <div className="bg-slate-50 p-3 rounded border border-slate-200">
                                     <div className="text-xs font-bold text-slate-500 mb-1">【南區】多節點集中 ➔ 港口接收外銷</div>
-                                    <div className="text-xs text-slate-600 leading-relaxed">由於缺乏合適本土封存場址，系統已將高雄分為南北與內陸多節點，分別收集周邊高排碳區至高雄港接收站，轉由船運送往中部的麥寮/台中港或東南亞進行封存。台東則以南迴海運接駁至高雄。</div>
+                                    <div className="text-xs text-slate-600 leading-relaxed">由於缺乏合適本土封存場址，系統已將高雄分為南北與內陸多節點，分別收集周邊高排碳區至高雄港接收站，轉由船運送往中部的麥寮/台中港或東南亞(印尼/馬來西亞)進行封存。台東則以南迴海運接駁至高雄。</div>
                                 </div>
                                 <div className="bg-slate-50 p-3 rounded border border-slate-200">
                                     <div className="text-xs font-bold text-slate-500 mb-1">【中區】多節點中繼 ➔ 本土海/陸封存</div>
@@ -1512,8 +1547,8 @@ const CcusDashboard = () => {
                     </div>
                     
                     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
-                        <div className="lg:col-span-6 bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col min-h-[750px]">
-                            <div className="flex justify-between items-center mb-4 border-b pb-2">
+                        <div className="lg:col-span-6 bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex flex-col h-[65vh] min-h-[500px] max-h-[800px]">
+                            <div className="flex justify-between items-center mb-3 border-b pb-2">
                                 <h3 className="font-bold text-slate-700 text-sm flex items-center gap-2"><MapPin size={16} className="text-slate-500"/> CCUS 全價值鏈分佈</h3>
                                 <div className="flex bg-slate-100 p-1 rounded-lg text-[10px] font-bold shadow-inner">
                                     <button onClick={() => setFacilitySubTab('all')} className={`px-3 py-1 rounded-md ${facilitySubTab === 'all' ? 'bg-white shadow text-slate-800' : 'text-slate-500'}`}>全視角</button>
