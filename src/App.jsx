@@ -12,6 +12,7 @@ const App = () => {
   const [activeTab, setActiveTab] = useState('overview'); 
   const [activeModule, setActiveModule] = useState('trade'); // 'trade' | 'hydrogen' | 'ccus'
   const [showConfigModal, setShowConfigModal] = useState(false);
+  const [isStandalone, setIsStandalone] = useState(false); // 新增：控制是否為獨立全螢幕展示模式
 
   // Shared Trade State
   const [searchQuery, setSearchQuery] = useState('280300'); 
@@ -65,6 +66,20 @@ const App = () => {
   
   const [watchedProducts, setWatchedProducts] = useState([]);
   const [dataHealth, setDataHealth] = useState({});
+
+  // 解析 URL 參數 (實作獨立頁面路由機制)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const mod = params.get('module');
+    const standalone = params.get('standalone');
+    
+    if (mod && ['trade', 'hydrogen', 'ccus'].includes(mod)) {
+      setActiveModule(mod);
+    }
+    if (standalone === 'true') {
+      setIsStandalone(true);
+    }
+  }, []);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -228,91 +243,100 @@ const App = () => {
         </div>
       )}
 
-      {/* Sidebar */}
-      <aside className="w-64 bg-slate-900 text-white flex-shrink-0 hidden md:flex flex-col">
-        <div className="p-6 border-b border-slate-700"><h1 className="text-xl font-bold flex items-center gap-2"><Globe size={24} className="text-blue-400" />貿易戰情室</h1><p className="text-xs text-slate-400 mt-2">Customs & Trade Dashboard</p></div>
-        <div className="p-4 border-b border-slate-800">
-            <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2"><ShieldAlert size={14}/> 戰略專題</h3>
-            <div className="space-y-1">{Object.entries(STRATEGIC_TOPICS).map(([key, topic]) => (<button key={key} onClick={() => selectTopic(key)} className={`w-full text-left px-3 py-2 text-sm rounded-md transition-colors ${currentTopic === key && activeModule === 'trade' ? 'bg-blue-600 text-white' : 'text-slate-300 hover:bg-slate-800'}`}>{topic.title}</button>))}</div>
-        </div>
-        
-        <div className="p-4 border-b border-slate-800">
-            <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2"><Layers size={14}/> 專項儀表板</h3>
-            <div className="space-y-2">
-                <button 
-                    onClick={() => { setActiveModule('hydrogen'); setCurrentTopic(null); }}
-                    className={`w-full text-left px-3 py-2 text-sm rounded-md transition-colors flex items-center gap-2 ${activeModule === 'hydrogen' ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/50' : 'text-slate-300 hover:bg-slate-800'}`}
-                >
-                    <Factory size={16} className={activeModule === 'hydrogen' ? 'text-white' : 'text-emerald-400'}/>
-                    <span>氫能供需戰情室</span>
-                    {activeModule === 'hydrogen' && <ChevronRight size={14} className="ml-auto opacity-70"/>}
-                </button>
-                <button 
-                    onClick={() => { setActiveModule('ccus'); setCurrentTopic(null); }}
-                    className={`w-full text-left px-3 py-2 text-sm rounded-md transition-colors flex items-center gap-2 ${activeModule === 'ccus' ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/50' : 'text-slate-300 hover:bg-slate-800'}`}
-                >
-                    <Leaf size={16} className={activeModule === 'ccus' ? 'text-white' : 'text-teal-400'}/>
-                    <span>碳捕捉與封存戰情室</span>
-                    {activeModule === 'ccus' && <ChevronRight size={14} className="ml-auto opacity-70"/>}
-                </button>
-            </div>
-        </div>
-
-        <div className="p-4 overflow-y-auto flex-1">
-          <div className="mb-4"><h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">重點監控</h3>{watchedProducts.map(fav => (<button key={fav.code} onClick={() => selectProduct(fav.code, fav.name)} className="block w-full text-left px-2 py-1 text-sm text-slate-300 hover:text-white truncate">{fav.name}</button>))}</div>
-          <div className="mb-4"><h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">最近搜尋</h3>
-            {history.map((item, idx) => (
-                <button key={idx} onClick={() => selectProduct(item.code, item.name)} className="block w-full text-left px-2 py-1 text-sm text-slate-300 hover:text-white truncate flex items-center gap-2">
-                    <History size={12}/> {item.code} {item.name ? `- ${item.name}` : ''}
-                </button>
-            ))}
+      {/* Sidebar (獨立展示模式時隱藏) */}
+      {!isStandalone && (
+        <aside className="w-64 bg-slate-900 text-white flex-shrink-0 hidden md:flex flex-col">
+          <div className="p-6 border-b border-slate-700"><h1 className="text-xl font-bold flex items-center gap-2"><Globe size={24} className="text-blue-400" />貿易戰情室</h1><p className="text-xs text-slate-400 mt-2">Customs & Trade Dashboard</p></div>
+          <div className="p-4 border-b border-slate-800">
+              <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2"><ShieldAlert size={14}/> 戰略專題</h3>
+              <div className="space-y-1">{Object.entries(STRATEGIC_TOPICS).map(([key, topic]) => (<button key={key} onClick={() => selectTopic(key)} className={`w-full text-left px-3 py-2 text-sm rounded-md transition-colors ${currentTopic === key && activeModule === 'trade' ? 'bg-blue-600 text-white' : 'text-slate-300 hover:bg-slate-800'}`}>{topic.title}</button>))}</div>
           </div>
-        </div>
-        <div className="p-4 border-t border-slate-800"><button onClick={() => setShowConfigModal(true)} className="flex items-center gap-2 text-xs text-slate-400 hover:text-white"><Settings size={12}/> 設定資料源</button></div>
-      </aside>
+          
+          <div className="p-4 border-b border-slate-800">
+              <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2"><Layers size={14}/> 專項儀表板</h3>
+              <div className="space-y-2">
+                  <button 
+                      onClick={() => { setActiveModule('hydrogen'); setCurrentTopic(null); }}
+                      className={`w-full text-left px-3 py-2 text-sm rounded-md transition-colors flex items-center gap-2 ${activeModule === 'hydrogen' ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/50' : 'text-slate-300 hover:bg-slate-800'}`}
+                  >
+                      <Factory size={16} className={activeModule === 'hydrogen' ? 'text-white' : 'text-emerald-400'}/>
+                      <span>氫能供需戰情室</span>
+                      {activeModule === 'hydrogen' && <ChevronRight size={14} className="ml-auto opacity-70"/>}
+                  </button>
+                  <button 
+                      onClick={() => { setActiveModule('ccus'); setCurrentTopic(null); }}
+                      className={`w-full text-left px-3 py-2 text-sm rounded-md transition-colors flex items-center gap-2 ${activeModule === 'ccus' ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/50' : 'text-slate-300 hover:bg-slate-800'}`}
+                  >
+                      <Leaf size={16} className={activeModule === 'ccus' ? 'text-white' : 'text-teal-400'}/>
+                      <span>碳捕捉與封存戰情室</span>
+                      {activeModule === 'ccus' && <ChevronRight size={14} className="ml-auto opacity-70"/>}
+                  </button>
+              </div>
+          </div>
+
+          <div className="p-4 overflow-y-auto flex-1">
+            <div className="mb-4"><h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">重點監控</h3>{watchedProducts.map(fav => (<button key={fav.code} onClick={() => selectProduct(fav.code, fav.name)} className="block w-full text-left px-2 py-1 text-sm text-slate-300 hover:text-white truncate">{fav.name}</button>))}</div>
+            <div className="mb-4"><h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">最近搜尋</h3>
+              {history.map((item, idx) => (
+                  <button key={idx} onClick={() => selectProduct(item.code, item.name)} className="block w-full text-left px-2 py-1 text-sm text-slate-300 hover:text-white truncate flex items-center gap-2">
+                      <History size={12}/> {item.code} {item.name ? `- ${item.name}` : ''}
+                  </button>
+              ))}
+            </div>
+          </div>
+          <div className="p-4 border-t border-slate-800"><button onClick={() => setShowConfigModal(true)} className="flex items-center gap-2 text-xs text-slate-400 hover:text-white"><Settings size={12}/> 設定資料源</button></div>
+        </aside>
+      )}
 
       {/* Main Content */}
       <main className="flex-1 overflow-y-auto h-screen flex flex-col relative">
-        <header className="bg-white border-b border-slate-200 px-6 py-4 sticky top-0 z-20 shadow-sm space-y-4">
-          <div className="flex flex-wrap items-center gap-4">
-            <div className="flex items-center gap-3 flex-1" ref={searchContainerRef}>
-                <div className="relative flex-1 max-w-lg">
-                <input type="text" value={inputValue} onChange={handleInputChange} onFocus={() => inputValue && setShowSuggestions(true)} className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg outline-none" placeholder="搜尋貨名或 Code" />
-                <Search className="absolute left-3 top-2.5 text-slate-400" size={18} />
-                {showSuggestions && (<div className="absolute top-full left-0 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl z-50 max-h-60 overflow-y-auto">{suggestions.map((item) => (<button key={item.code} onClick={() => selectProduct(item.code, item.name)} className="w-full text-left px-4 py-2 hover:bg-blue-50 text-sm border-b border-slate-50 last:border-0"><span className="font-medium text-slate-700">{item.name}</span><span className="text-xs text-slate-400 font-mono bg-slate-100 px-1.5 py-0.5 rounded">{item.code}</span></button>))}</div>)}
-                </div>
-                <button onClick={() => handleSearch()} className="px-4 py-2 bg-blue-600 text-white rounded-lg flex items-center gap-2"><RefreshCw size={18} className={loading ? "animate-spin" : ""}/> 搜尋</button>
-            </div>
-          </div>
-        </header>
-
-        <div className="px-6 pt-6 pb-2">
-            <div className="flex items-center gap-3">
-                <div className={`p-2 rounded-lg text-white ${currentTopic ? 'bg-purple-600' : activeModule === 'hydrogen' ? 'bg-emerald-600' : activeModule === 'ccus' ? 'bg-teal-600' : 'bg-blue-600'}`}>
-                    {currentTopic ? <Zap size={24} /> : activeModule === 'hydrogen' ? <Factory size={24} /> : activeModule === 'ccus' ? <Leaf size={24} /> : <Layers size={24} />}
-                </div>
-                <div className="flex-1">
-                    <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-                        {activeModule === 'hydrogen' ? '氫能供需戰情室' : activeModule === 'ccus' ? 'CCUS 碳捕捉與封存戰情室' : (detectedProductName || '搜尋結果')}
-                        {!currentTopic && activeModule === 'trade' && <span className="text-slate-400 text-lg font-normal font-mono">({searchQuery})</span>}
-                        {!currentTopic && activeModule === 'trade' && (
-                          <button onClick={() => {
-                            const isWatched = watchedProducts.some(p => p.code === searchQuery);
-                            if (isWatched) setWatchedProducts(prev => prev.filter(p => p.code !== searchQuery));
-                            else setWatchedProducts(prev => [{ code: searchQuery, name: detectedProductName || `稅號 ${searchQuery}` }, ...prev]);
-                          }} className={`ml-2 p-1.5 rounded-full transition-all ${watchedProducts.some(p => p.code === searchQuery) ? 'bg-amber-100 text-amber-500 hover:bg-amber-200' : 'bg-slate-100 text-slate-400 hover:text-amber-400 hover:bg-slate-200'}`}><Star size={20} fill={watchedProducts.some(p => p.code === searchQuery) ? "currentColor" : "none"} /></button>
-                        )}
-                    </h2>
-                    {currentTopic && activeModule === 'trade' && (
-                        <div className="mt-2 bg-purple-50 p-3 rounded-lg border border-purple-100 flex items-center justify-between">
-                             <div><p className="text-sm text-purple-800 font-bold mb-1">{STRATEGIC_TOPICS[currentTopic].desc}</p></div>
-                             {STRATEGIC_TOPICS[currentTopic].sourceUrl && (<a href={STRATEGIC_TOPICS[currentTopic].sourceUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs text-blue-600 hover:underline"><ExternalLink size={12}/> 官方資料來源</a>)}
+        
+        {/* 只有在貿易模組時，才顯示搜尋 Header 與標題 */}
+        {activeModule === 'trade' && (
+            <>
+                <header className="bg-white border-b border-slate-200 px-6 py-4 sticky top-0 z-20 shadow-sm space-y-4">
+                <div className="flex flex-wrap items-center gap-4">
+                    <div className="flex items-center gap-3 flex-1" ref={searchContainerRef}>
+                        <div className="relative flex-1 max-w-lg">
+                        <input type="text" value={inputValue} onChange={handleInputChange} onFocus={() => inputValue && setShowSuggestions(true)} className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg outline-none" placeholder="搜尋貨名或 Code" />
+                        <Search className="absolute left-3 top-2.5 text-slate-400" size={18} />
+                        {showSuggestions && (<div className="absolute top-full left-0 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl z-50 max-h-60 overflow-y-auto">{suggestions.map((item) => (<button key={item.code} onClick={() => selectProduct(item.code, item.name)} className="w-full text-left px-4 py-2 hover:bg-blue-50 text-sm border-b border-slate-50 last:border-0"><span className="font-medium text-slate-700">{item.name}</span><span className="text-xs text-slate-400 font-mono bg-slate-100 px-1.5 py-0.5 rounded">{item.code}</span></button>))}</div>)}
                         </div>
-                    )}
+                        <button onClick={() => handleSearch()} className="px-4 py-2 bg-blue-600 text-white rounded-lg flex items-center gap-2"><RefreshCw size={18} className={loading ? "animate-spin" : ""}/> 搜尋</button>
+                    </div>
                 </div>
-            </div>
-        </div>
+                </header>
 
+                <div className="px-6 pt-6 pb-2">
+                    <div className="flex items-center gap-3">
+                        <div className={`p-2 rounded-lg text-white ${currentTopic ? 'bg-purple-600' : 'bg-blue-600'}`}>
+                            {currentTopic ? <Zap size={24} /> : <Layers size={24} />}
+                        </div>
+                        <div className="flex-1">
+                            <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+                                {detectedProductName || '搜尋結果'}
+                                {!currentTopic && <span className="text-slate-400 text-lg font-normal font-mono">({searchQuery})</span>}
+                                {!currentTopic && (
+                                <button onClick={() => {
+                                    const isWatched = watchedProducts.some(p => p.code === searchQuery);
+                                    if (isWatched) setWatchedProducts(prev => prev.filter(p => p.code !== searchQuery));
+                                    else setWatchedProducts(prev => [{ code: searchQuery, name: detectedProductName || `稅號 ${searchQuery}` }, ...prev]);
+                                }} className={`ml-2 p-1.5 rounded-full transition-all ${watchedProducts.some(p => p.code === searchQuery) ? 'bg-amber-100 text-amber-500 hover:bg-amber-200' : 'bg-slate-100 text-slate-400 hover:text-amber-400 hover:bg-slate-200'}`}><Star size={20} fill={watchedProducts.some(p => p.code === searchQuery) ? "currentColor" : "none"} /></button>
+                                )}
+                            </h2>
+                            {currentTopic && (
+                                <div className="mt-2 bg-purple-50 p-3 rounded-lg border border-purple-100 flex items-center justify-between">
+                                    <div><p className="text-sm text-purple-800 font-bold mb-1">{STRATEGIC_TOPICS[currentTopic].desc}</p></div>
+                                    {STRATEGIC_TOPICS[currentTopic].sourceUrl && (<a href={STRATEGIC_TOPICS[currentTopic].sourceUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs text-blue-600 hover:underline"><ExternalLink size={12}/> 官方資料來源</a>)}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            </>
+        )}
+
+        {/* Dynamic Module Rendering */}
         {activeModule === 'hydrogen' ? (
              <HydrogenDashboard />
         ) : activeModule === 'ccus' ? (
