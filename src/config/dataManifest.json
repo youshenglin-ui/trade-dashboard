@@ -1,0 +1,130 @@
+{
+  "syncedAt": "2026-09-14T01:58:33.748Z",
+  "sources": {
+    "trade/active/2025": {
+      "rows": 38151,
+      "bytes": 4244118,
+      "ok": true
+    },
+    "trade/active/2024": {
+      "rows": 39114,
+      "bytes": 4330490,
+      "ok": true
+    },
+    "trade/active/2023": {
+      "rows": 39102,
+      "bytes": 4339111,
+      "ok": true
+    },
+    "trade/active/2022": {
+      "rows": 10671,
+      "bytes": 1104758,
+      "ok": true
+    },
+    "trade/active/2021": {
+      "rows": 11140,
+      "bytes": 1149246,
+      "ok": true
+    },
+    "trade/active/2020": {
+      "rows": 11145,
+      "bytes": 1142670,
+      "ok": true
+    },
+    "trade/active/2019": {
+      "rows": 11508,
+      "bytes": 1181966,
+      "ok": true
+    },
+    "trade/active/2018": {
+      "rows": 11876,
+      "bytes": 1227013,
+      "ok": true
+    },
+    "trade/active/2017": {
+      "rows": 11638,
+      "bytes": 1197330,
+      "ok": true
+    },
+    "trade/active/2016": {
+      "rows": 11313,
+      "bytes": 1151357,
+      "ok": true
+    },
+    "trade/active/2015": {
+      "rows": 10701,
+      "bytes": 1127504,
+      "ok": true
+    },
+    "trade/archive/2022": {
+      "rows": 28738,
+      "bytes": 3318790,
+      "ok": true
+    },
+    "trade/archive/2021": {
+      "rows": 29508,
+      "bytes": 3396690,
+      "ok": true
+    },
+    "trade/archive/2020": {
+      "rows": 29172,
+      "bytes": 3366829,
+      "ok": true
+    },
+    "trade/archive/2019": {
+      "rows": 30447,
+      "bytes": 3513349,
+      "ok": true
+    },
+    "trade/archive/2018": {
+      "rows": 31304,
+      "bytes": 3629749,
+      "ok": true
+    },
+    "trade/archive/2017": {
+      "rows": 31233,
+      "bytes": 3613149,
+      "ok": true
+    },
+    "trade/archive/2016": {
+      "rows": 32998,
+      "bytes": 3780683,
+      "ok": true
+    },
+    "trade/archive/2015": {
+      "rows": 32939,
+      "bytes": 3904850,
+      "ok": true
+    },
+    "hydrogen/production": {
+      "rows": 36,
+      "bytes": 3989,
+      "ok": true
+    },
+    "hydrogen/usage": {
+      "rows": 77,
+      "bytes": 7537,
+      "ok": true
+    },
+    "ccus/capture": {
+      "rows": 11,
+      "bytes": 1454,
+      "ok": true
+    },
+    "ccus/utilization": {
+      "rows": 5,
+      "bytes": 343,
+      "ok": true
+    },
+    "ccus/storage": {
+      "rows": 2,
+      "bytes": 236,
+      "ok": true
+    },
+    "ccus/scope1": {
+      "rows": 486,
+      "bytes": 68674,
+      "ok": true
+    }
+  }
+}

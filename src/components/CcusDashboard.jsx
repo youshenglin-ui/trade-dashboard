@@ -3,26 +3,12 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, 
   ScatterChart, Scatter, ZAxis, Cell, LabelList, ComposedChart, Line, PieChart, Pie, Label
 } from 'recharts';
-import { 
-  Leaf, RefreshCw, Target, Activity, MapPin, DollarSign, Box, AlertTriangle, 
+import {
+  Leaf, RefreshCw, Target, Activity, MapPin, DollarSign, Box, AlertTriangle,
   Truck, Ship, GripHorizontal, FlaskConical, Plus, ZoomIn, ZoomOut, Maximize, Factory, List, Rocket, Map, Route, Anchor, Layers, Filter, PieChart as PieChartIcon, DownloadCloud, Copy, Trash2
 } from 'lucide-react';
-
-const CCUS_DATA_SOURCES = {
-  CAPTURE: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSJ8aZTek-9SoTaK7Z_Wu9InU2c_vu4cUpD0Nn4fCs-w0IM3XoWeNXK5ZldWoEs6M3G6mJTS6QoF4Mo/pub?gid=388581449&single=true&output=csv',
-  UTILIZATION: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSJ8aZTek-9SoTaK7Z_Wu9InU2c_vu4cUpD0Nn4fCs-w0IM3XoWeNXK5ZldWoEs6M3G6mJTS6QoF4Mo/pub?gid=1496771601&single=true&output=csv',
-  STORAGE: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSJ8aZTek-9SoTaK7Z_Wu9InU2c_vu4cUpD0Nn4fCs-w0IM3XoWeNXK5ZldWoEs6M3G6mJTS6QoF4Mo/pub?gid=1902888591&single=true&output=csv',
-  SCOPE1_URL: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSJ8aZTek-9SoTaK7Z_Wu9InU2c_vu4cUpD0Nn4fCs-w0IM3XoWeNXK5ZldWoEs6M3G6mJTS6QoF4Mo/pub?gid=2122803569&single=true&output=csv'
-};
-
-const cleanNumber = (val) => {
-  if (val === undefined || val === null || val === '') return 0;
-  if (typeof val === 'number') return isFinite(val) ? val : 0;
-  const str = String(val).trim();
-  if (str === '-' || str === '－') return 0; 
-  const num = parseFloat(str.replace(/[,%\s]/g, ''));
-  return isFinite(num) ? num : 0;
-};
+import { CCUS_DATA_SOURCES } from '../config/dataSources';
+import { cleanNumber } from '../utils/helpers';
 
 export const simplifyCompanyName = (name) => {
   if (!name) return '';

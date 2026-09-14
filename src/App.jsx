@@ -7,6 +7,7 @@ import HydrogenDashboard from './components/HydrogenDashboard';
 import CcusDashboard from './components/CcusDashboard';
 import { STRATEGIC_TOPICS } from './utils/constants';
 import { normalizeCode, parseCSV_Safe } from './utils/helpers';
+import { TRADE_ACTIVE_SOURCES, TRADE_ARCHIVE_SOURCES } from './config/dataSources';
 
 const App = () => {
   const [activeTab, setActiveTab] = useState('overview'); 
@@ -23,30 +24,9 @@ const App = () => {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const searchContainerRef = useRef(null);
   
-  const activeBase = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQTBhte4P7bzMFSTlYDml3F25Wcr-sYfC7aOWQiePkfid7f2xBR-WUDMN7NAO3Z2e24Po14dqG7ZxnK/pub';
-  const archiveBase = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRzjXsv2ydCw4O_eDQvunQkn1UWxTNaW7ejOaf3EcDrWCZZzTK1i6u6mJ3KSVkowRjaMVNUnYdA45Bx/pub';
-
   const [dataSources, setDataSources] = useState([
-    `${activeBase}?gid=9883438&single=true&output=csv`,      // 2025
-    `${activeBase}?gid=111460997&single=true&output=csv`,    // 2024
-    `${activeBase}?gid=1075035870&single=true&output=csv`,   // 2023
-    `${activeBase}?gid=2046100985&single=true&output=csv`,   // 2022
-    `${activeBase}?gid=1831893040&single=true&output=csv`,   // 2021
-    `${activeBase}?gid=1203579653&single=true&output=csv`,   // 2020
-    `${activeBase}?gid=1828590182&single=true&output=csv`,   // 2019
-    `${activeBase}?gid=892690605&single=true&output=csv`,    // 2018
-    `${activeBase}?gid=127022410&single=true&output=csv`,    // 2017
-    `${activeBase}?gid=723477109&single=true&output=csv`,    // 2016
-    `${activeBase}?gid=1464732954&single=true&output=csv`,   // 2015
-
-    `${archiveBase}?gid=1882060232&single=true&output=csv`,
-    `${archiveBase}?gid=1951510622&single=true&output=csv`,
-    `${archiveBase}?gid=1940628234&single=true&output=csv`,
-    `${archiveBase}?gid=1693737933&single=true&output=csv`,
-    `${archiveBase}?gid=1407313243&single=true&output=csv`,
-    `${archiveBase}?gid=698533804&single=true&output=csv`,
-    `${archiveBase}?gid=54711180&single=true&output=csv`,
-    `${archiveBase}?gid=2061649166&single=true&output=csv`
+    ...TRADE_ACTIVE_SOURCES,
+    ...TRADE_ARCHIVE_SOURCES,
   ]);
   
   const [useRealData, setUseRealData] = useState(true);

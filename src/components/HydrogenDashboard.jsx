@@ -12,7 +12,8 @@ import {
   simplifyCompanyName, getProcessType, identifyProcess, 
   identifyUsage, getUsageCategory, stringToColor, cleanNumber
 } from '../utils/helpers';
-import { H2_DATA_SOURCES, MOCK_SUPPLY_MATRIX, MOCK_DEMAND_MATRIX, COLORS_PROCESS, COLORS_USAGE } from '../utils/constants';
+import { MOCK_SUPPLY_MATRIX, MOCK_DEMAND_MATRIX, COLORS_PROCESS, COLORS_USAGE } from '../utils/constants';
+import { H2_DATA_SOURCES } from '../config/dataSources';
 import { ErrorBoundary } from './SharedComponents';
 
 const REGION_COLORS = { '北區': '#e0f2fe', '中區': '#d1fae5', '南區': '#fffbeb', '東區': '#f5f3ff', '其他': '#f1f5f9' };
