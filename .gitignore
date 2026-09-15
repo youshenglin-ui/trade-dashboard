@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# 環境變數（內含 Supabase 連線字串等機密資訊，不可進版控）
+.env
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
