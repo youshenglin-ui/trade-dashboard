@@ -10,6 +10,10 @@
 // 這支腳本讀 public/data/ 底下 `npm run sync-data` 產生的 CSV
 // （所以流程還是：改 Google Sheet → npm run sync-data → npm run db:import），
 // 之後等前端全面改讀 Supabase，這支腳本會變成正式的 ETL 入口。
+//
+// 連線用分開的欄位（host/port/user/password/database）而非單一 URI 字串，
+// 是刻意的：Postgres 密碼常見特殊符號（* ! & 等）塞進 URI 容易被解析器誤判，
+// 用物件形式傳給 pg.Client 就完全不會經過 URL 解析，不用煩惱要不要跳脫。
 
 import { readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
@@ -22,11 +26,20 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
 const DATA_DIR = join(ROOT, 'public', 'data');
 
-const CONNECTION_STRING = process.env.SUPABASE_DB_URL;
-if (!CONNECTION_STRING) {
-  console.error('缺少 SUPABASE_DB_URL，請先在 .env 設定（參考 .env.example）。');
+const { SUPABASE_DB_HOST, SUPABASE_DB_PORT, SUPABASE_DB_USER, SUPABASE_DB_PASSWORD, SUPABASE_DB_NAME } = process.env;
+if (!SUPABASE_DB_HOST || !SUPABASE_DB_PASSWORD) {
+  console.error('缺少 SUPABASE_DB_HOST / SUPABASE_DB_PASSWORD，請先在 .env 設定（參考 .env.example）。');
   process.exit(1);
 }
+
+const DB_CONFIG = {
+  host: SUPABASE_DB_HOST,
+  port: Number(SUPABASE_DB_PORT) || 5432,
+  user: SUPABASE_DB_USER || 'postgres',
+  password: SUPABASE_DB_PASSWORD,
+  database: SUPABASE_DB_NAME || 'postgres',
+  ssl: { rejectUnauthorized: false },
+};
 
 // 與 CcusDashboard.jsx 的 parseCSV 邏輯一致，處理引號跳脫與欄位內逗號
 function parseCSV(text) {
@@ -132,7 +145,7 @@ async function importEnergy(client, key, category) {
 }
 
 async function main() {
-  const client = new Client({ connectionString: CONNECTION_STRING, ssl: { rejectUnauthorized: false } });
+  const client = new Client(DB_CONFIG);
   await client.connect();
   console.log('已連線 Supabase Postgres。\n');
 
