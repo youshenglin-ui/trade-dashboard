@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  Globe, ShieldAlert, Layers, Factory, ChevronRight, Settings, Plus, Trash2, SearchCode, X, Search, History, Star, RefreshCw, ExternalLink, Zap, Leaf
+  Globe, ShieldAlert, Layers, Factory, ChevronRight, Settings, SearchCode, X, Search, History, Star, RefreshCw, ExternalLink, Zap, Leaf
 } from 'lucide-react';
 import TradeDashboard from './components/TradeDashboard';
 import HydrogenDashboard from './components/HydrogenDashboard';
 import CcusDashboard from './components/CcusDashboard';
 import { STRATEGIC_TOPICS } from './utils/constants';
-import { normalizeCode, parseCSV_Safe } from './utils/helpers';
-import { TRADE_ACTIVE_SOURCES, TRADE_ARCHIVE_SOURCES } from './config/dataSources';
+import { normalizeCode } from './utils/helpers';
+import { fetchAllTradeRecords } from './lib/fetchTradeRecords';
 
 const App = () => {
   const [activeTab, setActiveTab] = useState('overview'); 
@@ -23,11 +23,6 @@ const App = () => {
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const searchContainerRef = useRef(null);
-  
-  const [dataSources, setDataSources] = useState([
-    ...TRADE_ACTIVE_SOURCES,
-    ...TRADE_ARCHIVE_SOURCES,
-  ]);
   
   const [useRealData, setUseRealData] = useState(true);
   const [fetchError, setFetchError] = useState(null);
@@ -69,8 +64,8 @@ const App = () => {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  useEffect(() => { 
-      if (useRealData && dataSources.length > 0 && dataset.length === 0) {
+  useEffect(() => {
+      if (useRealData && dataset.length === 0) {
            fetchRealData();
       }
   }, [useRealData]);
@@ -78,17 +73,8 @@ const App = () => {
   const fetchRealData = async () => {
       setLoading(true); setFetchError(null);
       try {
-          const responses = await Promise.all(dataSources.map(url => fetch(url).then(res => {
-              if(!res.ok) throw new Error(`HTTP Error: ${res.status}`);
-              return res.text();
-          })));
-          
-          let combinedData = [];
-          responses.forEach(text => {
-              const { data } = parseCSV_Safe(text);
-              combinedData = [...combinedData, ...data];
-          });
-          
+          const combinedData = await fetchAllTradeRecords();
+
           const health = {};
           combinedData.forEach(d => {
              const y = d.year;
@@ -197,22 +183,14 @@ const App = () => {
                 <div className="flex justify-between items-center mb-4"><h3 className="text-xl font-bold flex items-center gap-2"><Settings className="text-blue-600"/> 資料來源與診斷</h3><button onClick={() => setShowConfigModal(false)}><X/></button></div>
                 {fetchError && <div className="mb-4 p-2 bg-rose-50 text-rose-700 text-sm">{fetchError}</div>}
                 <div className="mb-6">
-                    <label className="text-sm font-bold text-slate-600 mb-2 block flex justify-between">
-                        <span>Google Sheet CSV 連結 ({dataSources.length})</span>
-                        <button onClick={() => setDataSources([...dataSources, ''])} className="text-blue-600 flex items-center gap-1 text-xs"><Plus size={14}/> 新增連結</button>
-                    </label>
-                    <div className="space-y-2">
-                        {dataSources.map((url, idx) => (
-                            <div key={idx} className="flex gap-2">
-                                <input type="text" className="flex-1 p-2 border rounded font-mono text-xs" placeholder="https://.../output=csv" value={url} onChange={(e) => {
-                                    const newSources = [...dataSources]; newSources[idx] = e.target.value; setDataSources(newSources);
-                                }} />
-                                {dataSources.length > 1 && <button onClick={() => setDataSources(dataSources.filter((_, i) => i !== idx))} className="text-rose-500 hover:bg-rose-50 p-2 rounded"><Trash2 size={16}/></button>}
-                            </div>
-                        ))}
+                    <label className="text-sm font-bold text-slate-600 mb-2 block">資料庫</label>
+                    <div className="text-xs text-slate-500 bg-slate-50 p-3 rounded space-y-1">
+                        <div>來源：Supabase（PostgreSQL）trade_records 資料表</div>
+                        <div>目前已載入：{dataset.length.toLocaleString()} 筆</div>
                     </div>
-                    <div className="mt-3 text-xs text-slate-500 bg-blue-50 p-2 rounded">💡 提示：您可以將不同年份的資料分開存放在不同的 Google Sheet，再將連結貼到這裡，系統會自動合併讀取。</div>
-                    <button onClick={() => { if(dataSources.some(u=>u)) { setUseRealData(true); fetchRealData(); }}} className="w-full bg-blue-600 text-white py-2 rounded mt-3">讀取並更新所有來源</button>
+                    <button onClick={() => { setUseRealData(true); fetchRealData(); }} className="w-full bg-blue-600 text-white py-2 rounded mt-3 flex items-center justify-center gap-2">
+                        <RefreshCw size={16} className={loading ? "animate-spin" : ""}/> 重新讀取
+                    </button>
                 </div>
                 <div className="border-t pt-4">
                      <label className="text-sm font-bold text-slate-600 mb-1 block flex items-center gap-2"><SearchCode size={16}/> 資料庫診斷器 (Data Inspector)</label>
@@ -323,7 +301,6 @@ const App = () => {
              <CcusDashboard />
         ) : (
              <TradeDashboard 
-                dataSources={dataSources}
                 useRealData={useRealData}
                 dataset={dataset}
                 setDataset={setDataset}

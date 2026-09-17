@@ -21,10 +21,16 @@ import { fileURLToPath } from 'node:url';
 import { Client } from 'pg';
 import 'dotenv/config';
 import { DATA_SOURCES } from './data-sources.config.mjs';
+import { parseCSV_Safe } from '../src/utils/helpers.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
-const DATA_DIR = join(ROOT, 'public', 'data');
+
+// 跟 sync-data.mjs 的存放規則一致：trade/* 在 data/（非 public），
+// hydrogen/*、ccus/* 在 public/data/（前端還在直接讀）。
+function baseDirFor(key) {
+  return key.startsWith('trade/') ? join(ROOT, 'data') : join(ROOT, 'public', 'data');
+}
 
 const { SUPABASE_DB_HOST, SUPABASE_DB_PORT, SUPABASE_DB_USER, SUPABASE_DB_PASSWORD, SUPABASE_DB_NAME } = process.env;
 if (!SUPABASE_DB_HOST || !SUPABASE_DB_PASSWORD) {
@@ -73,40 +79,48 @@ function parseCSV(text) {
   });
 }
 
-function toNumber(val) {
-  if (val === undefined || val === null || val === '') return null;
-  const num = parseFloat(String(val).replace(/[,%\s]/g, ''));
-  return Number.isFinite(num) ? num : null;
-}
-
 async function readLocalCsv(key) {
-  const path = join(DATA_DIR, `${key}.csv`);
-  const text = await readFile(path, 'utf-8');
-  return parseCSV(text);
+  const path = join(baseDirFor(key), `${key}.csv`);
+  return readFile(path, 'utf-8');
 }
 
+// 貿易資料一律走 parseCSV_Safe（跟前端過去解析 Google Sheet CSV 用的是
+// 同一個函式），確保日期補零、進出口別正規化、World/Total 彙總列過濾、
+// 稅號只留數字這些清洗規則跟原本前端行為完全一致，不會因為匯入腳本自己
+// 重寫一份簡化邏輯而讓資料跟以前對不上。
 async function importTrade(client, key, source) {
-  const rows = await readLocalCsv(key);
+  const text = await readLocalCsv(key);
+  const { data: rawRows } = parseCSV_Safe(text);
+
+  // 同一個「年月+稅號+國家+進出口別」在原始資料裡可能拆成好幾筆
+  // （例如國家欄位空白時會歸類成同一個 Unknown 桶），金額/重量不同、
+  // 不是重複資料。資料表對這個組合有唯一鍵限制，所以先在這裡把同鍵
+  // 的金額和重量加總成一筆，總額才會跟原本前端「全部列加總」的結果一致，
+  // 不會因為只留最後一筆而漏算。
+  const merged = new Map();
+  for (const r of rawRows) {
+    const k = `${r.date}|${r.hsCode}|${r.country}|${r.type}`;
+    const existing = merged.get(k);
+    if (existing) {
+      existing.value += r.value || 0;
+      existing.weight += r.weight || 0;
+    } else {
+      merged.set(k, { ...r, value: r.value || 0, weight: r.weight || 0 });
+    }
+  }
+  const rows = [...merged.values()];
+
   let imported = 0;
   const batchSize = 500;
 
   for (let i = 0; i < rows.length; i += batchSize) {
-    const batch = rows.slice(i, i + batchSize).filter((r) => r.Date && r.HScode);
+    const batch = rows.slice(i, i + batchSize);
     if (batch.length === 0) continue;
 
     const values = [];
     const placeholders = batch.map((r, idx) => {
       const base = idx * 8;
-      values.push(
-        r.Date,
-        r.HScode,
-        r.Name || null,
-        r.Country || null,
-        r.Type || null,
-        toNumber(r.Value),
-        toNumber(r.Weight),
-        source
-      );
+      values.push(r.date, r.hsCode, r.productName || null, r.country || null, r.type || null, r.value, r.weight, source);
       return `($${base + 1},$${base + 2},$${base + 3},$${base + 4},$${base + 5},$${base + 6},$${base + 7},$${base + 8})`;
     }).join(',');
 
@@ -126,7 +140,8 @@ async function importTrade(client, key, source) {
 }
 
 async function importEnergy(client, key, category) {
-  const rows = await readLocalCsv(key);
+  const text = await readLocalCsv(key);
+  const rows = parseCSV(text);
   let imported = 0;
 
   for (const r of rows) {

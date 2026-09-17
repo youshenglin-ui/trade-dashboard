@@ -13,12 +13,12 @@ import {
 import { 
   normalizeCode, isHsCodeMatch, cleanNumber, sanitizeForChart, formatSmartWeight, 
   formatValueByUnit, getUnitLabel, formatCurrencyAxis, mapEventToDateKey, 
-  exportToCSV, copyToClipboard, parseCSV_Safe 
+  exportToCSV, copyToClipboard
 } from '../utils/helpers';
 import { ErrorBoundary, CustomTimeTooltip, renderCustomizedLabel, KPICard, MultiSelectDropdown } from './SharedComponents';
 
-const TradeDashboard = ({ 
-  dataSources, useRealData, dataset, setDataset, setDataHealth, 
+const TradeDashboard = ({
+  useRealData, dataset, setDataset, setDataHealth,
   searchQuery, setSearchQuery, inputValue, setInputValue, 
   currentTopic, setCurrentTopic, detectedProductName, setDetectedProductName,
   setFetchError, setLoading, loading

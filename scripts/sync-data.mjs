@@ -2,10 +2,15 @@
 // 資料同步腳本
 // ==========================================
 // 用法: npm run sync-data
-// 把 scripts/data-sources.config.mjs 列出的每一個 Google Sheet
-// 抓成本地 CSV，存到 public/data/<key>.csv，並產生
-// src/config/dataManifest.json 記錄各來源的最後同步時間與筆數，
-// 供前端顯示「資料更新時間」用。
+// 把 scripts/data-sources.config.mjs 列出的每一個 Google Sheet 抓成本地 CSV，
+// 並產生 src/config/dataManifest.json 記錄各來源的最後同步時間與筆數。
+//
+// 存放位置依用途分兩邊：
+//   - trade/*   → data/（專案根目錄，不在 public 底下）：貿易資料前端已改讀
+//     Supabase，這裡只是 `npm run db:import` 匯入資料庫用的中繼檔，不該跟著
+//     `vite build` 一起打包進部署的網頁。
+//   - hydrogen/*, ccus/* → public/data/：這兩個模組前端目前仍直接 fetch
+//     本地 CSV（還沒遷移到資料庫），需要留在 public 底下才能被打包進去。
 
 import { writeFile, mkdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
@@ -14,15 +19,18 @@ import { DATA_SOURCES } from './data-sources.config.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
-const DATA_DIR = join(ROOT, 'public', 'data');
 const MANIFEST_PATH = join(ROOT, 'src', 'config', 'dataManifest.json');
+
+function baseDirFor(key) {
+  return key.startsWith('trade/') ? join(ROOT, 'data') : join(ROOT, 'public', 'data');
+}
 
 function countDataRows(csvText) {
   return csvText.split(/\r\n|\n/).filter((line) => line.trim()).length - 1;
 }
 
 async function fetchOne(source) {
-  const outPath = join(DATA_DIR, `${source.key}.csv`);
+  const outPath = join(baseDirFor(source.key), `${source.key}.csv`);
   await mkdir(dirname(outPath), { recursive: true });
 
   const res = await fetch(source.url);
