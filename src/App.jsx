@@ -7,7 +7,43 @@ import HydrogenDashboard from './components/HydrogenDashboard';
 import CcusDashboard from './components/CcusDashboard';
 import { STRATEGIC_TOPICS } from './utils/constants';
 import { normalizeCode } from './utils/helpers';
-import { fetchAllTradeRecords } from './lib/fetchTradeRecords';
+import { searchTradeRecords, fetchTradeCodeCatalog } from './lib/fetchTradeRecords';
+
+// 對應舊版 TradeDashboard.jsx 裡 filterData() 的比對條件組裝邏輯：
+// 專題模式下抓 selectedTopicCodes（連同細項的 excludes），否則抓 searchQuery
+// 本身（同時當稅號前綴跟品名關鍵字用，維持原本 cleanQuery 的雙重用途）。
+function buildSearchParams({ currentTopic, selectedTopicCodes, searchQuery }) {
+  if (currentTopic) {
+    if (selectedTopicCodes.length === 0) return { codes: [], excludes: [], nameQuery: null };
+    const excludes = [];
+    selectedTopicCodes.forEach((code) => {
+      const itemDef = STRATEGIC_TOPICS[currentTopic].items.find((i) => i.code === code);
+      if (itemDef && itemDef.excludes) excludes.push(...itemDef.excludes);
+    });
+    return {
+      codes: selectedTopicCodes.map(normalizeCode),
+      excludes: excludes.map(normalizeCode),
+      nameQuery: null,
+    };
+  }
+  const cleanQuery = normalizeCode(searchQuery);
+  return { codes: [cleanQuery], excludes: [], nameQuery: cleanQuery };
+}
+
+function buildDisplayTitle({ currentTopic, selectedTopicCodes, cleanDataset }) {
+  if (currentTopic) {
+    let title = STRATEGIC_TOPICS[currentTopic].title;
+    if (selectedTopicCodes.length === 1) {
+      const item = STRATEGIC_TOPICS[currentTopic].items.find((i) => i.code === selectedTopicCodes[0]);
+      if (item) title += ` - ${item.name}`;
+    } else if (selectedTopicCodes.length > 1) {
+      title += ` (已選 ${selectedTopicCodes.length} 項)`;
+    }
+    return title;
+  }
+  const candidate = cleanDataset.find((d) => d.productName);
+  return candidate ? candidate.productName : '搜尋結果';
+}
 
 const App = () => {
   const [activeTab, setActiveTab] = useState('overview'); 
@@ -23,13 +59,18 @@ const App = () => {
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const searchContainerRef = useRef(null);
-  
+  const fetchRequestIdRef = useRef(0);
+
   const [useRealData, setUseRealData] = useState(true);
   const [fetchError, setFetchError] = useState(null);
   const [detectedProductName, setDetectedProductName] = useState('');
   const [inspectorCode, setInspectorCode] = useState('');
-  const [currentTopic, setCurrentTopic] = useState(null); 
-  
+  const [inspectorResult, setInspectorResult] = useState('');
+  const [inspectorLoading, setInspectorLoading] = useState(false);
+  const [currentTopic, setCurrentTopic] = useState(null);
+  const [selectedTopicCodes, setSelectedTopicCodes] = useState([]);
+  const [codeCatalog, setCodeCatalog] = useState([]);
+
   const [history, setHistory] = useState([
       { code: '290511', name: '甲醇' },
       { code: '291521', name: '醋酸' },
@@ -40,7 +81,6 @@ const App = () => {
   ]);
   
   const [watchedProducts, setWatchedProducts] = useState([]);
-  const [dataHealth, setDataHealth] = useState({});
 
   // 解析 URL 參數 (實作獨立頁面路由機制)
   useEffect(() => {
@@ -64,25 +104,34 @@ const App = () => {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  // 稅號目錄只在啟動時抓一次（每個稅號一筆代表列，遠小於全表），給搜尋框自動完成用。
   useEffect(() => {
-      if (useRealData && dataset.length === 0) {
-           fetchRealData();
+      fetchTradeCodeCatalog().then(setCodeCatalog).catch((err) => {
+          console.error('稅號目錄載入失敗:', err.message);
+      });
+  }, []);
+
+  // 效能優化：不再一次抓全表 45 萬列，改成搜尋條件（稅號/專題細項）變動時，
+  // 只跟資料庫要「跟目前條件相符」的列（search_trade_records RPC，見
+  // supabase/rpc_search_trade_records.sql）。去重邏輯（同一天+國家+進出口別下，
+  // 較短的稅號蓋掉較長的）維持在前端，只是現在作用在小很多的資料量上。
+  useEffect(() => {
+      if (useRealData) {
+          fetchRealData();
       }
-  }, [useRealData]);
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [useRealData, searchQuery, currentTopic, selectedTopicCodes]);
 
   const fetchRealData = async () => {
+      const requestId = ++fetchRequestIdRef.current;
       setLoading(true); setFetchError(null);
       try {
-          const combinedData = await fetchAllTradeRecords();
+          const { codes, excludes, nameQuery } = buildSearchParams({ currentTopic, selectedTopicCodes, searchQuery });
 
-          const health = {};
-          combinedData.forEach(d => {
-             const y = d.year;
-             if(!health[y]) health[y] = { export: 0, import: 0 };
-             if(d.type === '出口') health[y].export++;
-             if(d.type === '進口') health[y].import++;
-          });
-          setDataHealth(health);
+          // 專題模式下還沒選細項：跟原本行為一致（無比對條件 = 無資料），
+          // 不用發網路請求。
+          const combinedData = codes.length === 0 ? [] : await searchTradeRecords({ codes, excludes, nameQuery });
+          if (requestId !== fetchRequestIdRef.current) return; // 已經有更新的搜尋條件，這批結果過期了
 
           const groups = {};
           combinedData.forEach(item => {
@@ -111,9 +160,12 @@ const App = () => {
 
           cleanDataset.sort((a, b) => b.date.localeCompare(a.date));
           setDataset(cleanDataset);
-          if (cleanDataset.length === 0) { setFetchError("所有來源皆無有效資料"); setUseRealData(false); }
-      } catch (error) { setFetchError(error.message); setUseRealData(false); }
-      setLoading(false);
+          setDetectedProductName(buildDisplayTitle({ currentTopic, selectedTopicCodes, cleanDataset }));
+      } catch (error) {
+          if (requestId !== fetchRequestIdRef.current) return;
+          setFetchError(error.message);
+      }
+      if (requestId === fetchRequestIdRef.current) setLoading(false);
   };
 
   const handleSearch = (overrideQuery, overrideName) => {
@@ -149,30 +201,47 @@ const App = () => {
       
       const uniqueProducts = new Map();
       watchedProducts.forEach(p => uniqueProducts.set(p.code, p.name));
-      if (dataset.length > 0) {
-        for(let i=0; i<Math.min(dataset.length, 5000); i++) {
-           if(uniqueProducts.size > 20) break;
-           const d = dataset[i];
-           if (d.hsCode.includes(val) || (d.productName && d.productName.toLowerCase().includes(val.toLowerCase()))) {
-               uniqueProducts.set(d.hsCode, d.productName);
-           }
-        }
+      const lowerVal = val.toLowerCase();
+      for (let i = 0; i < codeCatalog.length; i++) {
+         if (uniqueProducts.size > 20) break;
+         const d = codeCatalog[i];
+         if (d.code.includes(val) || (d.name && d.name.toLowerCase().includes(lowerVal))) {
+             uniqueProducts.set(d.code, d.name);
+         }
       }
       const matches = Array.from(uniqueProducts.entries()).map(([code, name]) => ({ code, name }));
-      setSuggestions(matches.slice(0, 8)); 
+      setSuggestions(matches.slice(0, 8));
       setShowSuggestions(true);
   };
 
-  const runInspector = () => {
-      if (!dataset.length) return "無數據";
+  // 資料庫診斷器：獨立於目前搜尋條件之外，直接查資料庫確認某個稅號是否有資料
+  // （原本掃描已載入的全量 dataset，現在全量資料不再整包留在瀏覽器，改成即時查詢）。
+  useEffect(() => {
+      if (!inspectorCode) { setInspectorResult(''); return; }
       const cleanInput = normalizeCode(inspectorCode);
-      const matches = dataset.filter(d => normalizeCode(d.hsCode).startsWith(cleanInput));
-      if (matches.length === 0) return `找不到代碼為 "${cleanInput}" 開頭的資料。`;
-      const dates = matches.map(d => d.date).sort();
-      return `✅ 找到 ${matches.length} 筆資料。\n` +
-             `📅 期間：${dates[0]} ~ ${dates[dates.length - 1]}\n` +
-             `📋 包含產品：${Array.from(new Set(matches.map(d => d.productName))).slice(0,3).join(', ')}`;
-  };
+      let cancelled = false;
+      setInspectorLoading(true);
+      const timer = setTimeout(() => {
+          searchTradeRecords({ codes: [cleanInput], excludes: [], nameQuery: null })
+              .then(rows => {
+                  if (cancelled) return;
+                  const matches = rows.filter(d => normalizeCode(d.hsCode).startsWith(cleanInput));
+                  if (matches.length === 0) {
+                      setInspectorResult(`找不到代碼為 "${cleanInput}" 開頭的資料。`);
+                      return;
+                  }
+                  const dates = matches.map(d => d.date).sort();
+                  setInspectorResult(
+                      `✅ 找到 ${matches.length} 筆資料。\n` +
+                      `📅 期間：${dates[0]} ~ ${dates[dates.length - 1]}\n` +
+                      `📋 包含產品：${Array.from(new Set(matches.map(d => d.productName))).slice(0, 3).join(', ')}`
+                  );
+              })
+              .catch(err => { if (!cancelled) setInspectorResult(`查詢失敗: ${err.message}`); })
+              .finally(() => { if (!cancelled) setInspectorLoading(false); });
+      }, 400);
+      return () => { cancelled = true; clearTimeout(timer); };
+  }, [inspectorCode]);
 
   return (
     <div className="min-h-screen bg-slate-50 flex font-sans text-slate-800">
@@ -186,7 +255,7 @@ const App = () => {
                     <label className="text-sm font-bold text-slate-600 mb-2 block">資料庫</label>
                     <div className="text-xs text-slate-500 bg-slate-50 p-3 rounded space-y-1">
                         <div>來源：Supabase（PostgreSQL）trade_records 資料表</div>
-                        <div>目前已載入：{dataset.length.toLocaleString()} 筆</div>
+                        <div>目前搜尋結果：{dataset.length.toLocaleString()} 筆（只載入符合目前搜尋條件的資料，非全表）</div>
                     </div>
                     <button onClick={() => { setUseRealData(true); fetchRealData(); }} className="w-full bg-blue-600 text-white py-2 rounded mt-3 flex items-center justify-center gap-2">
                         <RefreshCw size={16} className={loading ? "animate-spin" : ""}/> 重新讀取
@@ -195,7 +264,7 @@ const App = () => {
                 <div className="border-t pt-4">
                      <label className="text-sm font-bold text-slate-600 mb-1 block flex items-center gap-2"><SearchCode size={16}/> 資料庫診斷器 (Data Inspector)</label>
                      <div className="flex gap-2 mb-2"><input type="text" placeholder="輸入稅號 (例如 2523)" className="flex-1 p-2 border rounded" value={inspectorCode} onChange={e => setInspectorCode(e.target.value)} /></div>
-                     <div className="p-3 bg-slate-100 rounded text-xs font-mono whitespace-pre-line text-slate-700 min-h-[80px]">{inspectorCode ? runInspector() : "請輸入稅號檢查..."}</div>
+                     <div className="p-3 bg-slate-100 rounded text-xs font-mono whitespace-pre-line text-slate-700 min-h-[80px]">{!inspectorCode ? "請輸入稅號檢查..." : inspectorLoading ? "查詢中..." : inspectorResult}</div>
                 </div>
             </div>
         </div>
@@ -300,21 +369,13 @@ const App = () => {
         ) : activeModule === 'ccus' ? (
              <CcusDashboard />
         ) : (
-             <TradeDashboard 
+             <TradeDashboard
                 useRealData={useRealData}
                 dataset={dataset}
-                setDataset={setDataset}
-                setDataHealth={setDataHealth}
                 searchQuery={searchQuery}
-                setSearchQuery={setSearchQuery}
-                inputValue={inputValue}
-                setInputValue={setInputValue}
                 currentTopic={currentTopic}
-                setCurrentTopic={setCurrentTopic}
-                detectedProductName={detectedProductName}
-                setDetectedProductName={setDetectedProductName}
-                setFetchError={setFetchError}
-                setLoading={setLoading}
+                selectedTopicCodes={selectedTopicCodes}
+                setSelectedTopicCodes={setSelectedTopicCodes}
                 loading={loading}
              />
         )}
