@@ -19,6 +19,18 @@
 --   - p_excludes：戰略專題（STRATEGIC_TOPICS）裡某些細項會排除特定子稅號。
 --   - p_name_query：非專題搜尋時，用品名做子字串比對（沿用前端既有 normalizeCode 前處理，
 --     呼叫端負責把查詢字串正規化後再傳進來，這裡不重複處理）。
+--
+-- 重要：這個 function 本體刻意不寫 ORDER BY（分頁交給呼叫端的 PostgREST
+-- .order('id').range() 處理）。踩過的坑：只要 function body 裡有 ORDER BY，
+-- Postgres 就不會把這個 SQL function inline 進呼叫端組出來的外層查詢，會整個
+-- function 當黑盒子先算完、materialize 全部符合條件的列，才套用外層的
+-- order by id limit/offset——等於每次分頁都要重新掃過整張表評估 EXISTS/unnest
+-- 條件，就算只要第一頁也一樣，稅號 280300（4159 筆相符）在 44 萬列的表上
+-- 因此直接撞 statement timeout（實測 500 + "canceling statement due to
+-- statement timeout"）。拿掉 function 本體的 ORDER BY 後，Postgres 才會把
+-- function inline 進外層查詢，讓 planner 選到「用 id 的 Index Scan、邊掃邊過
+-- 濾、湊滿 limit 筆數就提早停」的計畫（EXPLAIN 驗證過），效能差了不只一個量級。
+-- 之後如果要改這個 function，千萬別為了「保險」又加回 ORDER BY。
 create or replace function search_trade_records(
   p_codes text[],
   p_excludes text[] default '{}',
@@ -56,8 +68,7 @@ as $$
     and not exists (
       select 1 from unnest(p_excludes) as e(code)
       where t.hs_code like (code || '%')
-    )
-  order by t.id;
+    );
 $$;
 
 grant execute on function search_trade_records(text[], text[], text) to anon, authenticated;
