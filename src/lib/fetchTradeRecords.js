@@ -3,7 +3,11 @@ import { supabase } from './supabaseClient';
 // PostgREST 單次請求有列數上限（Supabase 專案預設 1000）。RPC 呼叫也一樣受限，
 // 所以即使搜尋結果只有幾千筆，還是要分頁抓完，只是頁數比「全表 45 萬列」少非常多。
 const PAGE_SIZE = 1000;
-const CONCURRENCY = 6;
+// 併發數刻意壓低：Supabase 免費方案 anon 角色的 statement_timeout 只有 3 秒，
+// 個別查詢雖快，但併發一多（測過 5-6）還是會搶 CPU/連線把彼此拖過 3 秒而 500。
+// 實測 2 併發在深分頁、broad 專題（比對到 25 萬+ 列）下都穩定，見
+// supabase/rpc_search_trade_records.sql 開頭的踩坑記錄。
+const CONCURRENCY = 2;
 
 function mapRow(row, idx) {
   return {
@@ -21,8 +25,9 @@ function mapRow(row, idx) {
 
 // 通用：分頁抓完一個 RPC 的全部結果列（用 count: 'exact' 先問總數，再用少量併發分頁抓）。
 // orderColumn 一定要給：PostgREST 對 RPC 結果做 range 分頁時，沒有外層 order by
-// 就不保證跨頁順序穩定（就算 function 內部自己有 order by 也一樣），分頁抓到重複
-// 或漏掉列的風險就是從這裡來的。
+// 就不保證跨頁順序穩定，分頁抓到重複或漏掉列的風險就是從這裡來的。
+// 只適合用在「function 本體沒有自己的分頁參數」的 RPC（目前是 trade_code_catalog，
+// 列數固定很小，一頁就抓完，不會踩到 search_trade_records 那個深分頁+高併發的坑）。
 async function fetchAllPages(rpcName, params, orderColumn) {
   const countQuery = await supabase.rpc(rpcName, params, { count: 'exact', head: true });
   if (countQuery.error) throw new Error(`Supabase RPC(${rpcName}) 計數失敗: ${countQuery.error.message}`);
@@ -52,12 +57,37 @@ async function fetchAllPages(rpcName, params, orderColumn) {
 
 // 取代原本「抓全表 45 萬列再篩選」：只跟資料庫要「跟目前搜尋條件相符」的列。
 // codes / excludes 已經是正規化過的純數字稅號（呼叫端負責 normalizeCode）。
+//
+// search_trade_records 的分頁參數（p_limit/p_offset）是 function 本身的參數，
+// 不是透過 PostgREST 的 .order().range()——那個組合會讓 function 沒辦法被
+// inline 進外層查詢、整個 materialize 全表評估一次，連第一頁都會逾時（詳見
+// supabase/rpc_search_trade_records.sql 的踩坑記錄）。總筆數改問配套的
+// search_trade_records_count（同一套比對邏輯，只回傳 count）。
 export async function searchTradeRecords({ codes, excludes = [], nameQuery = null }) {
-  const rows = await fetchAllPages('search_trade_records', {
-    p_codes: codes,
-    p_excludes: excludes,
-    p_name_query: nameQuery,
-  }, 'id');
+  const countArgs = { p_codes: codes, p_excludes: excludes, p_name_query: nameQuery };
+  const { data: total, error: countError } = await supabase.rpc('search_trade_records_count', countArgs);
+  if (countError) throw new Error(`Supabase RPC(search_trade_records_count) 查詢失敗: ${countError.message}`);
+
+  const totalPages = Math.ceil((total || 0) / PAGE_SIZE);
+  const rows = [];
+
+  for (let batchStart = 0; batchStart < totalPages; batchStart += CONCURRENCY) {
+    const batchPages = [];
+    for (let p = batchStart; p < Math.min(batchStart + CONCURRENCY, totalPages); p++) {
+      batchPages.push(
+        supabase.rpc('search_trade_records', {
+          ...countArgs,
+          p_limit: PAGE_SIZE,
+          p_offset: p * PAGE_SIZE,
+        }).then(({ data, error }) => {
+          if (error) throw new Error(`Supabase RPC(search_trade_records) 查詢失敗: ${error.message}`);
+          return data || [];
+        })
+      );
+    }
+    const results = await Promise.all(batchPages);
+    results.forEach((pageRows) => rows.push(...pageRows));
+  }
 
   // App.jsx 的階層去重邏輯（同一個 date+country+type 群組裡，稅號長度相同時
   // 只留排序後第一筆）依賴「active 來源一定排在 archive 之前」這個隱性前提。
