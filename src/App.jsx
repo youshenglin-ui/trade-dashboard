@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  Globe, ShieldAlert, Layers, Factory, ChevronRight, Settings, SearchCode, X, Search, History, Star, RefreshCw, ExternalLink, Zap, Leaf
+  Globe, ShieldAlert, Layers, Factory, ChevronRight, ChevronLeft, Settings, SearchCode, X, Search, History, Star, RefreshCw, ExternalLink, Zap, Leaf
 } from 'lucide-react';
 import TradeDashboard from './components/TradeDashboard';
 import HydrogenDashboard from './components/HydrogenDashboard';
@@ -51,6 +51,7 @@ const App = () => {
   const [activeModule, setActiveModule] = useState('trade'); // 'trade' | 'hydrogen' | 'ccus' | 'admin'
   const [showConfigModal, setShowConfigModal] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false); // 新增：控制是否為獨立全螢幕展示模式
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false); // 側欄收合：文字密度高時可縮成純圖示列
 
   // Shared Trade State
   const [searchQuery, setSearchQuery] = useState('280300'); 
@@ -271,37 +272,60 @@ const App = () => {
         </div>
       )}
 
-      {/* Sidebar (獨立展示模式時隱藏) */}
+      {/* Sidebar (獨立展示模式時隱藏)：可收合成純圖示列，避免文字密度影響分頁內容寬度 */}
       {!isStandalone && (
-        <aside className="w-64 bg-slate-900 text-white flex-shrink-0 hidden md:flex flex-col">
-          <div className="p-6 border-b border-slate-700"><h1 className="text-xl font-bold flex items-center gap-2"><Globe size={24} className="text-blue-400" />貿易戰情室</h1><p className="text-xs text-slate-400 mt-2">Customs & Trade Dashboard</p></div>
+        <aside className={`${sidebarCollapsed ? 'w-16' : 'w-64'} bg-slate-900 text-white flex-shrink-0 hidden md:flex flex-col relative transition-all duration-200`}>
+          <button
+              onClick={() => setSidebarCollapsed(v => !v)}
+              title={sidebarCollapsed ? '展開側欄' : '收合側欄'}
+              className="absolute -right-3 top-6 z-30 w-6 h-6 rounded-full bg-slate-800 border border-slate-700 text-slate-300 hover:text-white hover:bg-slate-700 flex items-center justify-center shadow-sm"
+          >
+              {sidebarCollapsed ? <ChevronRight size={13}/> : <ChevronLeft size={13}/>}
+          </button>
+
+          <button onClick={() => { setActiveModule('trade'); setCurrentTopic(null); }} className={`p-6 border-b border-slate-700 text-left hover:bg-slate-800/60 transition-colors ${sidebarCollapsed ? 'flex justify-center px-0' : ''}`}>
+              {sidebarCollapsed ? (
+                  <Globe size={24} className="text-blue-400" />
+              ) : (
+                  <>
+                      <h1 className="text-xl font-bold flex items-center gap-2"><Globe size={24} className="text-blue-400" />貿易戰情室</h1>
+                      <p className="text-xs text-slate-400 mt-2">Customs & Trade Dashboard</p>
+                  </>
+              )}
+          </button>
+
+          {!sidebarCollapsed && (
           <div className="p-4 border-b border-slate-800">
               <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2"><ShieldAlert size={14}/> 戰略專題</h3>
               <div className="space-y-1">{Object.entries(STRATEGIC_TOPICS).map(([key, topic]) => (<button key={key} onClick={() => selectTopic(key)} className={`w-full text-left px-3 py-2 text-sm rounded-md transition-colors ${currentTopic === key && activeModule === 'trade' ? 'bg-blue-600 text-white' : 'text-slate-300 hover:bg-slate-800'}`}>{topic.title}</button>))}</div>
           </div>
-          
-          <div className="p-4 border-b border-slate-800">
-              <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2"><Layers size={14}/> 專項儀表板</h3>
+          )}
+
+          <div className={`p-4 border-b border-slate-800 ${sidebarCollapsed ? 'px-2' : ''}`}>
+              {!sidebarCollapsed && <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2"><Layers size={14}/> 專項儀表板</h3>}
               <div className="space-y-2">
-                  <button 
+                  <button
                       onClick={() => { setActiveModule('hydrogen'); setCurrentTopic(null); }}
-                      className={`w-full text-left px-3 py-2 text-sm rounded-md transition-colors flex items-center gap-2 ${activeModule === 'hydrogen' ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/50' : 'text-slate-300 hover:bg-slate-800'}`}
+                      title="氫能供需戰情室"
+                      className={`w-full text-sm rounded-md transition-colors flex items-center gap-2 ${sidebarCollapsed ? 'justify-center px-0 py-2.5' : 'text-left px-3 py-2'} ${activeModule === 'hydrogen' ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/50' : 'text-slate-300 hover:bg-slate-800'}`}
                   >
                       <Factory size={16} className={activeModule === 'hydrogen' ? 'text-white' : 'text-emerald-400'}/>
-                      <span>氫能供需戰情室</span>
-                      {activeModule === 'hydrogen' && <ChevronRight size={14} className="ml-auto opacity-70"/>}
+                      {!sidebarCollapsed && <span>氫能供需戰情室</span>}
+                      {!sidebarCollapsed && activeModule === 'hydrogen' && <ChevronRight size={14} className="ml-auto opacity-70"/>}
                   </button>
-                  <button 
+                  <button
                       onClick={() => { setActiveModule('ccus'); setCurrentTopic(null); }}
-                      className={`w-full text-left px-3 py-2 text-sm rounded-md transition-colors flex items-center gap-2 ${activeModule === 'ccus' ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/50' : 'text-slate-300 hover:bg-slate-800'}`}
+                      title="碳捕捉與封存戰情室"
+                      className={`w-full text-sm rounded-md transition-colors flex items-center gap-2 ${sidebarCollapsed ? 'justify-center px-0 py-2.5' : 'text-left px-3 py-2'} ${activeModule === 'ccus' ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/50' : 'text-slate-300 hover:bg-slate-800'}`}
                   >
                       <Leaf size={16} className={activeModule === 'ccus' ? 'text-white' : 'text-teal-400'}/>
-                      <span>碳捕捉與封存戰情室</span>
-                      {activeModule === 'ccus' && <ChevronRight size={14} className="ml-auto opacity-70"/>}
+                      {!sidebarCollapsed && <span>碳捕捉與封存戰情室</span>}
+                      {!sidebarCollapsed && activeModule === 'ccus' && <ChevronRight size={14} className="ml-auto opacity-70"/>}
                   </button>
               </div>
           </div>
 
+          {!sidebarCollapsed && (
           <div className="p-4 overflow-y-auto flex-1">
             <div className="mb-4"><h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">重點監控</h3>{watchedProducts.map(fav => (<button key={fav.code} onClick={() => selectProduct(fav.code, fav.name)} className="block w-full text-left px-2 py-1 text-sm text-slate-300 hover:text-white truncate">{fav.name}</button>))}</div>
             <div className="mb-4"><h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">最近搜尋</h3>
@@ -312,9 +336,12 @@ const App = () => {
               ))}
             </div>
           </div>
-          <div className="p-4 border-t border-slate-800 space-y-2">
-            <button onClick={() => setShowConfigModal(true)} className="flex items-center gap-2 text-xs text-slate-400 hover:text-white"><Settings size={12}/> 設定資料源</button>
-            <button onClick={() => { setActiveModule('admin'); setCurrentTopic(null); }} className={`flex items-center gap-2 text-xs hover:text-white ${activeModule === 'admin' ? 'text-blue-400' : 'text-slate-500'}`}><ShieldAlert size={12}/> 氫能資料後台</button>
+          )}
+          {sidebarCollapsed && <div className="flex-1" />}
+
+          <div className={`p-4 border-t border-slate-800 space-y-2 ${sidebarCollapsed ? 'px-0 flex flex-col items-center' : ''}`}>
+            <button onClick={() => setShowConfigModal(true)} title="設定資料源" className={`flex items-center gap-2 text-xs text-slate-400 hover:text-white ${sidebarCollapsed ? 'justify-center w-10 h-8' : ''}`}><Settings size={sidebarCollapsed ? 16 : 12}/> {!sidebarCollapsed && '設定資料源'}</button>
+            <button onClick={() => { setActiveModule('admin'); setCurrentTopic(null); }} title="氫能資料後台" className={`flex items-center gap-2 text-xs hover:text-white ${sidebarCollapsed ? 'justify-center w-10 h-8' : ''} ${activeModule === 'admin' ? 'text-blue-400' : 'text-slate-500'}`}><ShieldAlert size={sidebarCollapsed ? 16 : 12}/> {!sidebarCollapsed && '氫能資料後台'}</button>
           </div>
         </aside>
       )}

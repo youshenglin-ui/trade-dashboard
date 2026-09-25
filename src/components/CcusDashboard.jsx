@@ -1011,8 +1011,9 @@ const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], sto
 };
 
 const CcusDashboard = () => {
-    const [activeTab, setActiveTab] = useState('planning'); 
-    const [facilitySubTab, setFacilitySubTab] = useState('all'); 
+    const [activeTab, setActiveTab] = useState('planning');
+    const [facilitySubTab, setFacilitySubTab] = useState('all');
+    const [planningSubTab, setPlanningSubTab] = useState('map'); // 拆分「案場與管線規劃」內部分頁，避免地圖+多張圖表表格全部擠在同一長頁面
     const [captureData, setCaptureData] = useState([]);
     const [utilizationData, setUtilizationData] = useState([]);
     const [storageData, setStorageData] = useState([]);
@@ -1382,6 +1383,26 @@ const CcusDashboard = () => {
                         </div>
                     </div>
 
+                    <div className="flex gap-1 bg-white p-1.5 rounded-xl border border-slate-200 shadow-sm overflow-x-auto">
+                        {[
+                            { key: 'map', label: '拓樸地圖', icon: Map },
+                            { key: 'regional', label: '區域分析', icon: MapPin },
+                            { key: 'sources', label: '廠區明細', icon: List },
+                        ].map(tab => {
+                            const TabIcon = tab.icon;
+                            return (
+                                <button
+                                    key={tab.key}
+                                    onClick={() => setPlanningSubTab(tab.key)}
+                                    className={`flex items-center gap-1.5 px-4 py-2 text-sm font-bold rounded-lg whitespace-nowrap transition-colors ${planningSubTab === tab.key ? 'bg-indigo-600 text-white shadow' : 'text-slate-500 hover:bg-slate-100'}`}
+                                >
+                                    <TabIcon size={15}/> {tab.label}
+                                </button>
+                            );
+                        })}
+                    </div>
+
+                    {planningSubTab === 'map' && (
                     <div className="grid grid-cols-1 gap-6">
                         <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex flex-col h-[65vh] min-h-[500px] max-h-[800px]">
                             <div className="flex justify-between items-center mb-3 border-b pb-2">
@@ -1398,7 +1419,9 @@ const CcusDashboard = () => {
                             </div>
                         </div>
                     </div>
+                    )}
 
+                    {planningSubTab === 'regional' && (
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col h-[400px]">
                             <h3 className="font-bold text-slate-700 text-sm mb-3 border-b pb-2 flex items-center gap-2"><MapPin size={16} className="text-indigo-500"/> 區域碳排放圖表 (範疇一)</h3>
@@ -1490,7 +1513,9 @@ const CcusDashboard = () => {
                             </div>
                         </div>
                     </div>
+                    )}
 
+                    {planningSubTab === 'sources' && (
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col h-[450px]">
                             <div className="flex justify-between items-center mb-3 border-b pb-2">
@@ -1598,6 +1623,7 @@ const CcusDashboard = () => {
                             </div>
                         </div>
                     </div>
+                    )}
                 </div>
             )}
 
