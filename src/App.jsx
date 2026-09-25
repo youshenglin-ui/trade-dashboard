@@ -5,6 +5,7 @@ import {
 import TradeDashboard from './components/TradeDashboard';
 import HydrogenDashboard from './components/HydrogenDashboard';
 import CcusDashboard from './components/CcusDashboard';
+import HydrogenAdmin from './components/HydrogenAdmin';
 import { STRATEGIC_TOPICS } from './utils/constants';
 import { normalizeCode } from './utils/helpers';
 import { searchTradeRecords, fetchTradeCodeCatalog } from './lib/fetchTradeRecords';
@@ -47,7 +48,7 @@ function buildDisplayTitle({ currentTopic, selectedTopicCodes, cleanDataset }) {
 
 const App = () => {
   const [activeTab, setActiveTab] = useState('overview'); 
-  const [activeModule, setActiveModule] = useState('trade'); // 'trade' | 'hydrogen' | 'ccus'
+  const [activeModule, setActiveModule] = useState('trade'); // 'trade' | 'hydrogen' | 'ccus' | 'admin'
   const [showConfigModal, setShowConfigModal] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false); // 新增：控制是否為獨立全螢幕展示模式
 
@@ -88,7 +89,7 @@ const App = () => {
     const mod = params.get('module');
     const standalone = params.get('standalone');
     
-    if (mod && ['trade', 'hydrogen', 'ccus'].includes(mod)) {
+    if (mod && ['trade', 'hydrogen', 'ccus', 'admin'].includes(mod)) {
       setActiveModule(mod);
     }
     if (standalone === 'true') {
@@ -311,7 +312,10 @@ const App = () => {
               ))}
             </div>
           </div>
-          <div className="p-4 border-t border-slate-800"><button onClick={() => setShowConfigModal(true)} className="flex items-center gap-2 text-xs text-slate-400 hover:text-white"><Settings size={12}/> 設定資料源</button></div>
+          <div className="p-4 border-t border-slate-800 space-y-2">
+            <button onClick={() => setShowConfigModal(true)} className="flex items-center gap-2 text-xs text-slate-400 hover:text-white"><Settings size={12}/> 設定資料源</button>
+            <button onClick={() => { setActiveModule('admin'); setCurrentTopic(null); }} className={`flex items-center gap-2 text-xs hover:text-white ${activeModule === 'admin' ? 'text-blue-400' : 'text-slate-500'}`}><ShieldAlert size={12}/> 氫能資料後台</button>
+          </div>
         </aside>
       )}
 
@@ -368,6 +372,8 @@ const App = () => {
              <HydrogenDashboard />
         ) : activeModule === 'ccus' ? (
              <CcusDashboard />
+        ) : activeModule === 'admin' ? (
+             <HydrogenAdmin />
         ) : (
              <TradeDashboard
                 useRealData={useRealData}
