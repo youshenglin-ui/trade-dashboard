@@ -1,17 +1,18 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  Globe, ShieldAlert, Layers, Factory, ChevronRight, Settings, SearchCode, X, Search, History, Star, RefreshCw, ExternalLink, Zap, Leaf
+  Globe, ShieldAlert, Layers, Factory, ChevronRight, Settings, SearchCode, X, Search, History, Star, RefreshCw, ExternalLink, Zap, Leaf, TrendingDown
 } from 'lucide-react';
 import TradeDashboard from './components/TradeDashboard';
 import HydrogenDashboard from './components/HydrogenDashboard';
 import CcusDashboard from './components/CcusDashboard';
+import CarbonFeeDashboard from './components/CarbonFeeDashboard';
 import { STRATEGIC_TOPICS } from './utils/constants';
 import { normalizeCode } from './utils/helpers';
 import { fetchAllTradeRecords } from './lib/fetchTradeRecords';
 
 const App = () => {
   const [activeTab, setActiveTab] = useState('overview'); 
-  const [activeModule, setActiveModule] = useState('trade'); // 'trade' | 'hydrogen' | 'ccus'
+  const [activeModule, setActiveModule] = useState('trade'); // 'trade' | 'hydrogen' | 'ccus' | 'carbonfee'
   const [showConfigModal, setShowConfigModal] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false); // 新增：控制是否為獨立全螢幕展示模式
 
@@ -229,6 +230,14 @@ const App = () => {
                       <span>碳捕捉與封存戰情室</span>
                       {activeModule === 'ccus' && <ChevronRight size={14} className="ml-auto opacity-70"/>}
                   </button>
+                  <button 
+                      onClick={() => { setActiveModule('carbonfee'); setCurrentTopic(null); }}
+                      className={`w-full text-left px-3 py-2 text-sm rounded-md transition-colors flex items-center gap-2 ${activeModule === 'carbonfee' ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/50' : 'text-slate-300 hover:bg-slate-800'}`}
+                  >
+                      <TrendingDown size={16} className={activeModule === 'carbonfee' ? 'text-white' : 'text-lime-400'}/>
+                      <span>碳費自主減量計畫</span>
+                      {activeModule === 'carbonfee' && <ChevronRight size={14} className="ml-auto opacity-70"/>}
+                  </button>
               </div>
           </div>
 
@@ -299,6 +308,8 @@ const App = () => {
              <HydrogenDashboard />
         ) : activeModule === 'ccus' ? (
              <CcusDashboard />
+        ) : activeModule === 'carbonfee' ? (
+             <CarbonFeeDashboard />
         ) : (
              <TradeDashboard 
                 useRealData={useRealData}

@@ -1,0 +1,115 @@
+# 碳費自主減量計畫：每月定期爬取環境部公開資訊 → 寫入 Supabase
+#
+# 排程：每月第一個週六 09:00（台灣時間）。執行前會先「詢問」：
+#   crawl job 綁定 GitHub Environment「carbonfee-crawl」，該環境設定了 Required reviewers，
+#   排程觸發後 GitHub 會寄信/推播通知，要在 Actions 頁面按「Review deployments → Approve」才會真的開始爬。
+#   不核准（或按 Reject）就不會執行；待核准狀態最多保留 30 天。
+# 手動執行：Actions → 碳費自主減量計畫爬蟲 → Run workflow（一樣需要核准）。
+#
+# 需要的 Repository secrets（Settings → Secrets and variables → Actions）：
+#   SUPABASE_DB_HOST      Supabase「Session pooler」主機，例如 aws-0-ap-northeast-2.pooler.supabase.com
+#                         （GitHub runner 不支援 IPv6，不能用 db.<ref>.supabase.co 直連位址）
+#   SUPABASE_DB_USER      Session pooler 的使用者，格式 postgres.<project-ref>
+#   SUPABASE_DB_PASSWORD  資料庫密碼
+name: 碳費自主減量計畫爬蟲
+
+on:
+  schedule:
+    # GitHub cron 只能用 UTC，且「日期 + 星期」同時指定是 OR 而非 AND，
+    # 所以每週六 01:00 UTC（台灣 09:00）觸發，再由 gate job 判斷是不是當月第一個週六。
+    - cron: '0 1 * * 6'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: '只爬取不寫入資料庫（檢查用）'
+        type: boolean
+        default: false
+      force:
+        description: '略過「筆數驟減」防呆（確認官網真的大量下架時才用）'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: crawl-carbonfee
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.check.outputs.run }}
+    steps:
+      - id: check
+        run: |
+          if [ "${{ github.event_name }}" != "schedule" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          day=$(TZ=Asia/Taipei date +%-d)
+          if [ "$day" -le 7 ]; then
+            echo "本月第一個週六（${day} 日），送出核准請求"
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "不是本月第一個週六（${day} 日），略過"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  crawl:
+    needs: gate
+    if: needs.gate.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    environment: carbonfee-crawl
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: 爬取並寫入資料庫
+        env:
+          SUPABASE_DB_HOST: ${{ secrets.SUPABASE_DB_HOST }}
+          SUPABASE_DB_PORT: ${{ secrets.SUPABASE_DB_PORT || '5432' }}
+          SUPABASE_DB_USER: ${{ secrets.SUPABASE_DB_USER }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          SUPABASE_DB_NAME: postgres
+        run: |
+          set -o pipefail
+          ARGS=""
+          if [ "${{ inputs.dry_run }}" = "true" ]; then ARGS="$ARGS --dry-run"; fi
+          if [ "${{ inputs.force }}" = "true" ]; then ARGS="$ARGS --force"; fi
+          node scripts/crawl-carbonfee.mjs $ARGS 2>&1 | tee crawl.log
+
+      - name: 保存快照與執行紀錄
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: carbonfee-snapshot-${{ github.run_id }}
+          path: |
+            data/carbonfee/snapshot.json
+            crawl.log
+          retention-days: 90
+          if-no-files-found: ignore
+
+      # 快照也提交回 repo：保留每月版本歷史（git diff 就能看出官網變了什麼），
+      # 同時讓 repo 持續有活動，避免 GitHub 對 60 天無提交的 repo 自動停用排程。
+      - name: 提交快照
+        if: success() && inputs.dry_run != true
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/carbonfee/snapshot.json
+          if git diff --cached --quiet; then echo "快照無變動"; exit 0; fi
+          git commit -m "資料更新：碳費自主減量計畫快照 $(TZ=Asia/Taipei date +%Y-%m-%d)"
+          # 爬蟲跑的幾分鐘內 main 若有別的提交，先把它們接上再推（只重排這一個快照提交）
+          for i in 1 2 3; do
+            git pull --rebase origin "${GITHUB_REF_NAME}" && git push origin "HEAD:${GITHUB_REF_NAME}" && exit 0
+            sleep $((i * 10))
+          done
+          echo "快照推送失敗（資料庫已更新，僅快照未存回 repo）"; exit 1

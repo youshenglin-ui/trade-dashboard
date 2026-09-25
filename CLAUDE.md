@@ -37,6 +37,22 @@
 3. **響應式設計**：目前手機版數字看不清楚，需要重新設計資訊架構（拆分桌面版/手機版元件），
    不是單純加 media query，目前尚未動工。
 
+## 碳費自主減量計畫模組（2026-09 新增）
+
+- 來源：環境部「自主減量計畫公開資訊」https://carbonfee.moenv.gov.tw/front/reductionpublic/list
+  （伺服器端渲染 HTML，用 cheerio 解析即可，不需要瀏覽器）。
+- 爬蟲：`npm run crawl:carbonfee`（`--dry-run` 只爬不寫、`--from-snapshot <file>` 用既有快照寫入、
+  `--force` 跳過防呆）。解析邏輯在 `scripts/lib/carbonfee-parse.mjs`，寫庫/異動比對在
+  `scripts/lib/carbonfee-db.mjs`，快照存 `data/carbonfee/snapshot.json`。
+- 資料表：`supabase/carbonfee.sql`（plans → facilities → measures，加上 crawl_runs、changes）。
+  共同申請案件在官網列表頁只顯示代表事業本身的排放量，計畫整體合計在明細頁 → `list_*` vs `total_*`，
+  分析一律用 `total_*`。
+- 前端：`src/components/CarbonFeeDashboard.jsx`，資料讀取 `src/lib/fetchCarbonfee.js`，
+  指標定義（減量率、規模分級、色票）集中在 `src/lib/carbonfeeMetrics.js`，要改定義只改那裡。
+- 排程：`.github/workflows/crawl-carbonfee.yml`，每月第一個週六 09:00（台灣時間）觸發，
+  綁定 GitHub Environment `carbonfee-crawl`（Required reviewers），需使用者核准後才執行。
+  排程只在預設分支（main）上生效。資料庫連線用 Supabase Session pooler（GitHub runner 不支援 IPv6）。
+
 ## 資料來源
 
 Google Sheet 的實際連結只存在於 `scripts/data-sources.config.mjs`（Node-only，不會被打包進前端）。
