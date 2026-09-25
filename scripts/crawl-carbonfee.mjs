@@ -186,6 +186,24 @@ function validate(snapshot) {
   if (noMeasures.length > detailed.length * 0.2) problems.push(`${noMeasures.length} 筆計畫沒有任何減量措施`);
   const noCity = detailed.flatMap((p) => p.facilities).filter((f) => !f.city);
   if (noCity.length > detailed.length * 0.2) problems.push(`${noCity.length} 個事業無法判讀縣市`);
+
+  // 共同申請：每件都必須抓齊所有參與事業（數量要等於代表事業明細上寫的「共同申請參與事業 N家」），
+  // 且每個參與事業都要有基準年排放與逐年措施。任何一件不完整就整批不寫入，避免合計排放被低估。
+  const jointIssues = [];
+  for (const p of detailed.filter((x) => x.isJoint)) {
+    const reps = p.facilities.filter((f) => f.isRepresentative);
+    const declared = parseInt(reps[0]?.info?.['共同申請參與事業'] ?? '', 10);
+    const missing = [];
+    if (reps.length !== 1) missing.push(`代表事業 ${reps.length} 個`);
+    if (!Number.isNaN(declared) && declared !== p.facilities.length) missing.push(`官網寫 ${declared} 家、抓到 ${p.facilities.length} 家`);
+    if (p.facilities.length < 2) missing.push('參與事業少於 2 家');
+    const noBase = p.facilities.filter((f) => f.emissions.base == null).map((f) => f.controlNo);
+    if (noBase.length) missing.push(`缺基準年排放：${noBase.join(',')}`);
+    const noMs = p.facilities.filter((f) => f.measures.length === 0).map((f) => f.controlNo);
+    if (noMs.length) missing.push(`缺逐年措施：${noMs.join(',')}`);
+    if (missing.length) jointIssues.push(`${p.controlNo}（${missing.join('；')}）`);
+  }
+  if (jointIssues.length) problems.push(`共同申請資料不完整 ${jointIssues.length} 件：${jointIssues.slice(0, 10).join('、')}`);
   return problems;
 }
 
@@ -215,9 +233,14 @@ async function writeToDb(snapshot) {
 function printSummary(snapshot) {
   const facilities = snapshot.plans.flatMap((p) => p.facilities);
   const measures = facilities.reduce((s, f) => s + f.measures.length, 0);
+  const joint = snapshot.plans.filter((p) => p.isJoint);
   console.log(
-    `快照：${snapshot.plans.length} 筆計畫（共同申請 ${snapshot.plans.filter((p) => p.isJoint).length}）、` +
-      `${facilities.length} 個事業、${measures} 筆逐年措施；明細失敗 ${snapshot.plans.filter((p) => p.detailError).length} 筆`
+    `快照：${snapshot.plans.length} 筆計畫、${facilities.length} 個事業、${measures} 筆逐年措施；` +
+      `明細失敗 ${snapshot.plans.filter((p) => p.detailError).length} 筆`
+  );
+  console.log(
+    `  共同申請 ${joint.length} 件，參與事業 ${joint.reduce((s, p) => s + p.facilities.length, 0)} 家、` +
+      `措施 ${joint.reduce((s, p) => s + p.facilities.reduce((t, f) => t + f.measures.length, 0), 0)} 筆`
   );
 }
 

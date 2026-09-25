@@ -107,4 +107,9 @@ jobs:
           git add data/carbonfee/snapshot.json
           if git diff --cached --quiet; then echo "快照無變動"; exit 0; fi
           git commit -m "資料更新：碳費自主減量計畫快照 $(TZ=Asia/Taipei date +%Y-%m-%d)"
-          git push
+          # 爬蟲跑的幾分鐘內 main 若有別的提交，先把它們接上再推（只重排這一個快照提交）
+          for i in 1 2 3; do
+            git pull --rebase origin "${GITHUB_REF_NAME}" && git push origin "HEAD:${GITHUB_REF_NAME}" && exit 0
+            sleep $((i * 10))
+          done
+          echo "快照推送失敗（資料庫已更新，僅快照未存回 repo）"; exit 1

@@ -500,6 +500,21 @@ export default function CarbonFeeDashboard() {
     );
   }
 
+  if (raw && raw.plans.length === 0) {
+    return (
+      <div className="p-6">
+        <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-lg p-4 text-sm flex items-start gap-2">
+          <AlertTriangle size={18} className="flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="font-bold">資料庫尚無碳費自主減量計畫資料</p>
+            <p className="mt-1">請在 GitHub Actions 執行「碳費自主減量計畫爬蟲」並核准，或在本機執行 <code className="bg-white px-1 rounded">npm run crawl:carbonfee</code>。</p>
+            <button onClick={load} className="mt-2 inline-flex items-center gap-1 text-xs bg-white border border-amber-200 rounded px-2 py-1"><RefreshCw size={12} /> 重新讀取</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const SortTh = ({ k, children, className = '' }) => (
     <th className={`px-3 py-2 font-medium cursor-pointer select-none hover:text-slate-800 ${className}`}
       onClick={() => setSort((s) => ({ key: k, dir: s.key === k && s.dir === 'desc' ? 'asc' : 'desc' }))}>
