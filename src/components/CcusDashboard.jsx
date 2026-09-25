@@ -5,7 +5,7 @@ import {
 } from 'recharts';
 import {
   Leaf, RefreshCw, Target, Activity, MapPin, DollarSign, Box, AlertTriangle,
-  Truck, Ship, GripHorizontal, FlaskConical, Plus, ZoomIn, ZoomOut, Maximize, Factory, List, Rocket, Map, Route, Anchor, Layers, Filter, PieChart as PieChartIcon, DownloadCloud, Copy, Trash2
+  Truck, Ship, GripHorizontal, FlaskConical, Plus, ZoomIn, ZoomOut, Maximize, Factory, List, Rocket, Map, Route, Anchor, Layers, Filter, PieChart as PieChartIcon, DownloadCloud, Copy, Trash2, X
 } from 'lucide-react';
 import { CCUS_DATA_SOURCES } from '../config/dataSources';
 import { cleanNumber } from '../utils/helpers';
@@ -270,8 +270,39 @@ const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], sto
     const [isDragging, setIsDragging] = useState(false); const [dragState, setDragState] = useState(null); 
     const [lastPos, setLastPos] = useState({ x: 0, y: 0 }); const [hoveredNode, setHoveredNode] = useState(null);
     const [nodeMenu, setNodeMenu] = useState(null);
+    const [pinnedNode, setPinnedNode] = useState(null); // 點選鎖定的廠區詳細資訊(獨立於滑鼠 hover，觸控裝置也能用)
 
     const { baseWidth, baseHeight } = MAP_CONSTANTS;
+    const displayNode = pinnedNode || hoveredNode;
+
+    // 滾輪縮放：以游標所在位置為中心縮放，而不是畫面正中央，體感較接近一般地圖操作。
+    // React 的 onWheel 是被動監聽(passive)，e.preventDefault() 會被忽略，所以改用
+    // 原生 addEventListener + { passive: false } 掛在 SVG 本身。
+    useEffect(() => {
+        const svg = mapRef.current;
+        if (!svg) return;
+        const handleWheel = (e) => {
+            e.preventDefault();
+            const pt = svg.createSVGPoint();
+            pt.x = e.clientX; pt.y = e.clientY;
+            const screenCTM = svg.getScreenCTM();
+            if (!screenCTM) return;
+            const svgPoint = pt.matrixTransform(screenCTM.inverse());
+            const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+            setZoom(prevZoom => {
+                const newZoom = Math.max(0.5, Math.min(10, prevZoom * factor));
+                setPan(prevPan => {
+                    const cx = MAP_CONSTANTS.baseWidth / 2, cy = MAP_CONSTANTS.baseHeight / 2;
+                    const worldX = (svgPoint.x - (cx + prevPan.x)) / prevZoom;
+                    const worldY = (svgPoint.y - (cy + prevPan.y)) / prevZoom;
+                    return { x: svgPoint.x - cx - worldX * newZoom, y: svgPoint.y - cy - worldY * newZoom };
+                });
+                return newZoom;
+            });
+        };
+        svg.addEventListener('wheel', handleWheel, { passive: false });
+        return () => svg.removeEventListener('wheel', handleWheel);
+    }, []);
 
     // 智能視圖縮放函數
     const zoomToRegion = (lat, lon, targetZoom) => {
@@ -293,9 +324,10 @@ const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], sto
         return { lon, lat, x: globalPoint.x, y: globalPoint.y };
     };
 
-    const handleMouseDown = (e) => { 
-        if (nodeMenu) setNodeMenu(null); 
-        setIsDragging(true); setLastPos({ x: e.clientX, y: e.clientY }); 
+    const handleMouseDown = (e) => {
+        if (nodeMenu) setNodeMenu(null);
+        if (pinnedNode) setPinnedNode(null);
+        setIsDragging(true); setLastPos({ x: e.clientX, y: e.clientY });
     };
     
     const handlePathClick = (e, routeId, currentNodes) => {
@@ -500,109 +532,112 @@ const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], sto
                 </div>
             </div>
 
-            <div className="absolute top-16 left-4 z-20 bg-white/95 backdrop-blur shadow-2xl rounded-xl border border-slate-200 p-3 transition-all duration-300 w-64 pointer-events-none" style={{ opacity: hoveredNode && !nodeMenu ? 1 : 0, transform: hoveredNode && !nodeMenu ? 'translateY(0)' : 'translateY(-10px)' }}>
-                {hoveredNode && hoveredNode.nodeType === 'hub' && (
+            <div className={`absolute top-16 left-4 z-20 bg-white/95 backdrop-blur shadow-2xl rounded-xl border border-slate-200 p-3 transition-all duration-300 w-64 ${pinnedNode ? 'pointer-events-auto' : 'pointer-events-none'}`} style={{ opacity: displayNode && !nodeMenu ? 1 : 0, transform: displayNode && !nodeMenu ? 'translateY(0)' : 'translateY(-10px)' }}>
+                {pinnedNode && (
+                    <button onClick={() => setPinnedNode(null)} className="absolute top-2 right-2 text-slate-400 hover:text-rose-500 bg-slate-100 rounded-full p-1 z-10"><X size={12}/></button>
+                )}
+                {displayNode && displayNode.nodeType === 'hub' && (
                     <div>
                         <div className="flex items-center gap-2 mb-2 border-b border-blue-100 pb-1.5">
-                            {hoveredNode.name.includes('接收站') ? <Ship size={16} className="text-blue-600"/> : hoveredNode.name.includes('鐵砧山') ? <MapPin size={16} className="text-amber-700"/> : <Anchor size={16} className="text-blue-600"/>}
-                            <h3 className="font-bold text-slate-800 text-sm truncate">{hoveredNode.name}</h3>
+                            {displayNode.name.includes('接收站') ? <Ship size={16} className="text-blue-600"/> : displayNode.name.includes('鐵砧山') ? <MapPin size={16} className="text-amber-700"/> : <Anchor size={16} className="text-blue-600"/>}
+                            <h3 className="font-bold text-slate-800 text-sm truncate">{displayNode.name}</h3>
                         </div>
                         <div className="bg-blue-50 p-2 rounded border border-blue-100 mb-2">
                             <div className="text-[10px] font-bold text-blue-800 mb-0.5">樞紐定位 (可拖曳)</div>
-                            <div className="text-xs text-blue-700">{hoveredNode.hubType}</div>
+                            <div className="text-xs text-blue-700">{displayNode.hubType}</div>
                         </div>
-                        {ccsTopology && ccsTopology.hubEmissions && ccsTopology.hubEmissions[hoveredNode.id] > 0 && (
+                        {ccsTopology && ccsTopology.hubEmissions && ccsTopology.hubEmissions[displayNode.id] > 0 && (
                              <div className="bg-slate-50 p-2 rounded border border-slate-200 flex justify-between items-center">
-                                 <span className="text-slate-600 text-[10px] font-bold">預估接收總量</span><span className="font-mono font-black text-blue-600 text-xs">{(Number(ccsTopology.hubEmissions[hoveredNode.id] || 0) / 10000).toFixed(1)} 萬噸</span>
+                                 <span className="text-slate-600 text-[10px] font-bold">預估接收總量</span><span className="font-mono font-black text-blue-600 text-xs">{(Number(ccsTopology.hubEmissions[displayNode.id] || 0) / 10000).toFixed(1)} 萬噸</span>
                              </div>
                         )}
                     </div>
                 )}
-                {hoveredNode && hoveredNode.nodeType === 'cluster' && (
+                {displayNode && displayNode.nodeType === 'cluster' && (
                     <div>
                         <div className="flex items-center gap-2 mb-2 border-b border-indigo-100 pb-1.5">
                             <Layers size={16} className="text-indigo-600"/>
-                            <h3 className="font-bold text-slate-800 text-sm truncate">{hoveredNode.name}</h3>
+                            <h3 className="font-bold text-slate-800 text-sm truncate">{displayNode.name}</h3>
                         </div>
                         <div className="bg-indigo-50 p-2 rounded border border-indigo-100 mb-2">
                             <div className="text-[10px] font-bold text-indigo-800 mb-0.5">中繼管線節點 (可拖曳)</div>
                             <div className="text-xs text-indigo-700">區域管線匯集與轉折</div>
                         </div>
                         <div className="bg-slate-50 p-2 rounded border border-slate-200 flex justify-between items-center">
-                            <span className="text-slate-600 text-[10px] font-bold">區域匯集碳排</span><span className="font-mono font-black text-indigo-600 text-xs">{(Number(hoveredNode.emissions || 0) / 10000).toFixed(1)} 萬噸</span>
+                            <span className="text-slate-600 text-[10px] font-bold">區域匯集碳排</span><span className="font-mono font-black text-indigo-600 text-xs">{(Number(displayNode.emissions || 0) / 10000).toFixed(1)} 萬噸</span>
                         </div>
                     </div>
                 )}
-                {hoveredNode && hoveredNode.nodeType === 'planning_source' && (
+                {displayNode && displayNode.nodeType === 'planning_source' && (
                     <div>
                         <div className="flex items-center gap-2 mb-2 border-b border-rose-100 pb-1.5">
-                            <Factory size={16} className={hoveredNode.isPowerPlant ? "text-purple-600" : (hoveredNode.isPriority ? "text-rose-600" : "text-orange-500")}/>
-                            <h3 className="font-bold text-slate-800 text-sm truncate">{hoveredNode.Company} <span className="text-slate-500 font-medium">{hoveredNode.Plant}</span></h3>
+                            <Factory size={16} className={displayNode.isPowerPlant ? "text-purple-600" : (displayNode.isPriority ? "text-rose-600" : "text-orange-500")}/>
+                            <h3 className="font-bold text-slate-800 text-sm truncate">{displayNode.Company} <span className="text-slate-500 font-medium">{displayNode.Plant}</span></h3>
                         </div>
                         <div className="space-y-1 text-xs text-slate-600">
-                            <div className="flex justify-between items-center"><span className="text-slate-400">隸屬聚落</span> <span className="font-bold text-slate-700 truncate max-w-[100px]">{hoveredNode.zone}</span></div>
-                            <div className="flex justify-between items-center"><span className="text-slate-400">管線狀態</span> <span className={`font-bold ${hoveredNode.distanceToHub < 0 ? (hoveredNode.landDist > 0 ? 'text-amber-600' : 'text-slate-400') : 'text-emerald-600'}`}>
-                                {hoveredNode.distanceToHub < 0 ? (hoveredNode.landDist > 0 ? `陸運接駁 (${(Number(hoveredNode.landDist)||0).toFixed(1)}km)` : '距離過遠無法納入') : `直線接入 (${(Number(hoveredNode.distanceToCenter)||0).toFixed(1)}km)`}
+                            <div className="flex justify-between items-center"><span className="text-slate-400">隸屬聚落</span> <span className="font-bold text-slate-700 truncate max-w-[100px]">{displayNode.zone}</span></div>
+                            <div className="flex justify-between items-center"><span className="text-slate-400">管線狀態</span> <span className={`font-bold ${displayNode.distanceToHub < 0 ? (displayNode.landDist > 0 ? 'text-amber-600' : 'text-slate-400') : 'text-emerald-600'}`}>
+                                {displayNode.distanceToHub < 0 ? (displayNode.landDist > 0 ? `陸運接駁 (${(Number(displayNode.landDist)||0).toFixed(1)}km)` : '距離過遠無法納入') : `直線接入 (${(Number(displayNode.distanceToCenter)||0).toFixed(1)}km)`}
                             </span></div>
                             <div className="mt-1.5 bg-slate-50 p-2 rounded-lg border border-slate-200 flex flex-col gap-1">
-                                <div className="flex justify-between items-center"><span className="text-slate-600 font-bold">總排 (範1+2)</span><span className="font-mono font-black text-slate-600 text-xs">{(Number(hoveredNode.TotalScope || 0) / 10000).toFixed(1)} <span className="text-[9px] font-normal">萬噸</span></span></div>
-                                <div className="flex justify-between items-center text-[10px] mt-1 pt-1 border-t border-slate-200"><span className="text-rose-600 font-bold">範疇一 (可CCS)</span><span className="font-mono text-rose-600 font-bold">{(Number(hoveredNode.Scope1 || 0) / 10000).toFixed(1)} 萬噸</span></div>
+                                <div className="flex justify-between items-center"><span className="text-slate-600 font-bold">總排 (範1+2)</span><span className="font-mono font-black text-slate-600 text-xs">{(Number(displayNode.TotalScope || 0) / 10000).toFixed(1)} <span className="text-[9px] font-normal">萬噸</span></span></div>
+                                <div className="flex justify-between items-center text-[10px] mt-1 pt-1 border-t border-slate-200"><span className="text-rose-600 font-bold">範疇一 (可CCS)</span><span className="font-mono text-rose-600 font-bold">{(Number(displayNode.Scope1 || 0) / 10000).toFixed(1)} 萬噸</span></div>
                             </div>
                         </div>
                     </div>
                 )}
-                {hoveredNode && hoveredNode.nodeType === 'capture' && (
+                {displayNode && displayNode.nodeType === 'capture' && (
                     <div>
                         <div className="flex items-center gap-2 mb-2 border-b border-slate-100 pb-1.5">
                             <Factory size={16} className="text-blue-600"/>
-                            <h3 className="font-bold text-slate-800 text-sm truncate">{hoveredNode.Company} <span className="text-slate-500 font-medium">{hoveredNode.Plant}</span></h3>
+                            <h3 className="font-bold text-slate-800 text-sm truncate">{displayNode.Company} <span className="text-slate-500 font-medium">{displayNode.Plant}</span></h3>
                         </div>
                         <div className="space-y-1 text-xs text-slate-600">
-                            <div className="flex justify-between items-center"><span className="text-slate-400">來源製程</span> <span className="font-bold text-slate-700 truncate max-w-[100px]">{hoveredNode.Capture_Source || '-'}</span></div>
-                            <div className="flex justify-between items-center"><span className="text-slate-400">捕捉技術</span> <span className="font-bold text-blue-700 bg-blue-50 px-1 py-0.5 rounded truncate max-w-[100px]">{hoveredNode.Capture_Tech || '-'} (TRL {hoveredNode.TRL})</span></div>
+                            <div className="flex justify-between items-center"><span className="text-slate-400">來源製程</span> <span className="font-bold text-slate-700 truncate max-w-[100px]">{displayNode.Capture_Source || '-'}</span></div>
+                            <div className="flex justify-between items-center"><span className="text-slate-400">捕捉技術</span> <span className="font-bold text-blue-700 bg-blue-50 px-1 py-0.5 rounded truncate max-w-[100px]">{displayNode.Capture_Tech || '-'} (TRL {displayNode.TRL})</span></div>
                             <div className="mt-1.5 bg-blue-50 p-2 rounded-lg border border-blue-100 space-y-1 text-[10px]">
-                                <div className="flex justify-between"><span className="text-slate-500">總捕捉量(A):</span><span className="font-mono font-bold text-slate-700">{Number(hoveredNode.Capture_Volume||0).toFixed(2)} 萬噸</span></div>
-                                <div className="flex justify-between"><span className="text-rose-500">設備耗能(B):</span><span className="font-mono font-bold text-rose-600">-{Number(hoveredNode.Captur_energy||0).toFixed(2)} 萬噸</span></div>
-                                <div className="flex justify-between pt-1 border-t border-blue-200 mt-1"><span className="text-blue-800 font-bold">淨捕捉量(=A-B)</span><span className="font-mono font-black text-blue-700">{Number(hoveredNode.Net_Capture_Volume||0).toFixed(2)} 萬噸</span></div>
+                                <div className="flex justify-between"><span className="text-slate-500">總捕捉量(A):</span><span className="font-mono font-bold text-slate-700">{Number(displayNode.Capture_Volume||0).toFixed(2)} 萬噸</span></div>
+                                <div className="flex justify-between"><span className="text-rose-500">設備耗能(B):</span><span className="font-mono font-bold text-rose-600">-{Number(displayNode.Captur_energy||0).toFixed(2)} 萬噸</span></div>
+                                <div className="flex justify-between pt-1 border-t border-blue-200 mt-1"><span className="text-blue-800 font-bold">淨捕捉量(=A-B)</span><span className="font-mono font-black text-blue-700">{Number(displayNode.Net_Capture_Volume||0).toFixed(2)} 萬噸</span></div>
                             </div>
                         </div>
                     </div>
                 )}
-                {hoveredNode && hoveredNode.nodeType === 'future' && (
+                {displayNode && displayNode.nodeType === 'future' && (
                      <div>
                         <div className="flex items-center gap-2 mb-2 border-b border-amber-100 pb-1.5">
-                            <Rocket size={16} className="text-amber-600"/><h3 className="font-bold text-slate-800 text-sm truncate">{hoveredNode.Company} <span className="text-slate-500 font-medium">{hoveredNode.Plant}</span></h3>
+                            <Rocket size={16} className="text-amber-600"/><h3 className="font-bold text-slate-800 text-sm truncate">{displayNode.Company} <span className="text-slate-500 font-medium">{displayNode.Plant}</span></h3>
                         </div>
                         <div className="space-y-1 text-xs text-slate-600">
-                            <div className="flex justify-between items-center"><span className="text-slate-400">潛在安裝來源</span> <span className="font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded truncate max-w-[120px]">{hoveredNode.Potential_Source || '-'}</span></div>
+                            <div className="flex justify-between items-center"><span className="text-slate-400">潛在安裝來源</span> <span className="font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded truncate max-w-[120px]">{displayNode.Potential_Source || '-'}</span></div>
                             <div className="mt-1.5 flex justify-between items-center bg-amber-50 p-2 rounded-lg border border-amber-200">
-                                <span className="text-amber-800 font-bold">未來總排放潛力</span><span className="font-mono font-black text-amber-600 text-xs">{Number(hoveredNode.Future_Emission_Volume||0).toFixed(1)} <span className="text-[9px] font-normal">萬噸</span></span>
+                                <span className="text-amber-800 font-bold">未來總排放潛力</span><span className="font-mono font-black text-amber-600 text-xs">{Number(displayNode.Future_Emission_Volume||0).toFixed(1)} <span className="text-[9px] font-normal">萬噸</span></span>
                             </div>
                         </div>
                      </div>
                 )}
-                {hoveredNode && hoveredNode.nodeType === 'util' && (
+                {displayNode && displayNode.nodeType === 'util' && (
                     <div>
                         <div className="flex items-center gap-2 mb-2 border-b border-slate-100 pb-1.5">
-                            <FlaskConical size={16} className="text-emerald-600"/><h3 className="font-bold text-slate-800 text-sm truncate">{hoveredNode.Target_Company} <span className="text-slate-500 font-medium">{hoveredNode.Target_Plant}</span></h3>
+                            <FlaskConical size={16} className="text-emerald-600"/><h3 className="font-bold text-slate-800 text-sm truncate">{displayNode.Target_Company} <span className="text-slate-500 font-medium">{displayNode.Target_Plant}</span></h3>
                         </div>
                         <div className="space-y-1 text-xs text-slate-600">
-                            <div className="flex justify-between items-center"><span className="text-slate-400">再利用技術</span> <span className="font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded truncate max-w-[120px]">{hoveredNode.Conversion_Tech || '-'}</span></div>
+                            <div className="flex justify-between items-center"><span className="text-slate-400">再利用技術</span> <span className="font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded truncate max-w-[120px]">{displayNode.Conversion_Tech || '-'}</span></div>
                             <div className="mt-1.5 flex justify-between items-center bg-emerald-50 p-2 rounded-lg border border-emerald-100">
-                                <span className="text-emerald-800 font-bold">預期總需求</span><span className="font-mono font-black text-emerald-600 text-xs">{Number(hoveredNode.Expected_Demand||0).toFixed(1)} <span className="text-[9px] font-normal">萬噸</span></span>
+                                <span className="text-emerald-800 font-bold">預期總需求</span><span className="font-mono font-black text-emerald-600 text-xs">{Number(displayNode.Expected_Demand||0).toFixed(1)} <span className="text-[9px] font-normal">萬噸</span></span>
                             </div>
                         </div>
                     </div>
                 )}
-                {hoveredNode && hoveredNode.nodeType === 'storage' && (
+                {displayNode && displayNode.nodeType === 'storage' && (
                     <div>
                         <div className="flex items-center gap-2 mb-2 border-b border-slate-100 pb-1.5">
-                            <Box size={16} className="text-rose-600"/><h3 className="font-bold text-slate-800 text-sm truncate">{hoveredNode.Storage_Site}</h3>
+                            <Box size={16} className="text-rose-600"/><h3 className="font-bold text-slate-800 text-sm truncate">{displayNode.Storage_Site}</h3>
                         </div>
                         <div className="space-y-1 text-xs text-slate-600">
-                            <div className="flex justify-between items-center"><span className="text-slate-400">碳源公司</span> <span className="font-bold text-slate-700 truncate max-w-[120px]">{hoveredNode.Source_Company}</span></div>
+                            <div className="flex justify-between items-center"><span className="text-slate-400">碳源公司</span> <span className="font-bold text-slate-700 truncate max-w-[120px]">{displayNode.Source_Company}</span></div>
                             <div className="mt-1.5 flex justify-between items-center bg-rose-50 p-2 rounded-lg border border-rose-100">
-                                <span className="text-rose-800 font-bold">可封存總量</span><span className="font-mono font-black text-rose-600 text-xs">{Number(hoveredNode.Capturable_Volume||0).toFixed(1)} <span className="text-[9px] font-normal">萬噸</span></span>
+                                <span className="text-rose-800 font-bold">可封存總量</span><span className="font-mono font-black text-rose-600 text-xs">{Number(displayNode.Capturable_Volume||0).toFixed(1)} <span className="text-[9px] font-normal">萬噸</span></span>
                             </div>
                         </div>
                     </div>
@@ -783,15 +818,32 @@ const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], sto
                                 const [cx, cy] = projectBase(d.lon, d.lat);
                                 if (cx === -9999) return null;
                                 const r = Math.max(3, Math.min(14, (3 + Math.sqrt(Math.max(0, d.Scope1 || 0) / 100000)))) / zoom;
+                                const isPinned = pinnedNode?.Company === d.Company && pinnedNode?.Plant === d.Plant;
                                 const isHovered = hoveredNode?.Company === d.Company && hoveredNode?.Plant === d.Plant;
+                                const isActive = isPinned || isHovered;
                                 const isConnected = d.distanceToHub >= 0 || d.landDist > 0;
-                                const fillCol = d.isPowerPlant ? "#a855f7" : (d.isPriority ? "#e11d48" : "#f97316"); 
-                                const opac = isHovered ? 1 : (isConnected ? 0.9 : 0.3);
+                                const fillCol = d.isPowerPlant ? "#a855f7" : (d.isPriority ? "#e11d48" : "#f97316");
+                                const opac = isActive ? 1 : (isConnected ? 0.9 : 0.3);
+                                // 縮放密度區隔：畫面拉遠時只顯示色點避免文字擠成一團，
+                                // 拉近到一定程度後才顯示廠區名稱+碳排量的常駐標籤；
+                                // 已點選/滑鼠停留中的節點則不受縮放限制，一律顯示。
+                                const showLabel = isActive || zoom >= 2.2;
                                 return (
-                                    <g key={`s1-${i}`} className="cursor-pointer transition-all" onMouseEnter={() => setHoveredNode({...d, nodeType: 'planning_source'})} onMouseLeave={() => setHoveredNode(null)}>
+                                    <g
+                                        key={`s1-${i}`}
+                                        className="cursor-pointer transition-all"
+                                        onMouseEnter={() => setHoveredNode({...d, nodeType: 'planning_source'})}
+                                        onMouseLeave={() => setHoveredNode(null)}
+                                        onClick={(e) => { e.stopPropagation(); setPinnedNode({...d, nodeType: 'planning_source'}); }}
+                                    >
                                         <circle cx={cx} cy={cy} r={Math.max(r, 16/zoom)} fill="transparent" />
                                         {d.isPriority && isConnected && <circle cx={cx} cy={cy} r={r * 1.6} fill={fillCol} opacity={0.25} pointerEvents="none"/>}
-                                        <circle cx={cx} cy={cy} r={r} fill={fillCol} fillOpacity={opac} stroke={isConnected ? "white" : "transparent"} strokeWidth={(d.isPriority ? 1.5 : 1) / zoom} style={d.isPriority && isConnected ? { filter: 'drop-shadow(0px 2px 3px rgba(0,0,0,0.4))' } : {}} pointerEvents="none"/>
+                                        <circle cx={cx} cy={cy} r={r} fill={fillCol} fillOpacity={opac} stroke={isPinned ? "#1e293b" : (isConnected ? "white" : "transparent")} strokeWidth={(isPinned ? 2.5 : (d.isPriority ? 1.5 : 1)) / zoom} style={d.isPriority && isConnected ? { filter: 'drop-shadow(0px 2px 3px rgba(0,0,0,0.4))' } : {}} pointerEvents="none"/>
+                                        {showLabel && (
+                                            <text x={cx + r + (4/zoom)} y={cy + (3/zoom)} fontSize={10 / textScale} fill="#1e293b" fontWeight="900" paintOrder="stroke" stroke="white" strokeWidth={3/textScale} strokeLinejoin="round" className="pointer-events-none">
+                                                {simplifyCompanyName(d.Company)} <tspan fill="#be123c">{(Number(d.Scope1||0)/10000).toFixed(1)}萬噸</tspan>
+                                            </text>
+                                        )}
                                     </g>
                                 );
                             })}
@@ -876,44 +928,47 @@ const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], sto
 
                 {/* 寫入原生的 SVG 圖例 */}
                 {activeLayers.includes('planning') && (
-                    <g transform={`translate(20, ${baseHeight - 310})`}>
-                        <rect x="0" y="0" width="280" height="260" fill="rgba(255,255,255,0.95)" rx="8" stroke="#e2e8f0" strokeWidth="1" />
-                        
-                        <rect x="12" y="15" width="10" height="10" fill="#0ea5e9" stroke="white" strokeWidth="1" />
-                        <text x="30" y="24" fontSize="11" fill="#334155" fontWeight="bold">海洋接收站 / 本土封存樞紐 (可拖曳)</text>
-                        
-                        <rect x="12" y="35" width="10" height="10" fill="#b45309" stroke="white" strokeWidth="1" />
-                        <text x="30" y="44" fontSize="11" fill="#334155" fontWeight="bold">陸地封存場域 (可拖曳)</text>
-                        
-                        <line x1="12" y1="55" x2="268" y2="55" stroke="#e2e8f0" strokeWidth="1" />
-                        
-                        <circle cx="17" cy="70" r="5" fill="#a855f7" stroke="white" strokeWidth="1" />
-                        <text x="30" y="74" fontSize="11" fill="#334155" fontWeight="bold">大型發電廠 (按比例顯示碳排)</text>
+                    <g transform={`translate(20, ${baseHeight - 335})`}>
+                        <rect x="0" y="0" width="280" height="285" fill="rgba(255,255,255,0.95)" rx="8" stroke="#e2e8f0" strokeWidth="1" />
 
-                        <circle cx="17" cy="90" r="5" fill="#e11d48" stroke="white" strokeWidth="1" />
-                        <text x="30" y="94" fontSize="11" fill="#334155" fontWeight="bold">一般優先碳源 (≥ 2.5萬噸)</text>
-                        
-                        <circle cx="17" cy="110" r="3" fill="#f97316" opacity="0.8" />
-                        <text x="30" y="114" fontSize="11" fill="#334155" fontWeight="bold">次要碳源 (&lt; 2.5萬噸)</text>
+                        <text x="12" y="16" fontSize="9" fill="#94a3b8" fontWeight="bold">滾輪縮放畫面 / 點擊碳源廠區看詳細資料</text>
+                        <line x1="12" y1="24" x2="268" y2="24" stroke="#e2e8f0" strokeWidth="1" />
 
-                        <line x1="12" y1="125" x2="268" y2="125" stroke="#e2e8f0" strokeWidth="1" />
-                        
-                        <circle cx="17" cy="140" r="4" fill="#fff" stroke="#3b82f6" strokeWidth="2" />
-                        <text x="30" y="144" fontSize="11" fill="#334155" fontWeight="bold">統一管線節點 (可拖曳)</text>
-                        <text x="30" y="156" fontSize="9" fill="#64748b">操作: 點藍線新增 / 左點菜單 / 右鍵刪除</text>
+                        <rect x="12" y="34" width="10" height="10" fill="#0ea5e9" stroke="white" strokeWidth="1" />
+                        <text x="30" y="43" fontSize="11" fill="#334155" fontWeight="bold">海洋接收站 / 本土封存樞紐 (可拖曳)</text>
 
-                        <line x1="12" y1="175" x2="35" y2="175" stroke="#3b82f6" strokeWidth="3" />
-                        <text x="40" y="179" fontSize="11" fill="#334155" fontWeight="bold">自訂主幹管線 (&gt;50km以橘色警告)</text>
-                        
-                        <path d="M 12 195 L 35 195" stroke="#94a3b8" strokeWidth="2" fill="none" />
-                        <text x="40" y="199" fontSize="11" fill="#334155" fontWeight="bold">直線就近上管 (優先≤50km,次要≤20km)</text>
-                        
-                        <path d="M 12 215 Q 23.5 215, 35 210" stroke="#f59e0b" strokeWidth="1.5" strokeDasharray="4 4" fill="none" />
-                        <text x="40" y="219" fontSize="11" fill="#334155" fontWeight="bold">孤立廠區之陸運接駁路線 (可拖曳)</text>
-                        
-                        <line x1="12" y1="235" x2="35" y2="235" stroke="#0284c7" strokeWidth="2" strokeDasharray="6 6" opacity="0.6" />
-                        <circle cx="23" cy="235" r="3" fill="transparent" stroke="#0284c7" strokeWidth="1" />
-                        <text x="40" y="239" fontSize="11" fill="#334155" fontWeight="bold">樞紐海運外繞 (空心點可拖曳)</text>
+                        <rect x="12" y="54" width="10" height="10" fill="#b45309" stroke="white" strokeWidth="1" />
+                        <text x="30" y="63" fontSize="11" fill="#334155" fontWeight="bold">陸地封存場域 (可拖曳)</text>
+
+                        <line x1="12" y1="74" x2="268" y2="74" stroke="#e2e8f0" strokeWidth="1" />
+
+                        <circle cx="17" cy="89" r="5" fill="#a855f7" stroke="white" strokeWidth="1" />
+                        <text x="30" y="93" fontSize="11" fill="#334155" fontWeight="bold">大型發電廠 (按比例顯示碳排)</text>
+
+                        <circle cx="17" cy="109" r="5" fill="#e11d48" stroke="white" strokeWidth="1" />
+                        <text x="30" y="113" fontSize="11" fill="#334155" fontWeight="bold">一般優先碳源 (≥ 2.5萬噸)</text>
+
+                        <circle cx="17" cy="129" r="3" fill="#f97316" opacity="0.8" />
+                        <text x="30" y="133" fontSize="11" fill="#334155" fontWeight="bold">次要碳源 (&lt; 2.5萬噸，縮小/拉遠時只顯示色點)</text>
+
+                        <line x1="12" y1="144" x2="268" y2="144" stroke="#e2e8f0" strokeWidth="1" />
+
+                        <circle cx="17" cy="159" r="4" fill="#fff" stroke="#3b82f6" strokeWidth="2" />
+                        <text x="30" y="163" fontSize="11" fill="#334155" fontWeight="bold">統一管線節點 (可拖曳)</text>
+                        <text x="30" y="175" fontSize="9" fill="#64748b">操作: 點藍線新增 / 左點菜單 / 右鍵刪除</text>
+
+                        <line x1="12" y1="194" x2="35" y2="194" stroke="#3b82f6" strokeWidth="3" />
+                        <text x="40" y="198" fontSize="11" fill="#334155" fontWeight="bold">自訂主幹管線 (&gt;50km以橘色警告)</text>
+
+                        <path d="M 12 214 L 35 214" stroke="#94a3b8" strokeWidth="2" fill="none" />
+                        <text x="40" y="218" fontSize="11" fill="#334155" fontWeight="bold">直線就近上管 (優先≤50km,次要≤20km)</text>
+
+                        <path d="M 12 234 Q 23.5 234, 35 229" stroke="#f59e0b" strokeWidth="1.5" strokeDasharray="4 4" fill="none" />
+                        <text x="40" y="238" fontSize="11" fill="#334155" fontWeight="bold">孤立廠區之陸運接駁路線 (可拖曳)</text>
+
+                        <line x1="12" y1="254" x2="35" y2="254" stroke="#0284c7" strokeWidth="2" strokeDasharray="6 6" opacity="0.6" />
+                        <circle cx="23" cy="254" r="3" fill="transparent" stroke="#0284c7" strokeWidth="1" />
+                        <text x="40" y="258" fontSize="11" fill="#334155" fontWeight="bold">樞紐海運外繞 (空心點可拖曳)</text>
                     </g>
                 )}
 
@@ -1346,33 +1401,38 @@ const CcusDashboard = () => {
 
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col h-[400px]">
-                            <h3 className="font-bold text-slate-700 text-sm mb-3 border-b pb-2 flex items-center gap-2"><MapPin size={16} className="text-indigo-500"/> 區域與樞紐碳排分佈</h3>
-                            <div className="overflow-y-auto custom-scrollbar pr-2 space-y-4 flex-1">
-                                <div>
-                                    <h4 className="text-xs font-bold text-slate-500 mb-2">地理分區原生排放量 (範疇一)</h4>
-                                    <div className="grid grid-cols-2 gap-2">
-                                        {['北區', '中區', '南區', '東區'].map((reg) => (
-                                            <div key={reg} className="bg-slate-50 p-2 rounded border border-slate-100 flex justify-between items-center">
-                                                <span className="text-xs text-slate-600 font-bold">{reg}</span>
-                                                <span className="text-xs font-mono font-black text-rose-600">{(regionStats[reg]/10000).toFixed(1)} <span className="font-normal text-[9px] text-slate-400">萬噸</span></span>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                                <div>
-                                    <h4 className="text-xs font-bold text-slate-500 mb-2">封存樞紐管網預估接收量</h4>
-                                    <div className="space-y-2">
+                            <h3 className="font-bold text-slate-700 text-sm mb-3 border-b pb-2 flex items-center gap-2"><MapPin size={16} className="text-indigo-500"/> 區域碳排放圖表 (範疇一)</h3>
+                            <div className="h-32 w-full mb-3">
+                                <ErrorBoundary>
+                                    <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
+                                        <BarChart data={['北區', '中區', '南區', '東區'].map(reg => ({ name: reg, value: (regionStats[reg] || 0) / 10000 }))} margin={{ top: 5, right: 10, bottom: 0, left: 0 }}>
+                                            <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                                            <XAxis dataKey="name" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
+                                            <YAxis tick={{ fontSize: 10 }} axisLine={false} tickLine={false} width={30} />
+                                            <Tooltip formatter={(v) => [`${Number(v).toFixed(1)} 萬噸`, '範疇一排放']} contentStyle={{ fontSize: '12px', borderRadius: '8px' }} />
+                                            <Bar dataKey="value" name="範疇一排放" fill="#e11d48" radius={[3, 3, 0, 0]} barSize={32}>
+                                                <LabelList dataKey="value" position="top" fontSize={10} fontWeight="bold" fill="#be123c" formatter={v => Number(v).toFixed(1)} />
+                                            </Bar>
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                </ErrorBoundary>
+                            </div>
+                            <h4 className="text-xs font-bold text-slate-500 mb-2 border-t border-slate-100 pt-3">封存樞紐管網預估接收量 (資訊表格)</h4>
+                            <div className="flex-1 overflow-y-auto custom-scrollbar border border-slate-100 rounded-lg">
+                                <table className="w-full text-xs text-left">
+                                    <thead className="bg-blue-50/60 sticky top-0"><tr><th className="p-2 text-blue-800">樞紐</th><th className="p-2 text-right text-blue-800">預估接收量</th></tr></thead>
+                                    <tbody className="divide-y divide-blue-50">
                                         {Object.values(hubs).map(hub => {
                                             const val = ccsTopology?.hubEmissions?.[hub.id] || 0;
                                             return (
-                                                <div key={hub.id} className="bg-blue-50 p-2 rounded border border-blue-100 flex justify-between items-center">
-                                                    <span className="text-xs text-blue-800 font-bold truncate pr-2" title={hub.name}>{hub.name}</span>
-                                                    <span className="text-xs font-mono font-black text-blue-700">{(val/10000).toFixed(1)} <span className="font-normal text-[9px] text-blue-400">萬噸</span></span>
-                                                </div>
+                                                <tr key={hub.id} className="hover:bg-blue-50/40">
+                                                    <td className="p-2 font-bold text-slate-700 truncate max-w-[140px]" title={hub.name}>{hub.name}</td>
+                                                    <td className="p-2 text-right font-mono font-black text-blue-700">{(val/10000).toFixed(1)} <span className="font-normal text-[9px] text-blue-400">萬噸</span></td>
+                                                </tr>
                                             );
                                         })}
-                                    </div>
-                                </div>
+                                    </tbody>
+                                </table>
                             </div>
                         </div>
 
