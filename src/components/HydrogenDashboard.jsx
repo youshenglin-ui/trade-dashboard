@@ -3,9 +3,10 @@ import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, 
   PieChart, Pie, Cell, ComposedChart, ScatterChart, Scatter, ZAxis, LabelList, Label, ReferenceLine
 } from 'recharts';
-import { 
-  Database, Calendar, AlertCircle, Activity, Factory, Leaf, Zap, MapPin, 
-  FileText, ZoomIn, ZoomOut, List, Maximize, Hand, Truck, GripHorizontal, RefreshCw, Layers, X
+import {
+  Database, Calendar, AlertCircle, Activity, Factory, Leaf, Zap, MapPin,
+  FileText, ZoomIn, ZoomOut, List, Maximize, Hand, Truck, GripHorizontal, RefreshCw, Layers, X,
+  LayoutGrid, PieChart as PieChartIcon, Table as TableIcon
 } from 'lucide-react';
 import {
   simplifyCompanyName, getProcessType, identifyProcess,
@@ -895,13 +896,21 @@ const StructureAnalysis = ({ data, typeField, valueField, categoryFn, colorMap }
     );
 };
 
+const DASHBOARD_TABS = [
+  { key: 'overview', label: '供需趨勢', icon: Database },
+  { key: 'structure', label: '結構分析', icon: PieChartIcon },
+  { key: 'efficiency', label: '碳排效率', icon: Leaf },
+  { key: 'regional', label: '區域解析', icon: Layers },
+  { key: 'raw', label: '原始資料', icon: TableIcon },
+];
+
 const HydrogenDashboard = () => {
   const [supplyData, setSupplyData] = useState([]);
   const [demandData, setDemandData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isFallback, setIsFallback] = useState(false);
   const [selectedYear, setSelectedYear] = useState('2025');
-  const [viewMode, setViewMode] = useState('dashboard');
+  const [activeTab, setActiveTab] = useState('overview');
   const [statusMsg, setStatusMsg] = useState('');
   const [rawData, setRawData] = useState({ supply: [], demand: [] }); 
 
@@ -981,8 +990,8 @@ const HydrogenDashboard = () => {
   if (loading) return <div className="p-10 text-center animate-pulse text-blue-600 flex flex-col items-center"><RefreshCw className="animate-spin mb-2"/> 氫能資料載入中...</div>;
 
   return (
-    <div className="space-y-8 p-4 bg-slate-50 rounded-lg animate-fade-in relative min-h-screen">
-       <div className="flex justify-between items-center bg-white p-3 rounded-xl border border-slate-200 shadow-sm">
+    <div className="space-y-6 p-4 bg-slate-50 rounded-lg animate-fade-in relative min-h-screen">
+       <div className="flex flex-wrap justify-between items-center gap-3 bg-white p-3 rounded-xl border border-slate-200 shadow-sm">
            <div className="flex items-center gap-4">
               <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2"><Factory className="text-blue-600"/> 氫能供需戰情室</h2>
               <div className="flex items-center gap-2 text-sm bg-slate-100 px-3 py-1 rounded-full">
@@ -993,16 +1002,27 @@ const HydrogenDashboard = () => {
                   </select>
               </div>
            </div>
-           <div className="flex items-center gap-3">
-             <span className="text-xs text-slate-400">{statusMsg}</span>
-             <div className="flex bg-slate-100 p-1 rounded-lg">
-                <button onClick={() => setViewMode('dashboard')} className={`px-3 py-1.5 text-xs font-bold rounded-md ${viewMode==='dashboard'?'bg-white shadow text-blue-600':'text-slate-500'}`}>儀表板</button>
-                <button onClick={() => setViewMode('data')} className={`px-3 py-1.5 text-xs font-bold rounded-md ${viewMode==='data'?'bg-white shadow text-blue-600':'text-slate-500'}`}>原始資料</button>
-             </div>
-           </div>
+           <span className="text-xs text-slate-400">{statusMsg}</span>
        </div>
 
-       {viewMode === 'dashboard' ? (
+       {/* 分頁導覽：原本 4 個區塊 + 原始資料表全部塞在同一個長頁面裡，
+           文字/圖表密度太高不好閱讀，改成每次只顯示一個分頁的內容。 */}
+       <div className="flex gap-1 bg-white p-1.5 rounded-xl border border-slate-200 shadow-sm overflow-x-auto">
+           {DASHBOARD_TABS.map(tab => {
+               const TabIcon = tab.icon;
+               return (
+                   <button
+                       key={tab.key}
+                       onClick={() => setActiveTab(tab.key)}
+                       className={`flex items-center gap-1.5 px-4 py-2 text-sm font-bold rounded-lg whitespace-nowrap transition-colors ${activeTab === tab.key ? 'bg-blue-600 text-white shadow' : 'text-slate-500 hover:bg-slate-100'}`}
+                   >
+                       <TabIcon size={15}/> {tab.label}
+                   </button>
+               );
+           })}
+       </div>
+
+       {activeTab === 'overview' && (
            <>
              {/* Row 1: Supply/Demand Trends & Balance */}
              <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
@@ -1021,7 +1041,11 @@ const HydrogenDashboard = () => {
                      <StackedTrendChart data={demandTrend.data} keys={demandTrend.keys} title="歷年總用量分佈 (公司廠區)" icon={Activity} />
                  </div>
              </div>
+           </>
+       )}
 
+       {activeTab === 'structure' && (
+           <>
              {/* Row 2: Structure Analysis (Pies) */}
              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                  <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col h-[400px]">
@@ -1038,7 +1062,11 @@ const HydrogenDashboard = () => {
                      </div>
                  </div>
              </div>
+           </>
+       )}
 
+       {activeTab === 'efficiency' && (
+           <>
              {/* Row 3: Scatter Matrix with Baselines */}
              <div className="grid grid-cols-1 gap-6">
                  <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col h-[450px]">
@@ -1133,15 +1161,18 @@ const HydrogenDashboard = () => {
                      </div>
                  </div>
              </div>
+           </>
+       )}
 
-             {/* Row 4: 區域深度解析 */}
+       {activeTab === 'regional' && (
              <div className="grid grid-cols-1 gap-6">
                  <div className="h-[750px]">
                      <RegionalDeepDive supplyData={supplyData} demandData={demandData} globalYear={selectedYear} />
                  </div>
              </div>
-           </>
-       ) : (
+       )}
+
+       {activeTab === 'raw' && (
            <div className="p-6 bg-white rounded-xl shadow overflow-auto h-[600px]">
                <h3 className="font-bold mb-4">原始數據檢視與診斷</h3>
                <div className="grid grid-cols-2 gap-6">
