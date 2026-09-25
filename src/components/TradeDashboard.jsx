@@ -7,129 +7,47 @@ import {
   TrendingUp, AlertTriangle, Database, ArrowRightLeft, Download, Table as TableIcon, 
   Calendar, Copy, ListFilter, Globe, Search, RefreshCw, BookOpen, Layers, Map as MapIcon 
 } from 'lucide-react';
-import { 
-  NAV_ITEMS, GLOBAL_EVENTS, TRADE_REGIONS, STRATEGIC_TOPICS, TOPIC_MILESTONES, COLORS 
+import {
+  NAV_ITEMS, GLOBAL_EVENTS, TRADE_REGIONS, STRATEGIC_TOPICS, TOPIC_MILESTONES, COLORS
 } from '../utils/constants';
-import { 
-  normalizeCode, isHsCodeMatch, cleanNumber, sanitizeForChart, formatSmartWeight, 
-  formatValueByUnit, getUnitLabel, formatCurrencyAxis, mapEventToDateKey, 
+import {
+  isHsCodeMatch, cleanNumber, sanitizeForChart, formatSmartWeight,
+  formatValueByUnit, getUnitLabel, formatCurrencyAxis, mapEventToDateKey,
   exportToCSV, copyToClipboard
 } from '../utils/helpers';
 import { ErrorBoundary, CustomTimeTooltip, renderCustomizedLabel, KPICard, MultiSelectDropdown } from './SharedComponents';
+import { fetchRelatedProductsByCountries } from '../lib/fetchTradeRecords';
 
 const TradeDashboard = ({
-  useRealData, dataset, setDataset, setDataHealth,
-  searchQuery, setSearchQuery, inputValue, setInputValue, 
-  currentTopic, setCurrentTopic, detectedProductName, setDetectedProductName,
-  setFetchError, setLoading, loading
+  useRealData, dataset,
+  searchQuery, currentTopic,
+  selectedTopicCodes, setSelectedTopicCodes,
+  loading
 }) => {
-  const [activeTab, setActiveTab] = useState('overview'); 
-  const [timeRange, setTimeRange] = useState(120); 
-  const [granularity, setGranularity] = useState('month'); 
-  const [countryViewType, setCountryViewType] = useState('出口'); 
-  const [countryMetric, setCountryMetric] = useState('value'); 
-  const [countryTopN, setCountryTopN] = useState('5'); 
-  const [pivotMode, setPivotMode] = useState('time'); 
+  const [activeTab, setActiveTab] = useState('overview');
+  const [timeRange, setTimeRange] = useState(120);
+  const [granularity, setGranularity] = useState('month');
+  const [countryViewType, setCountryViewType] = useState('出口');
+  const [countryMetric, setCountryMetric] = useState('value');
+  const [countryTopN, setCountryTopN] = useState('5');
+  const [pivotMode, setPivotMode] = useState('time');
   const [topicMetric, setTopicMetric] = useState('value');
-  const [selectedTopicCodes, setSelectedTopicCodes] = useState([]); 
-  const [selectedRegion, setSelectedRegion] = useState('ALL'); 
+  const [selectedRegion, setSelectedRegion] = useState('ALL');
   const [currencyUnit, setCurrencyUnit] = useState('thousand');
-  const [topicChartLevel, setTopicChartLevel] = useState('hs2'); 
+  const [topicChartLevel, setTopicChartLevel] = useState('hs2');
   const [trendViewMode, setTrendViewMode] = useState('summary');
-  const [displayData, setDisplayData] = useState([]);
-  const [relatedProducts, setRelatedProducts] = useState([]);
+  const [crossProductComparison, setCrossProductComparison] = useState([]);
 
-  // ** 1. Data Filtering Logic **
-  useEffect(() => {
-      // Re-trigger filter when dataset or query params change
-      if (dataset.length > 0) {
-          filterData(dataset, searchQuery);
-      }
-  }, [dataset, searchQuery, currentTopic, selectedTopicCodes]);
-
-  const filterData = (allData, query) => {
-      const aggMap = new Map();
-      let targetCodes = [];
-      let excludes = [];
-      
-      if (currentTopic) {
-          if (selectedTopicCodes.length > 0) {
-               targetCodes = selectedTopicCodes;
-               selectedTopicCodes.forEach(code => {
-                   const itemDef = STRATEGIC_TOPICS[currentTopic].items.find(i => i.code === code);
-                   if(itemDef && itemDef.excludes) excludes.push(...itemDef.excludes);
-               });
-          } else {
-               targetCodes = []; 
-          }
-      } else {
-          targetCodes = [query];
-      }
-
-      const cleanQuery = normalizeCode(query).toLowerCase();
-
-      allData.forEach(d => {
-          let isMatch = false;
-          const rawCleanCode = normalizeCode(d.hsCode);
-
-          if (excludes.some(ex => rawCleanCode.startsWith(normalizeCode(ex)))) return;
-
-          if (currentTopic) {
-              isMatch = targetCodes.some(c => isHsCodeMatch(d.hsCode, c));
-          } else {
-              isMatch = isHsCodeMatch(d.hsCode, cleanQuery) || (d.productName && d.productName.toLowerCase().includes(cleanQuery));
-          }
-
-          if (isMatch) {
-              const key = `${d.date}-${d.country}-${d.type}-${d.hsCode}`;
-              if (!aggMap.has(key)) aggMap.set(key, { ...d });
-              else {
-                  const existing = aggMap.get(key);
-                  existing.value += d.value;
-                  existing.weight += d.weight;
-              }
-          }
-      });
-
-      const filtered = Array.from(aggMap.values());
-      
-      const relatedSet = new Set();
-      if (!currentTopic) {
-        filtered.forEach(d => relatedSet.add(d.hsCode));
-      }
-      const relatedList = Array.from(relatedSet).map(code => {
-          const found = allData.find(d => d.hsCode === code);
-          return { code, name: found ? found.productName : code };
-      }).slice(0, 50); 
-      setRelatedProducts(relatedList.sort((a, b) => a.code.localeCompare(b.code)));
-
-      let displayTitle = '';
-      if (currentTopic) {
-          displayTitle = STRATEGIC_TOPICS[currentTopic].title;
-          if (selectedTopicCodes.length > 0) {
-              if (selectedTopicCodes.length === 1) {
-                  const item = STRATEGIC_TOPICS[currentTopic].items.find(i => i.code === selectedTopicCodes[0]);
-                  if (item) displayTitle += ` - ${item.name}`;
-              } else {
-                  displayTitle += ` (已選 ${selectedTopicCodes.length} 項)`;
-              }
-          }
-      } else {
-          const candidate = filtered.find(d => d.productName);
-          displayTitle = candidate ? candidate.productName : '搜尋結果';
-      }
-      setDetectedProductName(displayTitle);
-      setDisplayData(filtered);
-  };
-
-  // ** 2. Derived Data for Charts **
+  // ** 1. Derived Data for Charts **
+  // dataset 已經是 App.jsx 依目前搜尋條件（稅號/專題細項）向資料庫查詢、
+  // 並完成階層去重後的結果，這裡只需要再套時間範圍/地區這兩個純前端篩選。
   const filteredData = useMemo(() => {
-    if (displayData.length === 0) return [];
+    if (dataset.length === 0) return [];
     const cutoffDate = new Date();
     cutoffDate.setMonth(cutoffDate.getMonth() - timeRange);
     const cutoffStr = `${cutoffDate.getFullYear()}-${String(cutoffDate.getMonth()+1).padStart(2,'0')}`;
-    
-    return displayData.filter(d => {
+
+    return dataset.filter(d => {
         if (d.date < cutoffStr) return false;
         if (selectedRegion !== 'ALL') {
             const countries = TRADE_REGIONS[selectedRegion].countries;
@@ -137,7 +55,7 @@ const TradeDashboard = ({
         }
         return true;
     });
-  }, [displayData, timeRange, selectedRegion]);
+  }, [dataset, timeRange, selectedRegion]);
 
   const aggregatedData = useMemo(() => {
     const map = {};
@@ -345,20 +263,27 @@ const TradeDashboard = ({
       };
   }, [filteredData, pivotCountryData, countryViewType, countryMetric, granularity]);
 
-  const crossProductComparison = useMemo(() => {
-      if (!useRealData) return [];
+  // 原本掃描全量 dataset（所有稅號）找前 5 大貿易國的其他關聯產品，現在全量資料
+  // 不再整包留在瀏覽器，改成資料庫端聚合查詢（related_products_by_countries RPC）。
+  useEffect(() => {
       const topCountries = pivotCountryData.slice(0, 5).map(c => c.country);
-      const productMap = {};
-      dataset.forEach(d => {
-          if (topCountries.includes(d.country) && d.hsCode !== searchQuery) { 
-              if (!productMap[d.hsCode]) {
-                  productMap[d.hsCode] = { code: d.hsCode, name: d.productName || d.hsCode, totalValue: 0 };
-              }
-              productMap[d.hsCode].totalValue += d.value;
+      let cancelled = false;
+      (async () => {
+          if (!useRealData || topCountries.length === 0) {
+              if (!cancelled) setCrossProductComparison([]);
+              return;
           }
-      });
-      return Object.values(productMap).sort((a, b) => b.totalValue - a.totalValue).slice(0, 5); 
-  }, [dataset, pivotCountryData, useRealData, searchQuery]);
+          try {
+              const rows = await fetchRelatedProductsByCountries({ countries: topCountries, excludeCode: searchQuery, limit: 5 });
+              if (!cancelled) setCrossProductComparison(rows);
+          } catch (err) {
+              if (cancelled) return;
+              console.error('關聯產品查詢失敗:', err.message);
+              setCrossProductComparison([]);
+          }
+      })();
+      return () => { cancelled = true; };
+  }, [pivotCountryData, useRealData, searchQuery]);
 
   // ** 3. Render Helpers **
   const renderOverviewTab = () => (
