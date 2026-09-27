@@ -576,6 +576,17 @@ const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], sto
                             <h3 className="font-bold text-slate-800 text-sm truncate">{displayNode.Company} <span className="text-slate-500 font-medium">{displayNode.Plant}</span></h3>
                         </div>
                         <div className="space-y-1 text-xs text-slate-600">
+                            {displayNode.address && (
+                                <div className="flex justify-between items-start gap-2">
+                                    <span className="text-slate-400 shrink-0">廠址</span>
+                                    <span className="font-medium text-slate-700 text-right">
+                                        {displayNode.address}
+                                        <span className={`ml-1 text-[9px] font-bold px-1 py-0.5 rounded ${displayNode.coordSource === 'verified' ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'}`}>
+                                            {displayNode.coordSource === 'verified' ? '精確定位' : '道路級定位'}
+                                        </span>
+                                    </span>
+                                </div>
+                            )}
                             <div className="flex justify-between items-center"><span className="text-slate-400">隸屬聚落</span> <span className="font-bold text-slate-700 truncate max-w-[100px]">{displayNode.zone}</span></div>
                             <div className="flex justify-between items-center"><span className="text-slate-400">管線狀態</span> <span className={`font-bold ${displayNode.distanceToHub < 0 ? (displayNode.landDist > 0 ? 'text-amber-600' : 'text-slate-400') : 'text-emerald-600'}`}>
                                 {displayNode.distanceToHub < 0 ? (displayNode.landDist > 0 ? `陸運接駁 (${(Number(displayNode.landDist)||0).toFixed(1)}km)` : '距離過遠無法納入') : `直線接入 (${(Number(displayNode.distanceToCenter)||0).toFixed(1)}km)`}
@@ -1158,7 +1169,7 @@ const CcusDashboard = () => {
     const [captureData, setCaptureData] = useState([]);
     const [utilizationData, setUtilizationData] = useState([]);
     const [storageData, setStorageData] = useState([]);
-    const [scope1Data, setScope1Data] = useState([]); 
+    const [rawScope1Rows, setRawScope1Rows] = useState([]); // scope1.csv 解析結果，座標先套用推估值，實際顯示用的 scope1Data 見下方 useMemo
     const [mapPaths, setMapPaths] = useState([]); 
     const [loading, setLoading] = useState(true);
     const [selectedYear, setSelectedYear] = useState('ALL');
@@ -1218,7 +1229,7 @@ const CcusDashboard = () => {
                 const rawCap = parseCSV(txtCap); const rawUtil = parseCSV(txtUtil);
                 const rawStore = parseCSV(txtStore); const rawScope1 = parseCSV(txtScope1);
 
-                setScope1Data(rawScope1.map(d => {
+                setRawScope1Rows(rawScope1.map(d => {
                     const keys = Object.keys(d);
                     const nameKey = keys.find(k => k.includes('事業名稱') || k.includes('公司名稱') || k.includes('廠區')) || '事業名稱';
                     const emit1Key = keys.find(k => k.includes('直接排放') || k.includes('範疇一') || k.includes('Scope 1') || k === '直接排放量(公噸CO2e)') || '直接排放量(公噸CO2e)';
@@ -1226,11 +1237,12 @@ const CcusDashboard = () => {
                     const emitTotalKey = keys.find(k => k.includes('合計排放') || k.includes('總排') || k === '合計排放量(公噸CO2e)') || '合計排放量(公噸CO2e)';
                     const indKey = keys.find(k => k.includes('七大製造業') || k.includes('行業分類')) || '行業分類';
                     const countyKey = keys.find(k => k.includes('縣市別') || k.includes('地址') || k.includes('所在')) || '縣市別';
+                    const controlNoKey = keys.find(k => k.includes('管制編號')) || '管制編號';
 
                     const rawName = String(d[nameKey] || '').trim(); if (!rawName) return null;
                     const comp = simplifyCompanyName(rawName);
-                    const plantRaw = rawName.replace(d['公司'] || '', '').replace(comp, '').replace(/股份有限公司|工業|企業|分公司/g, '').trim(); 
-                    
+                    const plantRaw = rawName.replace(d['公司'] || '', '').replace(comp, '').replace(/股份有限公司|工業|企業|分公司/g, '').trim();
+
                     let countyStr = String(d[countyKey] || '').trim();
                     const countyMatch = countyStr.match(/(基隆|台北|臺北|新北|桃園|新竹|苗栗|台中|臺中|彰化|南投|雲林|嘉義|台南|臺南|高雄|屏東|宜蘭|花蓮|台東|臺東)/);
                     if (countyMatch) countyStr = countyMatch[0].replace('臺', '台'); else countyStr = '未知';
@@ -1242,13 +1254,13 @@ const CcusDashboard = () => {
 
                     const isPowerPlant = comp.includes('台電') || rawName.includes('發電廠');
 
-                    return { Company: comp, Plant: rawName, Scope1: scope1Val, Scope2: scope2Val, TotalScope: totalVal, Industry: d[indKey] || '', County: countyStr, zone, Region: region, lat: coords.lat, lon: coords.lon, isPowerPlant };
+                    return { Company: comp, Plant: rawName, controlNo: String(d[controlNoKey] || '').trim(), Scope1: scope1Val, Scope2: scope2Val, TotalScope: totalVal, Industry: d[indKey] || '', County: countyStr, zone, Region: region, lat: coords.lat, lon: coords.lon, coordSource: 'approximate', isPowerPlant };
                 }).filter(d => {
                     if (!d || d.TotalScope <= 0) return false;
                     const scope2Ratio = d.Scope2 / d.TotalScope;
-                    if (scope2Ratio > 0.7 && d.Scope1 < 50000) return false; 
-                    return true; 
-                }).sort((a,b) => b.Scope1 - a.Scope1)); 
+                    if (scope2Ratio > 0.7 && d.Scope1 < 50000) return false;
+                    return true;
+                }).sort((a,b) => b.Scope1 - a.Scope1));
 
                 setCaptureData(rawCap.map(d => {
                     const capVol = cleanNumber(d.Capture_Volume); const capEng = cleanNumber(d.Captur_energy || d.Emission_Per_Ton); 
@@ -1276,6 +1288,26 @@ const CcusDashboard = () => {
         };
         fetchAllData();
     }, []);
+
+    // 用 control_no 對應「歷年登錄總覽」表裡人工查核過的地址/座標——有的話取代
+    // 原本靠公司名關鍵字比對+隨機偏移的推估值，目前約 206 家優先碳源裡有 175 家
+    // 已補上精確座標，其餘仍沿用推估值。
+    const registryCoordByControlNo = useMemo(() => {
+        // 注意：本檔案已從 lucide-react import 了一個叫 Map 的圖示元件，蓋掉了
+        // 全域的 Map 建構子，這裡一定要用 globalThis.Map，不能直接寫 new Map()。
+        const map = new globalThis.Map();
+        registryData.forEach(r => {
+            if (r.control_no && r.latitude != null && r.longitude != null && !map.has(r.control_no)) {
+                map.set(r.control_no, { lat: Number(r.latitude), lon: Number(r.longitude), coordSource: r.coord_source || 'verified', address: r.address });
+            }
+        });
+        return map;
+    }, [registryData]);
+
+    const scope1Data = useMemo(() => rawScope1Rows.map(row => {
+        const verified = row.controlNo && registryCoordByControlNo.get(row.controlNo);
+        return verified ? { ...row, lat: verified.lat, lon: verified.lon, coordSource: verified.coordSource, address: verified.address } : row;
+    }), [rawScope1Rows, registryCoordByControlNo]);
 
     const availableYears = useMemo(() => Array.from(new Set([...captureData.map(d=>d.Year), ...utilizationData.map(d=>d.Year), ...storageData.map(d=>d.Year)])).filter(Boolean).sort(), [captureData, utilizationData, storageData]);
     const fCapture = useMemo(() => captureData.filter(d => selectedYear === 'ALL' || d.Year === selectedYear), [captureData, selectedYear]);

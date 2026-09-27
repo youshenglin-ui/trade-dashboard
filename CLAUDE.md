@@ -53,9 +53,18 @@
      登錄總覽」分頁，見 `src/lib/fetchEmissionRecords.js`），對 (roc_year, control_no) 有唯一鍵。
      這個資料來源**沒有批次下載 API**（該網站是查詢表單，不是資料集），每年更新流程見
      `scripts/import-ccus-emission-records.mjs` 開頭的說明；已設定一個每年 11/1 的排程提醒
-     使用者去下載最新清冊。地址/座標目前大多是空的或用公司名關鍵字比對的粗略估計值
-     （`getApproximateCoordinates`），只有 `capture.csv` 裡少數已裝 CCUS 的廠區有精確經緯度
-     ——政府公開資料本身只到縣市層級，沒有街道地址，要更精確需要另外補資料來源。
+     使用者去下載最新清冊。地址/座標：2026-09 為「排放地圖上的優先碳源」（scope1.csv 篩出
+     範疇一 ≥ 2.5萬噸或電廠，共 206 家）逐一網路查證了實際地址（主要來源「透明足跡」
+     thaubing.gcaa.org.tw/facility/<control_no>，跟環境部登錄平台同源），再用 Nominatim
+     幾何編碼補上座標，寫回 `ccus_emission_records` 的 `address` / `latitude` / `longitude` /
+     `coord_source`（'verified'=精確門牌、'verified_road'=只配到路名層級，206 家中 175 家
+     有座標、31 家僅有地址文字但無座標）。CcusDashboard.jsx 的規劃地圖用 `control_no` 把
+     `scope1Data` 跟這張表的座標 join 起來（`registryCoordByControlNo`），有查證過的資料就
+     取代原本 `getApproximateCoordinates` 的公司名關鍵字推估值，廠區詳細面板也會顯示地址跟
+     定位精度標籤。其餘未在地圖上列為優先碳源的家數，地址/座標欄位仍是空的。
+     **注意**：這個檔案 import 了 lucide-react 的 `Map` 圖示元件，會蓋掉全域的 `Map` 建構子
+     ——檔案內任何地方要用 `new Map()` 都要寫成 `new globalThis.Map()`，已經在
+     `registryCoordByControlNo` 踩過這個坑（曾經讓整個 CCUS 頁面白屏)。
 2. **地圖**：CCUS 戰情室現有的手刻 SVG 地圖（座標寫死、手算縮放）已經做過幾輪互動優化
    （滑鼠滾輪縮放、縮放時的標籤密度區隔、點擊廠區彈出詳細資訊、樞紐/聚落可拖曳搬遷），但
    底層還是手刻 SVG，還沒換成 MapLibre GL JS（向量地圖、原生支援縮放時標籤密度自動調整）；
