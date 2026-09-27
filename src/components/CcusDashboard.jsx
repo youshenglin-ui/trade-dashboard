@@ -5,10 +5,11 @@ import {
 } from 'recharts';
 import {
   Leaf, RefreshCw, Target, Activity, MapPin, DollarSign, Box, AlertTriangle,
-  Truck, Ship, GripHorizontal, FlaskConical, Plus, ZoomIn, ZoomOut, Maximize, Factory, List, Rocket, Map, Route, Anchor, Layers, Filter, PieChart as PieChartIcon, DownloadCloud, Copy, Trash2, X
+  Truck, Ship, GripHorizontal, FlaskConical, Plus, ZoomIn, ZoomOut, Maximize, Factory, List, Rocket, Map, Route, Anchor, Layers, Filter, PieChart as PieChartIcon, DownloadCloud, Copy, Trash2, X, Database
 } from 'lucide-react';
 import { CCUS_DATA_SOURCES } from '../config/dataSources';
 import { cleanNumber } from '../utils/helpers';
+import { fetchAllEmissionRecords } from '../lib/fetchEmissionRecords';
 
 export const simplifyCompanyName = (name) => {
   if (!name) return '';
@@ -1010,6 +1011,146 @@ const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], sto
     );
 };
 
+// ==========================================
+// 歷年登錄總覽：環境部溫室氣體排放量登錄平台 104-113 年全部登錄家數，
+// 跟 CCUS 管線規劃用的「單一年度快照」(scope1Data) 分開維護 —— 規劃地圖只
+// 需要最新年度，但這裡要能看歷年趨勢、依年度/縣市/產業篩選查詢。
+// ==========================================
+const RegistryOverviewTab = ({ data }) => {
+    const [selectedYear, setSelectedYear] = useState(null);
+    const [regionFilter, setRegionFilter] = useState('ALL');
+    const [industryFilter, setIndustryFilter] = useState('ALL');
+
+    const years = useMemo(() => Array.from(new Set(data.map(d => d.roc_year))).sort((a, b) => a - b), [data]);
+
+    useEffect(() => {
+        if (years.length > 0 && (selectedYear === null || !years.includes(selectedYear))) {
+            setSelectedYear(years[years.length - 1]);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [years]);
+
+    const yearlyTrend = useMemo(() => {
+        const map = {};
+        data.forEach(d => {
+            if (!map[d.roc_year]) map[d.roc_year] = { year: d.roc_year, scope1: 0, scope2: 0, count: 0 };
+            map[d.roc_year].scope1 += Number(d.scope1_tons) || 0;
+            map[d.roc_year].scope2 += Number(d.scope2_tons) || 0;
+            map[d.roc_year].count += 1;
+        });
+        return Object.values(map).sort((a, b) => a.year - b.year);
+    }, [data]);
+
+    const yearData = useMemo(() => data.filter(d => d.roc_year === selectedYear), [data, selectedYear]);
+    const counties = useMemo(() => Array.from(new Set(yearData.map(d => d.county).filter(Boolean))).sort(), [yearData]);
+    const industries = useMemo(() => Array.from(new Set(yearData.map(d => d.industry).filter(Boolean))).sort(), [yearData]);
+
+    const filteredYearData = useMemo(() => yearData
+        .filter(d => (regionFilter === 'ALL' || d.county === regionFilter) && (industryFilter === 'ALL' || d.industry === industryFilter))
+        .sort((a, b) => (Number(b.total_tons) || 0) - (Number(a.total_tons) || 0)), [yearData, regionFilter, industryFilter]);
+
+    const topCompanies = useMemo(() => filteredYearData.slice(0, 15).map(d => ({
+        name: d.company_name.length > 12 ? d.company_name.slice(0, 12) + '…' : d.company_name,
+        fullName: d.company_name,
+        total: Number(d.total_tons) || 0,
+    })), [filteredYearData]);
+
+    const yearTotal = filteredYearData.reduce((s, d) => s + (Number(d.total_tons) || 0), 0);
+
+    if (!selectedYear) return <div className="p-10 text-center text-slate-400">尚無歷年登錄資料</div>;
+
+    return (
+        <div className="space-y-6 animate-fade-in">
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col h-[320px]">
+                <h3 className="font-bold text-slate-700 text-sm mb-3 border-b pb-2 flex items-center gap-2"><Activity size={16} className="text-indigo-500" /> 歷年全國登錄排放趨勢 ({years[0]}-{years[years.length - 1]}年)</h3>
+                <div className="flex-1 min-h-0">
+                    <ErrorBoundary>
+                        <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
+                            <BarChart data={yearlyTrend} margin={{ top: 10, right: 20, bottom: 10, left: 0 }}>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                                <XAxis dataKey="year" tick={{ fontSize: 11 }} tickFormatter={v => `${v}年`} />
+                                <YAxis tick={{ fontSize: 10 }} tickFormatter={v => (v / 10000).toFixed(0) + '萬'} />
+                                <Tooltip formatter={(v, n) => [`${(Number(v) / 10000).toFixed(1)} 萬噸`, n]} labelFormatter={v => `民國${v}年 (登錄 ${yearlyTrend.find(y => y.year === v)?.count || 0} 家)`} />
+                                <Legend />
+                                <Bar dataKey="scope1" name="範疇一(直接排放)" stackId="a" fill="#e11d48" />
+                                <Bar dataKey="scope2" name="範疇二(能源間接)" stackId="a" fill="#94a3b8" />
+                            </BarChart>
+                        </ResponsiveContainer>
+                    </ErrorBoundary>
+                </div>
+            </div>
+
+            <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex flex-wrap items-center gap-3">
+                <span className="text-xs font-bold text-slate-500">檢視年度</span>
+                <select value={selectedYear} onChange={e => setSelectedYear(Number(e.target.value))} className="bg-slate-50 border border-slate-200 rounded px-2 py-1 text-sm font-bold text-indigo-700">
+                    {years.map(y => <option key={y} value={y}>{y}年</option>)}
+                </select>
+                <select value={regionFilter} onChange={e => setRegionFilter(e.target.value)} className="bg-slate-50 border border-slate-200 rounded px-2 py-1 text-sm">
+                    <option value="ALL">全部縣市</option>
+                    {counties.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+                <select value={industryFilter} onChange={e => setIndustryFilter(e.target.value)} className="bg-slate-50 border border-slate-200 rounded px-2 py-1 text-sm">
+                    <option value="ALL">全部產業</option>
+                    {industries.map(i => <option key={i} value={i}>{i}</option>)}
+                </select>
+                <div className="ml-auto text-xs text-slate-500">符合條件 <span className="font-bold text-slate-700">{filteredYearData.length}</span> 家，合計 <span className="font-bold text-rose-600">{(yearTotal / 10000).toFixed(1)} 萬噸</span></div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col h-[420px]">
+                    <h3 className="font-bold text-slate-700 text-sm mb-3 border-b pb-2 flex items-center gap-2"><List size={16} className="text-rose-500" /> {selectedYear}年排放量前 15 大廠區</h3>
+                    <div className="flex-1 min-h-0">
+                        <ErrorBoundary>
+                            <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
+                                <BarChart data={topCompanies} layout="vertical" margin={{ top: 5, right: 40, left: 10, bottom: 5 }}>
+                                    <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} />
+                                    <XAxis type="number" tickFormatter={v => (v / 10000).toFixed(0) + '萬'} fontSize={10} />
+                                    <YAxis dataKey="name" type="category" width={110} tick={{ fontSize: 10 }} interval={0} />
+                                    <Tooltip formatter={(v, n, p) => [`${(Number(v) / 10000).toFixed(1)} 萬噸`, p.payload.fullName]} />
+                                    <Bar dataKey="total" name="合計排放量" fill="#e11d48" radius={[0, 4, 4, 0]}>
+                                        <LabelList dataKey="total" position="right" fontSize={9} fontWeight="bold" fill="#be123c" formatter={v => (Number(v) / 10000).toFixed(1)} />
+                                    </Bar>
+                                </BarChart>
+                            </ResponsiveContainer>
+                        </ErrorBoundary>
+                    </div>
+                </div>
+
+                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col h-[420px]">
+                    <h3 className="font-bold text-slate-700 text-sm mb-3 border-b pb-2 flex items-center gap-2"><Database size={16} className="text-slate-500" /> {selectedYear}年登錄清冊 (依合計排放量排序)</h3>
+                    <div className="flex-1 overflow-auto custom-scrollbar border border-slate-100 rounded-lg">
+                        <table className="w-full text-xs text-left">
+                            <thead className="bg-slate-50 sticky top-0 shadow-sm z-10">
+                                <tr>
+                                    <th className="p-2">事業名稱</th>
+                                    <th className="p-2">縣市</th>
+                                    <th className="p-2">行業分類</th>
+                                    <th className="p-2 text-right text-rose-600">範疇一</th>
+                                    <th className="p-2 text-right text-slate-500">範疇二</th>
+                                    <th className="p-2 text-right font-bold">合計</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                                {filteredYearData.map(row => (
+                                    <tr key={row.control_no} className="hover:bg-slate-50">
+                                        <td className="p-2 font-bold text-slate-700 truncate max-w-[160px]" title={row.company_name}>{row.company_name}</td>
+                                        <td className="p-2">{row.county}</td>
+                                        <td className="p-2 text-[10px] text-blue-600">{row.industry}</td>
+                                        <td className="p-2 text-right font-mono text-rose-600">{Number(row.scope1_tons || 0).toLocaleString()}</td>
+                                        <td className="p-2 text-right font-mono text-slate-500">{Number(row.scope2_tons || 0).toLocaleString()}</td>
+                                        <td className="p-2 text-right font-mono font-bold">{Number(row.total_tons || 0).toLocaleString()}</td>
+                                    </tr>
+                                ))}
+                                {filteredYearData.length === 0 && <tr><td colSpan={6} className="p-8 text-center text-slate-400">無符合條件資料</td></tr>}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 const CcusDashboard = () => {
     const [activeTab, setActiveTab] = useState('planning');
     const [facilitySubTab, setFacilitySubTab] = useState('all');
@@ -1035,6 +1176,17 @@ const CcusDashboard = () => {
     const [listRegion, setListRegion] = useState('ALL');
     const [listIndustry, setListIndustry] = useState('ALL');
     const [selectedHubId, setSelectedHubId] = useState('NORTH_HUB');
+
+    const [registryData, setRegistryData] = useState([]);
+    const [registryLoading, setRegistryLoading] = useState(true);
+
+    // 歷年登錄總覽跟規劃地圖用的 scope1.csv 快照無關，獨立抓取，不互相卡住彼此的載入狀態。
+    useEffect(() => {
+        fetchAllEmissionRecords()
+            .then(setRegistryData)
+            .catch(err => console.error('歷年登錄資料載入失敗:', err.message))
+            .finally(() => setRegistryLoading(false));
+    }, []);
 
     useEffect(() => {
         const fetchAllData = async () => {
@@ -1363,6 +1515,7 @@ const CcusDashboard = () => {
                 <div className="flex bg-slate-100 p-1 rounded-xl font-bold text-sm">
                     <button onClick={() => setActiveTab('planning')} className={`px-4 py-2 rounded-lg flex items-center gap-2 transition-all ${activeTab === 'planning' ? 'bg-white shadow text-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}><Map size={16}/> 案場與管線規劃</button>
                     <button onClick={() => setActiveTab('facilities')} className={`px-4 py-2 rounded-lg flex items-center gap-2 transition-all ${activeTab === 'facilities' ? 'bg-white shadow text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}><Layers size={16}/> CCUS 設施與專案總覽</button>
+                    <button onClick={() => setActiveTab('registry')} className={`px-4 py-2 rounded-lg flex items-center gap-2 transition-all ${activeTab === 'registry' ? 'bg-white shadow text-rose-600' : 'text-slate-500 hover:text-slate-700'}`}><Database size={16}/> 歷年登錄總覽</button>
                 </div>
             </div>
 
@@ -1864,6 +2017,12 @@ const CcusDashboard = () => {
                         </div>
                     </div>
                 </div>
+            )}
+
+            {activeTab === 'registry' && (
+                registryLoading
+                    ? <div className="p-10 text-center animate-pulse text-rose-600 flex flex-col items-center"><RefreshCw className="animate-spin mb-2"/> 歷年登錄資料載入中...</div>
+                    : <RegistryOverviewTab data={registryData} />
             )}
         </div>
     );
