@@ -15,6 +15,9 @@ dist-ssr
 # 環境變數（內含 Supabase 連線字串等機密資訊，不可進版控）
 .env
 
+# 一次性 scratch script（例如手動資料修補），不進版控
+scripts/_tmp-*
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
