@@ -13,8 +13,12 @@
 - 資料庫匯入：`npm run db:import`（讀 `data/trade/*.csv` 匯入 Supabase），需要 `.env` 設定
   `SUPABASE_DB_HOST` / `SUPABASE_DB_PASSWORD` 等（見 `.env.example`，連線用分開欄位而非單一 URI，
   避免密碼特殊符號被解析器誤判）
-- Vercel 上要另外設定 `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` 這兩個環境變數（本機 `.env`
-  不會自動同步過去），前端才抓得到資料
+- 前端 Supabase 連線（`src/lib/supabaseClient.js`）內建公開的專案網址與 anon key 預設值
+  （anon key 本來就會出現在瀏覽器，安全靠 RLS 唯讀），Vercel 沒設 `VITE_SUPABASE_URL` /
+  `VITE_SUPABASE_ANON_KEY` 也能運作；有設則以環境變數為準。2026-09 曾因 Vercel 漏設導致整站白屏。
+  service_role key、資料庫密碼絕對不可寫進前端程式碼。
+- Vercel 有兩個專案都接這個 repo：`trade-dashboard`（部署需登入 Vercel）與 `trade-dashboard-ekbz`
+  （公開網址 https://trade-dashboard-ekbz.vercel.app）。注意 `trade-dashboard.vercel.app` 是別人的網站。
 
 ## 架構現況（2026-09 起逐步遷移中）
 
