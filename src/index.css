@@ -1,3 +1,29 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  body { @apply bg-brand-ground text-brand-ink font-sans antialiased; }
+}
+
+@layer components {
+  /* 卡片 */
+  .card { @apply bg-white border border-brand-line rounded-2xl shadow-[0_4px_16px_rgba(29,32,35,0.05)]; }
+  /* 分段切換（範圍 / 粒度等） */
+  .seg { @apply inline-flex p-[3px] rounded-[10px] bg-[#eef2f6]; }
+  .seg-btn { @apply h-9 px-3.5 rounded-lg text-sm font-medium text-brand-muted whitespace-nowrap transition-colors; }
+  .seg-btn-on { @apply bg-white text-brand font-bold shadow-[0_1px_3px_rgba(0,0,0,0.12)]; }
+  /* 頁籤 */
+  .tab-btn { @apply h-12 px-4 text-base font-medium text-brand-muted border-b-[3px] border-transparent whitespace-nowrap transition-colors flex items-center gap-2; }
+  .tab-btn-on { @apply text-brand font-bold border-brand; }
+  /* 數字字型 */
+  .num { @apply font-num tabular-nums; }
+}
+
+@layer utilities {
+  .no-scrollbar { scrollbar-width: none; }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+}
+
+@keyframes sheetUp { from { transform: translateY(40px); opacity: 0; } to { transform: none; opacity: 1; } }

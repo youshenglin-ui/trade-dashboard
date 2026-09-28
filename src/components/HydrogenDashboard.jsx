@@ -200,9 +200,9 @@ const StackedTrendChart = ({ data, keys, title, icon: Icon, unit = '萬噸' }) =
     };
 
     return (
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col h-[400px]">
+        <div className="card p-4 flex flex-col h-[400px]">
             <div className="flex justify-between items-center mb-4">
-                <h3 className="font-bold text-slate-700 text-sm flex items-center gap-2"><Icon size={16} className={title.includes('需求') || title.includes('用量') ? 'text-amber-500' : 'text-blue-500'}/> {title}</h3>
+                <h3 className="font-bold text-slate-800 text-base flex items-center gap-2"><Icon size={16} className={title.includes('需求') || title.includes('用量') ? 'text-amber-500' : 'text-blue-500'}/> {title}</h3>
                 <button onClick={() => setZoomOthers(!zoomOthers)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all ${zoomOthers ? 'bg-amber-100 text-amber-700 border border-amber-200 shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
                     {zoomOthers ? <ZoomOut size={14}/> : <ZoomIn size={14}/>}
                     {zoomOthers ? '恢復全景' : '放大微小量 (隱藏 Top 3)'}
@@ -526,7 +526,7 @@ const TaiwanH2Map = ({ supplyData = [], demandData = [] }) => {
                 <button onClick={handleReset} className="p-2 bg-slate-50 hover:bg-slate-200 rounded-md text-slate-600 transition-colors"><Maximize size={18}/></button>
             </div>
 
-            <svg viewBox={`0 0 ${baseWidth} ${baseHeight}`} className={`w-full h-full select-none ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave={handleMouseLeave} ref={mapRef}>
+            <svg viewBox={`0 0 ${baseWidth} ${baseHeight}`} className={`w-full h-full select-none ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`} onPointerDown={handleMouseDown} onPointerMove={handleMouseMove} onPointerUp={handleMouseUp} onPointerLeave={handleMouseLeave} style={{ touchAction: 'none' }} ref={mapRef}>
                 <g transform={`translate(${baseWidth/2 + pan.x}, ${baseHeight/2 + pan.y}) scale(${zoom})`}>
                     {mapPaths.map((p, i) => p.d && <path key={`map-${i}`} d={p.d} fill={REGION_COLORS[p.region] || '#f8fafc'} stroke="#cbd5e1" strokeWidth={1.5 / zoom} className="transition-colors hover:fill-slate-200" />)}
                     {INDUSTRIAL_ZONES_COORDS.map((zone, idx) => {
@@ -751,18 +751,18 @@ const RegionalDeepDive = ({ supplyData, demandData, globalYear }) => {
 
     return (
         <div className="flex flex-col h-full w-full bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-            <div className="p-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
-                <div className="flex items-center gap-4">
-                    <h3 className="font-bold text-slate-700 text-sm flex items-center gap-2"><Layers size={16} className="text-rose-500"/> 區域深度解析 (含工業區與外購售評估)</h3>
-                    <div className="flex bg-slate-200/60 p-1 rounded-lg text-xs font-bold shadow-inner">
+            <div className="p-3 md:p-4 border-b border-slate-100 bg-slate-50 flex flex-wrap justify-between items-center gap-3">
+                <div className="flex flex-wrap items-center gap-3 md:gap-4 min-w-0">
+                    <h3 className="font-bold text-slate-800 text-base flex items-center gap-2"><Layers size={16} className="text-rose-500"/> 區域深度解析 (含工業區與外購售評估)</h3>
+                    <div className="flex bg-slate-200/60 p-1 rounded-lg text-sm font-bold shadow-inner whitespace-nowrap">
                         <button onClick={() => setActiveTab('charts')} className={`px-3 py-1.5 rounded-md flex items-center gap-1 transition-all ${activeTab === 'charts' ? 'bg-white shadow text-blue-700' : 'text-slate-500 hover:text-slate-700'}`}><Activity size={14}/> 數據圖表</button>
                         <button onClick={() => setActiveTab('map')} className={`px-3 py-1.5 rounded-md flex items-center gap-1 transition-all ${activeTab === 'map' ? 'bg-white shadow text-blue-700' : 'text-slate-500 hover:text-slate-700'}`}><MapPin size={14}/> 基礎設施地圖</button>
                     </div>
                 </div>
                 {activeTab === 'charts' && (
-                    <div className="flex gap-1 bg-slate-200/50 p-1 rounded-lg">
+                    <div className="flex gap-1 bg-slate-200/50 p-1 rounded-lg whitespace-nowrap overflow-x-auto no-scrollbar max-w-full">
                         {regions.map(r => (
-                            <button key={r} onClick={() => setActiveRegion(r)} className={`px-4 py-1.5 text-xs font-bold rounded-md transition-all ${activeRegion === r ? 'bg-white text-rose-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>{r}</button>
+                            <button key={r} onClick={() => setActiveRegion(r)} className={`px-4 py-1.5 text-sm font-bold rounded-md transition-all ${activeRegion === r ? 'bg-white text-rose-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>{r}</button>
                         ))}
                     </div>
                 )}
@@ -770,7 +770,7 @@ const RegionalDeepDive = ({ supplyData, demandData, globalYear }) => {
 
             <div className="p-4 flex-1 flex flex-col gap-4 overflow-y-auto">
                 {activeTab === 'charts' && (
-                    <div className="flex gap-4">
+                    <div className="flex flex-col sm:flex-row gap-3 md:gap-4">
                         <div className="flex-1 bg-blue-50 border border-blue-100 p-3 rounded-lg flex flex-col justify-center">
                             <div className="text-[10px] text-blue-600 font-bold uppercase mb-1">涵蓋縣市與區域</div>
                             <div className="text-xs text-slate-700 font-medium leading-relaxed">{REGION_COUNTIES[activeRegion].join('、')}</div>
@@ -815,7 +815,7 @@ const RegionalDeepDive = ({ supplyData, demandData, globalYear }) => {
                             </div>
                         </div>
 
-                        <div className="lg:w-7/12 flex flex-col border border-slate-100 rounded-lg p-2 min-h-[300px]">
+                        <div className="lg:w-7/12 flex flex-col border border-slate-100 rounded-lg p-2 min-h-[var(--rank-h)] lg:min-h-[300px]" style={{ '--rank-h': `${Math.max(320, plantDetails.length * 56 + 80)}px` }}>
                             <div className="text-xs font-bold text-slate-500 mb-2 text-center flex items-center justify-center gap-1">
                                 <List size={12}/> {globalYear} 區域廠區規模排行與外購售流向
                             </div>
@@ -1028,13 +1028,21 @@ const StructureAnalysis = ({ data, typeField, valueField, categoryFn, colorMap }
     );
 };
 
+const H2_TABS = [
+    { id: 'overview', label: '供需總覽', icon: Activity },
+    { id: 'structure', label: '結構分析', icon: Database },
+    { id: 'intensity', label: '碳排強度', icon: Leaf },
+    { id: 'region', label: '區域解析', icon: Layers },
+    { id: 'raw', label: '原始資料', icon: List },
+];
+
 const HydrogenDashboard = () => {
   const [supplyData, setSupplyData] = useState([]);
   const [demandData, setDemandData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isFallback, setIsFallback] = useState(false);
   const [selectedYear, setSelectedYear] = useState('2025');
-  const [viewMode, setViewMode] = useState('dashboard');
+  const [h2Tab, setH2Tab] = useState('overview'); // 供需總覽 / 結構分析 / 碳排強度 / 區域解析 / 原始資料
   const [statusMsg, setStatusMsg] = useState('');
   const [rawData, setRawData] = useState({ supply: [], demand: [] }); 
 
@@ -1108,6 +1116,16 @@ const HydrogenDashboard = () => {
       };
   }, [supplyData, demandData]);
 
+  // 散佈圖實際寬度（用來估算名稱標籤是否重疊）
+  const [scatterW, setScatterW] = useState(560);
+  const scatterRO = useRef(null);
+  const scatterBoxRef = (el) => {
+      if (scatterRO.current) { scatterRO.current.disconnect(); scatterRO.current = null; }
+      if (!el) return;
+      scatterRO.current = new ResizeObserver(([e]) => setScatterW(Math.round(e.contentRect.width)));
+      scatterRO.current.observe(el);
+  };
+
   const efficiencyChartData = useMemo(() => {
       const plantMap = {};
       filteredSupply.forEach(d => {
@@ -1122,16 +1140,36 @@ const HydrogenDashboard = () => {
           if (currentIntensity > 0) plantMap[key].intensity = currentIntensity; 
           plantMap[key].total_emission += (cleanNumber(d.Output_Tons) || 0) * currentIntensity;
       });
-      return Object.values(plantMap).filter(d => d.output > 0 && d.intensity > 0);
-  }, [filteredSupply]);
+      const plants = Object.values(plantMap).filter(d => d.output > 0 && d.intensity > 0);
+      // 名稱標籤避免重疊：以近似繪圖區尺寸（對數 X 軸、Y 軸 0-16）估算標籤位置，
+      // 依總排放量由大到小放置，與已放置標籤相撞者不顯示名稱（滑到點上仍可從 tooltip 看到）
+      const PLOT_W = Math.max(200, scatterW - 140), PLOT_H = 220;
+      const logs = plants.map(d => Math.log10(d.output));
+      const lo = Math.min(...logs), hi = Math.max(...logs);
+      const span = hi - lo || 1;
+      const placed = [];
+      [...plants].sort((a, b) => b.total_emission - a.total_emission).forEach(d => {
+          const cx = ((Math.log10(d.output) - lo) / span) * PLOT_W;
+          const cy = (1 - d.intensity / 16) * PLOT_H - 16;
+          // Recharts 會在空白處換行，取最長一段當寬度、兩行高
+          const parts = String(d.name).split(/\s+/);
+          const w = Math.max(...parts.map(t => t.length)) * 11 + 8, h = parts.length > 1 ? 28 : 14;
+          const box = { x1: cx - w / 2, x2: cx + w / 2, y1: cy - h / 2, y2: cy + h / 2 };
+          const hit = placed.some(b => box.x1 < b.x2 && box.x2 > b.x1 && box.y1 < b.y2 && box.y2 > b.y1);
+          d.label = hit ? '' : d.name;
+          if (!hit) placed.push(box);
+      });
+      return plants;
+  }, [filteredSupply, scatterW]);
 
   if (loading) return <div className="p-10 text-center animate-pulse text-blue-600 flex flex-col items-center"><RefreshCw className="animate-spin mb-2"/> 氫能資料載入中...</div>;
 
   return (
-    <div className="space-y-8 p-4 bg-slate-50 rounded-lg animate-fade-in relative min-h-screen">
-       <div className="flex justify-between items-center bg-white p-3 rounded-xl border border-slate-200 shadow-sm">
+    <div className="space-y-5 md:space-y-8 px-3 py-4 md:p-6 animate-fade-in relative min-h-screen">
+       <div className="card overflow-hidden">
+       <div className="flex flex-wrap justify-between items-center gap-3 p-3 md:px-4">
            <div className="flex items-center gap-4">
-              <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2"><Factory className="text-blue-600"/> 氫能供需戰情室</h2>
+              <h2 className="hidden md:flex text-xl font-bold text-slate-800 items-center gap-2 whitespace-nowrap"><Factory className="text-blue-600"/> 氫能供需戰情室</h2>
               <div className="flex items-center gap-2 text-sm bg-slate-100 px-3 py-1 rounded-full">
                   <Calendar size={14}/>
                   <select value={selectedYear} onChange={e => setSelectedYear(e.target.value)} className="bg-transparent font-bold text-blue-700 outline-none">
@@ -1142,23 +1180,28 @@ const HydrogenDashboard = () => {
            </div>
            <div className="flex items-center gap-3">
              <span className="text-xs text-slate-400">{statusMsg}</span>
-             <div className="flex bg-slate-100 p-1 rounded-lg">
-                <button onClick={() => setViewMode('dashboard')} className={`px-3 py-1.5 text-xs font-bold rounded-md ${viewMode==='dashboard'?'bg-white shadow text-blue-600':'text-slate-500'}`}>儀表板</button>
-                <button onClick={() => setViewMode('data')} className={`px-3 py-1.5 text-xs font-bold rounded-md ${viewMode==='data'?'bg-white shadow text-blue-600':'text-slate-500'}`}>原始資料</button>
-             </div>
+
            </div>
        </div>
 
-       {viewMode === 'dashboard' ? (
+       <div role="tablist" aria-label="氫能分頁" className="flex overflow-x-auto no-scrollbar px-2 md:px-4 border-t border-brand-line">
+           {H2_TABS.map(({ id, label, icon }) => { const TabIcon = icon; return (
+               <button key={id} role="tab" aria-selected={h2Tab === id} onClick={() => setH2Tab(id)} className={`tab-btn ${h2Tab === id ? 'tab-btn-on' : ''}`}><TabIcon size={17}/> {label}</button>
+           ); })}
+       </div>
+       </div>
+
+       {h2Tab !== 'raw' ? (
            <>
              {/* Row 1: Supply/Demand Trends & Balance */}
+             {h2Tab === 'overview' && (
              <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
                  <div className="lg:col-span-2 min-h-[400px] w-full relative">
                      <StackedTrendChart data={supplyTrend.data} keys={supplyTrend.keys} title="歷年總產量來源 (公司廠區)" icon={Database} />
                  </div>
                  
-                 <div className="lg:col-span-1 bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col items-center h-[400px]">
-                     <h3 className="font-bold text-slate-700 text-sm mb-2 flex items-center gap-2">區域總產量/總用量平衡 ({selectedYear})</h3>
+                 <div className="lg:col-span-1 card p-4 flex flex-col items-center h-[400px]">
+                     <h3 className="font-bold text-slate-800 text-base mb-2 flex items-center gap-2">區域總產量/總用量平衡 ({selectedYear})</h3>
                      <div className="flex-1 w-full min-h-0 relative">
                          <TechBalanceChart supplyData={filteredSupply} demandData={filteredDemand} />
                      </div>
@@ -1168,48 +1211,49 @@ const HydrogenDashboard = () => {
                      <StackedTrendChart data={demandTrend.data} keys={demandTrend.keys} title="歷年總用量分佈 (公司廠區)" icon={Activity} />
                  </div>
              </div>
+             )}
 
-             {/* Row 2: Structure Analysis (Pies) */}
+{/* Row 2: Structure Analysis (Pies) */}
+             {h2Tab === 'structure' && (
              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                 <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col h-[400px]">
-                     <h3 className="font-bold text-slate-700 text-sm mb-4 border-b pb-2 flex items-center gap-2"><Database size={16} className="text-blue-500"/> 供給結構詳細分析 ({selectedYear})</h3>
+                 <div className="card p-4 flex flex-col h-[400px]">
+                     <h3 className="font-bold text-slate-800 text-base mb-4 border-b pb-2 flex items-center gap-2"><Database size={16} className="text-blue-500"/> 供給結構詳細分析 ({selectedYear})</h3>
                      <div className="flex-1 min-h-0 w-full relative">
                         <StructureAnalysis data={filteredSupply} typeField="Process" valueField="Output_Tons" categoryFn={getProcessType} colorMap={COLORS_PROCESS} />
                      </div>
                  </div>
 
-                 <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col h-[400px]">
-                     <h3 className="font-bold text-slate-700 text-sm mb-4 border-b pb-2 flex items-center gap-2"><Activity size={16} className="text-amber-500"/> 需求結構詳細分析 ({selectedYear})</h3>
+                 <div className="card p-4 flex flex-col h-[400px]">
+                     <h3 className="font-bold text-slate-800 text-base mb-4 border-b pb-2 flex items-center gap-2"><Activity size={16} className="text-amber-500"/> 需求結構詳細分析 ({selectedYear})</h3>
                      <div className="flex-1 min-h-0 w-full relative">
                         <StructureAnalysis data={filteredDemand} typeField="Usage_Type" valueField="Demand_Tons" categoryFn={getUsageCategory} colorMap={COLORS_USAGE} />
                      </div>
                  </div>
              </div>
+             )}
 
-             {/* Row 3: Scatter Matrix with Baselines */}
+{/* Row 3: Scatter Matrix with Baselines */}
+             {h2Tab === 'intensity' && (
              <div className="grid grid-cols-1 gap-6">
-                 <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col h-[450px]">
-                     <h3 className="font-bold text-slate-700 text-sm mb-4 border-b pb-2 flex items-center gap-2"><Leaf size={14}/> 碳排強度矩陣 (產量 Log Scale) & 產能對照 ({selectedYear})</h3>
-                     <div className="flex-1 min-h-0 flex gap-4 w-full relative">
+                 <div className="card p-3 md:p-4 flex flex-col lg:h-[450px]">
+                     <h3 className="font-bold text-slate-800 text-base mb-4 border-b pb-2 flex items-center gap-2"><Leaf size={14}/> 碳排強度矩陣 (產量 Log Scale) & 產能對照 ({selectedYear})</h3>
+                     <div className="flex-1 min-h-0 flex flex-col lg:flex-row gap-4 w-full relative">
                          
-                         <div className="flex-1 h-full relative border border-slate-100 rounded-lg p-2 bg-slate-50/50 min-h-0">
-                            {/* 左側散點圖提示框 */}
-                            <div className="absolute top-2 right-4 flex flex-col gap-1 text-[10px] text-slate-500 bg-white/80 p-2 rounded z-10 border border-slate-100 shadow-sm">
-                                <div className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-500"></span>主產氫</div>
-                                <div className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-purple-500"></span>副產氫</div>
-                                <div className="mt-1 pt-1 border-t border-slate-200">圓點大小 = 總碳排量</div>
+                         <div className="w-full lg:flex-1 h-[420px] lg:h-full flex flex-col border border-slate-100 rounded-lg p-2 bg-slate-50/50 min-h-0">
+                            {/* 圖例移到圖表上方，不再蓋住資料點 */}
+                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-1 pb-1 text-[11px] text-slate-500">
+                                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-500"></span>主產氫</span>
+                                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-purple-500"></span>副產氫</span>
+                                <span>圓點大小 = 總碳排量</span>
+                                <span className="flex items-center gap-1"><span className="w-3 h-0 border-t border-slate-400 border-dashed"></span>12-13 天然氣重組</span>
+                                <span className="flex items-center gap-1"><span className="w-3 h-0 border-t border-slate-400 border-dashed"></span>11-12 甲醇裂解</span>
+                                <span className="flex items-center gap-1"><span className="w-3 h-0 border-t border-slate-500 border-dashed"></span>6.9 NG+PSA</span>
+                                <span className="text-slate-400">名稱相近時僅標示排放量較大者，其餘移到點上查看</span>
                             </div>
-                            
-                            <div className="absolute top-2 left-16 flex flex-col gap-0.5 text-[9px] text-slate-400 bg-white/80 p-1.5 rounded z-10 border border-slate-100 shadow-sm">
-                                <div className="font-bold text-slate-600 mb-0.5">碳排基準對照 (kg CO₂e)</div>
-                                <div className="flex items-center gap-1"><span className="w-3 h-0 border-t border-slate-400 border-dashed"></span>12-13 天然氣重組</div>
-                                <div className="flex items-center gap-1"><span className="w-3 h-0 border-t border-slate-400 border-dashed"></span>11-12 甲醇裂解</div>
-                                <div className="flex items-center gap-1"><span className="w-3 h-0 border-t border-slate-500 border-dashed"></span>6.9 NG+PSA</div>
-                            </div>
-
+                            <div ref={scatterBoxRef} className="flex-1 min-h-0">
                             <ErrorBoundary>
                                 <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
-                                    <ScatterChart margin={{top:30, right:30, bottom:30, left:20}}>
+                                    <ScatterChart margin={{top:24, right:56, bottom:30, left:20}}>
                                         <CartesianGrid strokeDasharray="3 3"/>
                                         <XAxis type="number" dataKey="output" name="產量" unit="萬噸" scale="log" domain={['auto', 'auto']} tick={{fontSize:10, fill:'#64748b'}}>
                                             <Label value="產量 (萬噸) - 指數級距" offset={-20} position="insideBottom" fontSize={11} fill="#475569" fontWeight="bold"/>
@@ -1242,7 +1286,7 @@ const HydrogenDashboard = () => {
                                             }}
                                         />
                                         <Scatter name="廠區" data={efficiencyChartData}>
-                                            <LabelList dataKey="name" position="top" style={{fontSize:10, fill:'#475569', fontWeight: 'bold'}} />
+                                            <LabelList dataKey="label" position="top" style={{fontSize:10, fill:'#475569', fontWeight: 'bold'}} />
                                             {efficiencyChartData.map((entry, index) => (
                                                 <Cell key={`cell-${index}`} fill={entry.processType === '主產' ? '#3b82f6' : '#a855f7'} fillOpacity={0.7} stroke="white" strokeWidth={1}/>
                                             ))}
@@ -1250,14 +1294,19 @@ const HydrogenDashboard = () => {
                                     </ScatterChart>
                                 </ResponsiveContainer>
                             </ErrorBoundary>
+                            </div>
                          </div>
                          
-                         <div className="flex-1 h-full border border-slate-100 rounded-lg p-2 min-h-0 relative">
+                         <div className="w-full lg:flex-1 h-[420px] lg:h-full border border-slate-100 rounded-lg p-2 min-h-0 relative overflow-x-auto no-scrollbar lg:overflow-visible"><div className="h-full min-w-[640px] lg:min-w-0">
                             <ErrorBoundary>
                                 <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
-                                     <ComposedChart data={efficiencyChartData} margin={{top:20, right:30, bottom:40, left:0}}>
+                                     <ComposedChart data={efficiencyChartData} margin={{top:20, right:30, bottom:10, left:0}}>
                                          <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                                         <XAxis dataKey="name" angle={-35} textAnchor="end" height={60} tick={{fontSize:10, fill:'#64748b'}} interval={0}/>
+                                         <XAxis dataKey="name" height={104} interval={0}
+                                             tick={({ x, y, payload }) => {
+                                                 const t = String(payload.value).replace(/\s+/g, '');
+                                                 return <text x={x} y={y + 6} transform={`rotate(-90 ${x} ${y + 6})`} dy={4} textAnchor="end" fontSize={10} fill="#64748b">{t.length > 9 ? `${t.slice(0, 9)}…` : t}</text>;
+                                             }}/>
                                          <YAxis yAxisId="left" tick={{fontSize:10, fill:'#64748b'}}/>
                                          <YAxis yAxisId="right" orientation="right" domain={[0, 16]} tick={{fontSize:10, fill:'#64748b'}}/>
                                          <Tooltip contentStyle={{fontSize:'12px', borderRadius:'8px'}}/>
@@ -1265,33 +1314,37 @@ const HydrogenDashboard = () => {
                                          
                                          {/* 右側同時包含製程與國家標準基準線 */}
                                          <ReferenceLine yAxisId="right" y={12.5} stroke="#94a3b8" strokeDasharray="3 3" label={{ position: 'insideTopLeft', value: '天然氣重組 (12-13)', fill: '#64748b', fontSize: 9 }} />
-                                         <ReferenceLine yAxisId="right" y={11.5} stroke="#94a3b8" strokeDasharray="3 3" label={{ position: 'insideBottomLeft', value: '甲醇裂解 (11-12)', fill: '#64748b', fontSize: 9 }} />
+                                         <ReferenceLine yAxisId="right" y={11.5} stroke="#94a3b8" strokeDasharray="3 3" label={{ position: 'insideBottomRight', value: '甲醇裂解 (11-12)', fill: '#64748b', fontSize: 9 }} />
                                          <ReferenceLine yAxisId="right" y={6.9} stroke="#64748b" strokeDasharray="3 3" label={{ position: 'insideTopLeft', value: 'NG+PSA (6.9)', fill: '#475569', fontSize: 9 }} />
-                                         <ReferenceLine yAxisId="right" y={4.0} stroke="#10b981" strokeDasharray="3 3" label={{ position: 'insideTopLeft', value: '美/韓標準 (4.0)', fill: '#059669', fontSize: 9 }} />
+                                         <ReferenceLine yAxisId="right" y={4.0} stroke="#10b981" strokeDasharray="3 3" label={{ position: 'insideTopRight', value: '美/韓標準 (4.0)', fill: '#059669', fontSize: 9 }} />
                                          <ReferenceLine yAxisId="right" y={3.4} stroke="#059669" strokeDasharray="3 3" label={{ position: 'insideBottomLeft', value: '日(3.4)/歐(3.38)', fill: '#047857', fontSize: 9 }} />
 
                                          <Bar yAxisId="left" dataKey="output" name="產量 (萬噸)" fill="#3b82f6" barSize={20} radius={[2,2,0,0]}/>
                                          <Line yAxisId="right" type="monotone" dataKey="intensity" name="碳排強度" stroke="#ef4444" strokeWidth={3} dot={{r:4, fill:'#ef4444', stroke:'white'}}/>
                                      </ComposedChart>
                                 </ResponsiveContainer>
-                            </ErrorBoundary>
+                            </ErrorBoundary></div>
                          </div>
 
                      </div>
                  </div>
              </div>
+             )}
 
-             {/* Row 4: 區域深度解析 */}
+{/* Row 4: 區域深度解析 */}
+             {h2Tab === 'region' && (
              <div className="grid grid-cols-1 gap-6">
-                 <div className="h-[750px]">
+                 <div className="lg:h-[750px]">
                      <RegionalDeepDive supplyData={supplyData} demandData={demandData} globalYear={selectedYear} />
                  </div>
              </div>
+             )}
+
            </>
        ) : (
-           <div className="p-6 bg-white rounded-xl shadow overflow-auto h-[600px]">
-               <h3 className="font-bold mb-4">原始數據檢視與診斷</h3>
-               <div className="grid grid-cols-2 gap-6">
+           <div className="card p-3 md:p-6">
+               <h3 className="font-bold text-base mb-4">原始數據檢視與診斷</h3>
+               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
                    <ErrorBoundary>
                        <div className="bg-white rounded-lg shadow overflow-hidden flex flex-col h-[500px]">
                            <div className="p-3 bg-slate-50 border-b font-bold text-slate-700">供給端原始資料</div>

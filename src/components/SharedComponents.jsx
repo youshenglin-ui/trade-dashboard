@@ -69,18 +69,35 @@ export const renderCustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadi
   );
 };
 
-// KPI Card
+// KPI Card（風格 B：大數字、小圖示，手機兩欄）
 export const KPICard = ({ title, value, subtext, trend, icon: Icon, color }) => (
-  <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 flex items-start justify-between hover:shadow-md transition-shadow">
-    <div>
-      <p className="text-sm font-medium text-slate-500 mb-1">{title}</p>
-      <h3 className="text-2xl font-bold text-slate-800">{value}</h3>
-      <div className={`flex items-center mt-2 text-sm ${trend === 'up' ? 'text-emerald-600' : 'text-rose-600'}`}>
-        {trend === 'up' ? <ArrowUpRight size={16} /> : <ArrowDownRight size={16} />}
-        <span className="ml-1 font-medium">{subtext}</span>
-      </div>
+  <div className="card p-4 md:p-5 flex flex-col gap-1.5 transition-all hover:-translate-y-0.5 hover:shadow-lg min-w-0">
+    <div className="flex items-center gap-2">
+      <p className="text-xs md:text-sm font-medium text-brand-muted flex-1 min-w-0 truncate">{title}</p>
+      {Icon ? <span className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${color}`}><Icon size={15} className="text-white" /></span> : null}
     </div>
-    <div className={`p-3 rounded-lg ${color}`}>{Icon ? <Icon size={24} className="text-white" /> : null}</div>
+    <h3 className="num text-xl md:text-[26px] font-extrabold leading-tight text-brand-ink break-words">{value}</h3>
+    <div className={`flex items-center text-xs md:text-sm font-bold ${trend === 'up' ? 'text-emerald-700' : 'text-rose-600'}`}>
+      {trend === 'up' ? <ArrowUpRight size={15} /> : <ArrowDownRight size={15} />}
+      <span className="ml-0.5">{subtext}</span>
+    </div>
+  </div>
+);
+
+// 分段切換按鈕（範圍、粒度、指標等）
+export const Segmented = ({ value, onChange, options, className = '' }) => (
+  <div className={`seg ${className}`} role="group">
+    {options.map(o => (
+      <button key={o.value} type="button" onClick={() => onChange(o.value)} aria-pressed={value === o.value}
+        className={`seg-btn ${value === o.value ? 'seg-btn-on' : ''}`}>{o.label}</button>
+    ))}
+  </div>
+);
+
+// 手機版可左右滑動的圖表外框：資料期數多時給圖表最小寬度，避免標籤擠在一起
+export const ScrollableChart = ({ points = 0, perPoint = 22, minWidth = 320, className = '', children }) => (
+  <div className={`overflow-x-auto no-scrollbar md:overflow-visible ${className}`}>
+    <div className="h-full min-w-[var(--chart-w)] md:min-w-0" style={{ '--chart-w': `${Math.max(minWidth, points * perPoint)}px` }}>{children}</div>
   </div>
 );
 
