@@ -105,7 +105,7 @@ async function main() {
     process.exit(1);
   }
   const client = new pg.Client({
-    host: SUPABASE_DB_HOST.trim().replace(/^@/, ''), // 容錯：從連線字串複製時常多帶一個 @ port: Number(SUPABASE_DB_PORT) || 5432, user: SUPABASE_DB_USER || 'postgres',
+    host: SUPABASE_DB_HOST.trim().replace(/^@/, ''), port: Number(SUPABASE_DB_PORT) || 5432, user: SUPABASE_DB_USER || 'postgres', // host 容錯：去掉開頭多餘的 @
     password: SUPABASE_DB_PASSWORD, database: SUPABASE_DB_NAME || 'postgres', ssl: { rejectUnauthorized: false },
   });
   await client.connect();
