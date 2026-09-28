@@ -1,18 +1,16 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, 
   ScatterChart, Scatter, ZAxis, Cell, LabelList, ComposedChart, Line, PieChart, Pie, Label
 } from 'recharts';
 import {
   Leaf, RefreshCw, Target, Activity, MapPin, DollarSign, Box, AlertTriangle,
-  Truck, Ship, GripHorizontal, FlaskConical, Plus, ZoomIn, ZoomOut, Maximize, Factory, List, Rocket, Map, Route, Anchor, Layers, Filter, PieChart as PieChartIcon, DownloadCloud, Copy, Trash2
+  Truck, Ship, GripHorizontal, FlaskConical, Plus, ZoomIn, ZoomOut, Maximize, Factory, List, Rocket, Map, Route, Anchor, Layers, Filter, PieChart as PieChartIcon, DownloadCloud, Copy, Trash2, X
 } from 'lucide-react';
+import { CCUS_DATA_SOURCES } from '../config/dataSources';
 import { cleanNumber } from '../utils/helpers';
-import { fetchCcusSurvey, fetchScope1Rows, fetchVerifiedEmitterCoords } from '../lib/energy/fetchEnergySurvey';
-import { paramsByKey } from '../lib/energy/energyMetrics';
-import { loadTaiwanCounties } from '../lib/geo/taiwanCounties';
-import CcusSurveyPanel from './energy/CcusSurveyViews';
-import { CCUS_SURVEY_TABS } from './energy/ccusTabs';
+import MapLibreBase from './map/MapLibreBase';
+import { TAIWAN_BOUNDS, REGION_BOUNDS, LABEL_FONT, fc, pt, line, validLL, cubicBezier, quadBezier, addSquareIcon } from './map/mapUtils';
 
 export const simplifyCompanyName = (name) => {
   if (!name) return '';
@@ -44,6 +42,27 @@ const stringToColor = (str) => {
     return COLORS_POOL[Math.abs(hash) % COLORS_POOL.length];
 };
 
+const parseCSV = (text) => {
+    if (!text || text.includes('<!DOCTYPE html>')) return [];
+    const result = []; let row = []; let current = ''; let inQuotes = false;
+    for (let i = 0; i < text.length; i++) {
+        const char = text[i], nextChar = text[i + 1];
+        if (char === '"') {
+            if (inQuotes && nextChar === '"') { current += '"'; i++; } 
+            else { inQuotes = !inQuotes; }
+        } else if (char === ',' && !inQuotes) { row.push(current.trim()); current = '';
+        } else if ((char === '\n' || (char === '\r' && nextChar === '\n')) && !inQuotes) {
+            if (char === '\r') i++; 
+            row.push(current.trim()); result.push(row); row = []; current = '';
+        } else { current += char; }
+    }
+    if (current || row.length > 0) { row.push(current.trim()); result.push(row); }
+    if (result.length < 2) return [];
+    const headers = result[0].map(h => h.replace(/^[\uFEFF\s]+|[\s]+$/g, ''));
+    return result.slice(1).map(rowArray => {
+        const obj = {}; headers.forEach((h, i) => { obj[h] = rowArray[i] !== undefined ? rowArray[i] : ''; }); return obj;
+    });
+};
 
 const calcDistanceKm = (lat1, lon1, lat2, lon2) => {
     const R = 6371; 
@@ -154,7 +173,38 @@ const getApproximateCoordinates = (plant, company, county) => {
     return { lat: 23.6 + offsetLat, lon: 119.9 + offsetLon }; 
 };
 
-// 封存樞紐（ccus_storage_sites, kind='hub'）與聚落節點（ccus_network_nodes）改由資料庫讀取，見 supabase/energy_survey_seed.sql
+// 封存與接收樞紐預設設定
+const INITIAL_CCS_HUBS = {
+    'NORTH_HUB': { id: 'NORTH_HUB', name: '台北港/林口 (陸地轉海域)', type: '🛢️ 本土外海封存', lat: 25.14, lon: 121.32, region: '北區' },
+    'CENTRAL_HUB_1': { id: 'CENTRAL_HUB_1', name: '台中港接收站 (陸地轉海域)', type: '🛢️ 本土外海封存', lat: 24.25, lon: 120.45, region: '中區' },
+    'CENTRAL_HUB_2': { id: 'CENTRAL_HUB_2', name: '麥寮外海 (陸地轉海域)', type: '🛢️ 本土外海封存', lat: 23.80, lon: 120.10, region: '中區' },
+    'CENTRAL_HUB_LAND': { id: 'CENTRAL_HUB_LAND', name: '苗栗鐵砧山 (陸地封存)', type: '⛰️ 陸地封存場域', lat: 24.45, lon: 120.68, region: '中區' }, 
+    'SOUTH_HUB': { id: 'SOUTH_HUB', name: '高雄港接收站 (輸出轉運)', type: '🚢 港口接收轉運', lat: 22.55, lon: 120.32, region: '南區' },
+    'EAST_HUB': { id: 'EAST_HUB', name: '花蓮港接收站 (輸出北送)', type: '🚢 港口接收轉運', lat: 23.98, lon: 121.62, region: '東區' },
+    'SOUTHEAST_HUB': { id: 'SOUTHEAST_HUB', name: '台東接收站 (南迴轉運)', type: '🚢 港口接收轉運', lat: 22.75, lon: 121.15, region: '南區' } 
+};
+
+const INITIAL_CLUSTERS = {
+    'C_KEE_PORT': { id: 'C_KEE_PORT', name: '基隆港轉運站', lat: 25.15, lon: 121.74, next: 'NORTH_HUB', type: 'sea' },
+    'C_TPE': { id: 'C_TPE', name: '北北基聚落', lat: 25.05, lon: 121.45, next: 'NORTH_HUB', type: 'land' },
+    'C_TYN_IN': { id: 'C_TYN_IN', name: '桃園內陸聚落', lat: 24.95, lon: 121.25, next: 'C_TYN_COAST', type: 'land' },
+    'C_TYN_COAST': { id: 'C_TYN_COAST', name: '桃園沿海聚落', lat: 25.05, lon: 121.10, next: 'NORTH_HUB', type: 'land' },
+    'C_HSZ': { id: 'C_HSZ', name: '新竹聚落', lat: 24.80, lon: 121.00, next: 'C_TYN_IN', type: 'land' },
+    'C_MIA': { id: 'C_MIA', name: '苗栗聚落', lat: 24.55, lon: 120.80, next: 'CENTRAL_HUB_LAND', type: 'land' },
+    'C_TXG': { id: 'C_TXG', name: '台中聚落', lat: 24.20, lon: 120.60, next: 'CENTRAL_HUB_1', type: 'land' },
+    'C_CHW_N': { id: 'C_CHW_N', name: '彰北聚落', lat: 24.10, lon: 120.45, next: 'CENTRAL_HUB_1', type: 'land' },
+    'C_CHW_S': { id: 'C_CHW_S', name: '彰南聚落', lat: 23.95, lon: 120.35, next: 'CENTRAL_HUB_2', type: 'land' }, 
+    'C_YUN_IN': { id: 'C_YUN_IN', name: '雲林內陸聚落', lat: 23.75, lon: 120.45, next: 'CENTRAL_HUB_2', type: 'land' },
+    'C_CYI': { id: 'C_CYI', name: '嘉義聚落', lat: 23.45, lon: 120.30, next: 'C_YUN_IN', type: 'land' },
+    'C_TNN': { id: 'C_TNN', name: '台南聚落', lat: 23.10, lon: 120.25, next: 'C_KHH_N', type: 'land' },
+    'C_KHH_IN': { id: 'C_KHH_IN', name: '高雄內陸(大樹等)', lat: 22.70, lon: 120.40, next: 'C_KHH_N', type: 'land' },
+    'C_KHH_N': { id: 'C_KHH_N', name: '北高雄(仁武大社)', lat: 22.72, lon: 120.35, next: 'SOUTH_HUB', type: 'land' },
+    'C_KHH_S': { id: 'C_KHH_S', name: '南高雄(林園大發)', lat: 22.53, lon: 120.38, next: 'SOUTH_HUB', type: 'land' },
+    'C_PTG': { id: 'C_PTG', name: '屏東聚落', lat: 22.50, lon: 120.45, next: 'C_KHH_S', type: 'land' },
+    'C_YIL': { id: 'C_YIL', name: '宜蘭聚落', lat: 24.70, lon: 121.75, next: 'NORTH_HUB', type: 'sea' }, 
+    'C_HUA': { id: 'C_HUA', name: '花蓮聚落', lat: 23.98, lon: 121.60, next: 'C_KEE_PORT', type: 'sea' }, 
+    'C_TTT': { id: 'C_TTT', name: '台東聚落', lat: 22.75, lon: 121.14, next: 'SOUTH_HUB', type: 'sea' } 
+};
 
 class ErrorBoundary extends React.Component {
     constructor(props) { super(props); this.state = { hasError: false }; }
@@ -164,12 +214,6 @@ class ErrorBoundary extends React.Component {
       return this.props.children;
     }
 }
-
-const MAP_CONSTANTS = { baseWidth: 800, baseHeight: 900, centerLon: 120.9, centerLat: 23.7, baseScale: 400 };
-export const projectBase = (lon, lat) => {
-    if (lon == null || lat == null || isNaN(lon) || isNaN(lat)) return [-9999, -9999]; 
-    return [(lon - MAP_CONSTANTS.centerLon) * MAP_CONSTANTS.baseScale, -(lat - MAP_CONSTANTS.centerLat) * MAP_CONSTANTS.baseScale * 1.1];
-};
 
 const distToSegment = (px, py, x1, y1, x2, y2) => {
     const l2 = (x1 - x2) ** 2 + (y1 - y2) ** 2;
@@ -214,244 +258,393 @@ const CaptureTooltip = ({ active, payload }) => {
 };
 
 // ==========================================
-// 台灣地圖核心模組 (支援點擊管線新增節點與右鍵刪除)
+// 台灣 CCUS 地圖（MapLibre GL）
+// 案場／樞紐／管線拓樸（樞紐、聚落、管線節點、海運與陸運控制點皆可拖曳；點主管線新增節點、
+// 點節點開選單、右鍵刪除）＋ 捕捉／再利用／封存設施圖層。標籤交給 MapLibre 自動避讓重疊。
 // ==========================================
-const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], storageData = [], scope1Data = [], mapPaths = [], ccsTopology = null, hubs, setHubs, clusters, setClusters, routeNodes, setRouteNodes, seaControlPoints, setSeaControlPoints, landControlPoints, setLandControlPoints }) => {
-    const mapRef = useRef(null); const containerRef = useRef(null); 
-    const [zoom, setZoom] = useState(1); const [pan, setPan] = useState({ x: 0, y: 0 });
-    const [isDragging, setIsDragging] = useState(false); const [dragState, setDragState] = useState(null); 
-    const [lastPos, setLastPos] = useState({ x: 0, y: 0 }); const [hoveredNode, setHoveredNode] = useState(null);
+const CCUS_INTERACTIVE = ['ccus-hub', 'ccus-node-hit', 'ccus-cluster-hit', 'ccus-sea-ctrl-hit', 'ccus-land-ctrl-hit', 'ccus-storage-site', 'ccus-util', 'ccus-capture', 'ccus-future', 'ccus-source-hit'];
+const CCUS_DRAGGABLE = ['ccus-hub', 'ccus-node-hit', 'ccus-cluster-hit', 'ccus-sea-ctrl-hit', 'ccus-land-ctrl-hit'];
+const CCUS_SOURCES = ['sea', 'seaLabel', 'seaCtrl', 'land', 'landLabel', 'landCtrl', 'branch', 'main', 'mainLabel', 'nodes', 'clusters', 'hubs', 'sources', 'capture', 'future', 'util', 'storageLine', 'storageSrc', 'storageSite'];
+const flowWidth = (route) => Math.max(2, Math.log10(Math.max(10000, Number(route.weight ?? route.flow) || 0)));
+
+const getStorageCoords = (siteName, hubs) => {
+    const safeSite = siteName || '';
+    const hub = Object.values(hubs || INITIAL_CCS_HUBS).find(h => safeSite.includes(h.name.split(' ')[0]) || h.name.includes(safeSite.split(' ')[0]));
+    if (hub) return { lat: hub.lat, lon: hub.lon };
+    if (safeSite.includes('鐵砧山')) return { lat: 24.45, lon: 120.68 };
+    if (safeSite.includes('麥寮')) return { lat: 23.80, lon: 120.10 };
+    if (safeSite.includes('台中')) return { lat: 24.25, lon: 120.45 };
+    if (safeSite.includes('林口') || safeSite.includes('台北')) return { lat: 25.14, lon: 121.32 };
+    if (safeSite.includes('高雄')) return { lat: 22.55, lon: 120.32 };
+    if (safeSite.includes('花蓮')) return { lat: 23.98, lon: 121.62 };
+    return { lat: 23.6, lon: 120.9 };
+};
+
+const addCcusLayers = (map) => {
+    addSquareIcon(map, 'hub-sea', '#0ea5e9'); addSquareIcon(map, 'hub-land', '#b45309');
+    CCUS_SOURCES.forEach(k => { if (!map.getSource(`ccus-${k}`)) map.addSource(`ccus-${k}`, { type: 'geojson', data: fc([]) }); });
+    const L = (layer) => { if (!map.getLayer(layer.id)) map.addLayer(layer); };
+    const halo = { 'text-halo-color': '#ffffff', 'text-halo-width': 1.8 };
+    const label = (id, source, color, size, extra = {}) => L({
+        id, type: 'symbol', source,
+        layout: { 'text-field': ['get', 'label'], 'text-font': LABEL_FONT, 'text-size': size, ...extra },
+        paint: { 'text-color': color, ...halo },
+    });
+    const hit = (id, source, r = 14) => L({ id, type: 'circle', source, paint: { 'circle-radius': r, 'circle-color': '#000', 'circle-opacity': 0 } });
+    const isOne = (k) => ['==', ['get', k], 1];
+
+    // 線
+    L({ id: 'ccus-branch', type: 'line', source: 'ccus-branch', paint: { 'line-color': ['case', isOne('p'), '#94a3b8', '#cbd5e1'], 'line-width': ['case', isOne('p'), 1.5, 1], 'line-opacity': ['case', isOne('p'), 0.75, 0.55] } });
+    L({ id: 'ccus-storage-pipe', type: 'line', source: 'ccus-storageLine', filter: isOne('pipe'), paint: { 'line-color': '#3b82f6', 'line-width': 3, 'line-opacity': 0.7 } });
+    L({ id: 'ccus-storage-ship', type: 'line', source: 'ccus-storageLine', filter: ['!=', ['get', 'pipe'], 1], paint: { 'line-color': '#f59e0b', 'line-width': 3, 'line-opacity': 0.7, 'line-dasharray': [2, 2] } });
+    L({ id: 'ccus-sea', type: 'line', source: 'ccus-sea', paint: { 'line-color': '#0284c7', 'line-width': 2.5, 'line-opacity': 0.75, 'line-dasharray': [2, 2] } });
+    L({ id: 'ccus-land', type: 'line', source: 'ccus-land', paint: { 'line-color': '#f59e0b', 'line-width': 2, 'line-opacity': 0.85, 'line-dasharray': [2, 2] } });
+    L({ id: 'ccus-main', type: 'line', source: 'ccus-main', filter: ['!=', ['get', 'unreal'], 1], layout: { 'line-join': 'round', 'line-cap': 'round' }, paint: { 'line-color': '#3b82f6', 'line-width': ['get', 'w'], 'line-opacity': 0.9 } });
+    L({ id: 'ccus-main-warn', type: 'line', source: 'ccus-main', filter: isOne('unreal'), layout: { 'line-join': 'round' }, paint: { 'line-color': '#f97316', 'line-width': ['get', 'w'], 'line-opacity': 0.8, 'line-dasharray': [1.5, 1] } });
+    L({ id: 'ccus-main-hit', type: 'line', source: 'ccus-main', paint: { 'line-color': '#000', 'line-width': 18, 'line-opacity': 0 } });
+
+    // 點
+    L({ id: 'ccus-source-halo', type: 'circle', source: 'ccus-sources', filter: isOne('halo'), paint: { 'circle-radius': ['*', ['get', 'r'], 1.6], 'circle-color': ['get', 'color'], 'circle-opacity': 0.22 } });
+    L({ id: 'ccus-source', type: 'circle', source: 'ccus-sources', layout: { 'circle-sort-key': ['get', 'r'] }, paint: { 'circle-radius': ['get', 'r'], 'circle-color': ['get', 'color'], 'circle-opacity': ['get', 'op'], 'circle-stroke-color': '#ffffff', 'circle-stroke-width': ['get', 'sw'] } });
+    hit('ccus-source-hit', 'ccus-sources', ['max', ['get', 'r'], 9]);
+    L({ id: 'ccus-future', type: 'circle', source: 'ccus-future', layout: { 'circle-sort-key': ['-', 0, ['get', 'r']] }, paint: { 'circle-radius': ['get', 'r'], 'circle-color': '#d97706', 'circle-opacity': 0.7, 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 1.5 } });
+    L({ id: 'ccus-capture', type: 'circle', source: 'ccus-capture', layout: { 'circle-sort-key': ['-', 0, ['get', 'r']] }, paint: { 'circle-radius': ['get', 'r'], 'circle-color': ['get', 'color'], 'circle-opacity': 0.85, 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 1.5 } });
+    L({ id: 'ccus-util', type: 'circle', source: 'ccus-util', layout: { 'circle-sort-key': ['-', 0, ['get', 'r']] }, paint: { 'circle-radius': ['get', 'r'], 'circle-color': '#10b981', 'circle-opacity': 0.9, 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2 } });
+    L({ id: 'ccus-storage-src', type: 'circle', source: 'ccus-storageSrc', paint: { 'circle-radius': 4, 'circle-color': '#64748b' } });
+    L({ id: 'ccus-storage-site', type: 'circle', source: 'ccus-storageSite', paint: { 'circle-radius': 10, 'circle-color': '#ef4444', 'circle-opacity': 0.9, 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2 } });
+
+    // 可拖曳控制點（實心小圓 + 透明大感應區）
+    L({ id: 'ccus-sea-ctrl', type: 'circle', source: 'ccus-seaCtrl', paint: { 'circle-radius': 5, 'circle-color': 'rgba(2,132,199,0.25)', 'circle-stroke-color': '#0284c7', 'circle-stroke-width': 1.5 } });
+    hit('ccus-sea-ctrl-hit', 'ccus-seaCtrl');
+    L({ id: 'ccus-land-ctrl', type: 'circle', source: 'ccus-landCtrl', paint: { 'circle-radius': 5, 'circle-color': 'rgba(245,158,11,0.25)', 'circle-stroke-color': '#f59e0b', 'circle-stroke-width': 1.5 } });
+    hit('ccus-land-ctrl-hit', 'ccus-landCtrl');
+    L({ id: 'ccus-cluster', type: 'circle', source: 'ccus-clusters', paint: { 'circle-radius': 5, 'circle-color': '#ffffff', 'circle-stroke-color': '#3b82f6', 'circle-stroke-width': 2.5 } });
+    hit('ccus-cluster-hit', 'ccus-clusters');
+    L({ id: 'ccus-node', type: 'circle', source: 'ccus-nodes', paint: { 'circle-radius': 5, 'circle-color': '#ffffff', 'circle-stroke-color': ['case', isOne('unreal'), '#f97316', '#3b82f6'], 'circle-stroke-width': 2.5 } });
+    hit('ccus-node-hit', 'ccus-nodes');
+
+    // 標籤（越後面加入的圖層越優先擺放；互相重疊時由 MapLibre 自動隱藏次要者）
+    label('ccus-land-label', 'ccus-landLabel', '#b45309', 10, { 'text-offset': [0, -0.9] });
+    label('ccus-sea-label', 'ccus-seaLabel', '#0369a1', 11);
+    label('ccus-main-label', 'ccus-mainLabel', ['case', isOne('unreal'), '#c2410c', '#1e40af'], 11, { 'text-offset': [0, -1] });
+    const sideLabel = { 'text-variable-anchor': ['left', 'right', 'top', 'bottom'], 'text-radial-offset': ['/', ['+', ['get', 'r'], 4], 12], 'symbol-sort-key': ['get', 'sort'] };
+    label('ccus-capture-label', 'ccus-capture', '#1e293b', 12, sideLabel);
+    label('ccus-util-label', 'ccus-util', '#064e3b', 12, sideLabel);
+    label('ccus-storage-label', 'ccus-storageSite', '#991b1b', 12, { 'text-variable-anchor': ['left', 'right', 'top'], 'text-radial-offset': 1.2 });
+    L({
+        id: 'ccus-hub', type: 'symbol', source: 'ccus-hubs',
+        layout: {
+            'icon-image': ['case', isOne('land'), 'hub-land', 'hub-sea'], 'icon-allow-overlap': true, 'icon-ignore-placement': true,
+            'text-field': ['get', 'name'], 'text-font': LABEL_FONT, 'text-size': 12, 'text-optional': true,
+            'text-variable-anchor': ['left', 'right', 'top', 'bottom'], 'text-radial-offset': 1.1,
+        },
+        paint: { 'text-color': ['case', isOne('land'), '#78350f', '#0369a1'], ...halo },
+    });
+};
+
+const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], storageData = [], ccsTopology = null, hubs, setHubs, setClusters, routeNodes = {}, setRouteNodes, seaControlPoints = {}, setSeaControlPoints, landControlPoints = {}, setLandControlPoints }) => {
+    const mapRef = useRef(null);
+    const stateRef = useRef({});
+    const dragRef = useRef(null);
+    const hoverKeyRef = useRef(null);
+    const [styleRev, setStyleRev] = useState(0);
+    const [hoveredNode, setHoveredNode] = useState(null);
     const [nodeMenu, setNodeMenu] = useState(null);
+    const [legendOpen, setLegendOpen] = useState(() => typeof window === 'undefined' || window.innerWidth >= 768);
+    const layersKey = activeLayers.join(',');
+    const isPlanning = activeLayers.includes('planning');
 
-    const { baseWidth, baseHeight } = MAP_CONSTANTS;
+    // ---- 轉成 GeoJSON ----
+    const geo = useMemo(() => {
+        const layers = layersKey.split(',');
+        const F = Object.fromEntries(CCUS_SOURCES.map(k => [k, []]));
+        const lk = { sources: [], capture: [], future: [], util: [], storage: [], clusters: [] };
+        const getFallbackCoords = (company, plant) => {
+            const cStr = String(company || ''); const pStr = String(plant || '');
+            const found = captureData.find(x => x.Company === cStr && (x.Plant === pStr || !pStr));
+            if (found && found.Latitude && found.Longitude) return { lat: found.Latitude, lon: found.Longitude };
+            return getApproximateCoordinates(pStr, cStr, '');
+        };
+        const ll = (o) => [Number(o.lon), Number(o.lat)];
 
-    // 智能視圖縮放函數
-    const zoomToRegion = (lat, lon, targetZoom) => {
-        const [px, py] = projectBase(lon, lat);
-        setZoom(targetZoom);
-        setPan({ x: -px * targetZoom, y: -py * targetZoom });
-    };
-
-    const getLonLatFromEvent = (e) => {
-        const svg = mapRef.current;
-        if (!svg) return null;
-        const pt = svg.createSVGPoint();
-        pt.x = e.clientX; pt.y = e.clientY;
-        const g = svg.querySelector('g.map-content-group');
-        if (!g) return null;
-        const globalPoint = pt.matrixTransform(g.getScreenCTM().inverse());
-        const lon = globalPoint.x / MAP_CONSTANTS.baseScale + MAP_CONSTANTS.centerLon;
-        const lat = -(globalPoint.y / (MAP_CONSTANTS.baseScale * 1.1)) + MAP_CONSTANTS.centerLat;
-        return { lon, lat, x: globalPoint.x, y: globalPoint.y };
-    };
-
-    const handleMouseDown = (e) => { 
-        if (nodeMenu) setNodeMenu(null); 
-        setIsDragging(true); setLastPos({ x: e.clientX, y: e.clientY }); 
-    };
-    
-    const handlePathClick = (e, routeId, currentNodes) => {
-        if (!activeLayers.includes('planning') || !setRouteNodes) return;
-        e.stopPropagation();
-        
-        const coords = getLonLatFromEvent(e);
-        if (!coords) return;
-        
-        let minDist = Infinity;
-        let insertIdx = 1;
-        for (let i = 0; i < currentNodes.length - 1; i++) {
-            const [x1, y1] = projectBase(currentNodes[i].lon, currentNodes[i].lat);
-            const [x2, y2] = projectBase(currentNodes[i+1].lon, currentNodes[i+1].lat);
-            const dist = distToSegment(coords.x, coords.y, x1, y1, x2, y2);
-            if (dist < minDist) {
-                minDist = dist;
-                insertIdx = i + 1;
-            }
-        }
-        
-        setRouteNodes(prev => {
-            const newRoutes = { ...prev };
-            const nodes = [...(newRoutes[routeId] || currentNodes)];
-            nodes.splice(insertIdx, 0, { lat: coords.lat, lon: coords.lon });
-            return { ...prev, [routeId]: nodes };
-        });
-    };
-
-    const handleNodeContextMenu = (e, routeId, nodeIndex) => {
-        if (!activeLayers.includes('planning') || !setRouteNodes) return;
-        e.preventDefault(); e.stopPropagation();
-        setRouteNodes(prev => {
-            const currentNodes = prev[routeId];
-            if (!currentNodes || currentNodes.length <= 3) return prev; 
-            const newNodes = [...currentNodes];
-            newNodes.splice(nodeIndex, 1);
-            return { ...prev, [routeId]: newNodes };
-        });
-    };
-
-    const handleNodeMouseDown = (e, id, type, extraId) => {
-        if (!activeLayers.includes('planning')) return;
-        e.stopPropagation();
-        if (e.button === 2) return; 
-
-        if (type === 'hub') {
-            setDragState({ id, type, startX: e.clientX, startY: e.clientY, startLat: hubs[id].lat, startLon: hubs[id].lon });
-        } else if (type === 'cluster') {
-            setDragState({ id, type, startX: e.clientX, startY: e.clientY, startLat: clusters[id].lat, startLon: clusters[id].lon });
-        } else if (type === 'routeNode') {
-            setDragState({ id, routeId: extraId, type, startX: e.clientX, startY: e.clientY, startLat: routeNodes[extraId][id].lat, startLon: routeNodes[extraId][id].lon });
-        } else if (type === 'seaControl') {
-            setDragState({ id, routeId: extraId, type, startX: e.clientX, startY: e.clientY, startLat: seaControlPoints[extraId][id].lat, startLon: seaControlPoints[extraId][id].lon });
-        } else if (type === 'landControl') {
-            setDragState({ id, routeId: extraId, type, startX: e.clientX, startY: e.clientY, startLat: landControlPoints[extraId]?.lat || 0, startLon: landControlPoints[extraId]?.lon || 0 });
-        }
-    };
-
-    const handleNodeClick = (e, id, type, extraId, weight) => {
-        if (!activeLayers.includes('planning')) return;
-        e.stopPropagation();
-        if (type === 'routeNode') {
-            const rect = mapRef.current.getBoundingClientRect();
-            setNodeMenu({
-                routeId: extraId, nodeIdx: id, weight,
-                x: e.clientX - rect.left, y: e.clientY - rect.top
+        if (layers.includes('planning') && ccsTopology) {
+            ccsTopology.seaRoutes.forEach(route => {
+                const c1 = seaControlPoints[route.id]?.c1 || route.c1; const c2 = seaControlPoints[route.id]?.c2 || route.c2;
+                if (!validLL(route.from.lon, route.from.lat) || !validLL(route.to.lon, route.to.lat) || !c1 || !c2) return;
+                const coords = cubicBezier(ll(route.from), ll(c1), ll(c2), ll(route.to));
+                F.sea.push(line(coords));
+                F.seaLabel.push(pt(...coords[16], { label: route.label }));
+                F.seaCtrl.push(pt(c1.lon, c1.lat, { routeId: route.id, cid: 'c1' }), pt(c2.lon, c2.lat, { routeId: route.id, cid: 'c2' }));
+            });
+            ccsTopology.landRoutes.forEach(route => {
+                if (!validLL(route.from.lon, route.from.lat) || !validLL(route.to.lon, route.to.lat)) return;
+                const routeId = `land_${route.from.Company}_${route.to.id}`;
+                const ctrl = landControlPoints[routeId] || { lon: Math.min(Number(route.from.lon), Number(route.to.lon)) - 0.08, lat: (Number(route.from.lat) + Number(route.to.lat)) / 2 };
+                const coords = quadBezier(ll(route.from), ll(ctrl), ll(route.to));
+                F.land.push(line(coords));
+                F.landLabel.push(pt(...coords[12], { label: `陸運 ${Number(route.distance || 0).toFixed(0)}km` }));
+                F.landCtrl.push(pt(ctrl.lon, ctrl.lat, { routeId }));
+            });
+            ccsTopology.branchRoutes.forEach(route => {
+                if (!validLL(route.from.lon, route.from.lat) || !validLL(route.to.lon, route.to.lat)) return;
+                F.branch.push(line([ll(route.from), ll(route.to)], { p: route.isPriority ? 1 : 0 }));
+            });
+            ccsTopology.mainRoutes.forEach(route => {
+                const nodes = routeNodes[route.id] || route.nodes;
+                if (!nodes || nodes.length < 2 || nodes.some(n => !validLL(n.lon, n.lat))) return;
+                const dist = route.recalcDist ? route.recalcDist(nodes) : route.distance;
+                const unreal = dist > 50 ? 1 : 0;
+                F.main.push(line(nodes.map(ll), { routeId: route.id, unreal, w: flowWidth(route) }));
+                const mid = nodes[Math.floor(nodes.length / 2)];
+                F.mainLabel.push(pt(mid.lon, mid.lat, { label: `${Number(dist || 0).toFixed(0)} km`, unreal }));
+                nodes.slice(1, -1).forEach((n, k) => F.nodes.push(pt(n.lon, n.lat, { routeId: route.id, idx: k + 1, unreal, flow: Number(route.weight ?? route.flow) || 0 })));
+            });
+            (ccsTopology.activeClusterNodes || []).forEach((c, i) => {
+                if (!validLL(c.lon, c.lat)) return;
+                lk.clusters[i] = c; F.clusters.push(pt(c.lon, c.lat, { id: c.id, i }));
+            });
+            Object.values(hubs || {}).forEach(h => {
+                if (validLL(h.lon, h.lat)) F.hubs.push(pt(h.lon, h.lat, { id: h.id, name: h.name, land: h.id === 'CENTRAL_HUB_LAND' ? 1 : 0 }));
+            });
+            ccsTopology.validSources.forEach((d, i) => {
+                if (!validLL(d.lon, d.lat)) return;
+                const r = Math.max(3, Math.min(14, 3 + Math.sqrt(Math.max(0, d.Scope1 || 0) / 100000)));
+                const connected = d.distanceToHub >= 0 || d.landDist > 0;
+                lk.sources[i] = d;
+                F.sources.push(pt(d.lon, d.lat, {
+                    i, r, color: d.isPowerPlant ? '#a855f7' : (d.isPriority ? '#e11d48' : '#f97316'),
+                    op: connected ? 0.9 : 0.3, sw: connected ? (d.isPriority ? 1.5 : 1) : 0, halo: d.isPriority && connected ? 1 : 0,
+                }));
             });
         }
-    };
+        if (layers.includes('capture') || layers.includes('future')) {
+            captureData.forEach((d, i) => {
+                const fb = getFallbackCoords(d.Company, d.Plant);
+                const lat = cleanNumber(d.Latitude) || fb.lat; const lon = cleanNumber(d.Longitude) || fb.lon;
+                if (!validLL(lon, lat)) return;
+                if (layers.includes('capture')) {
+                    const r = Math.max(6, Math.min(25, Math.sqrt(Math.max(0, d.Capture_Volume || 0)) * 1.5));
+                    lk.capture[i] = d; F.capture.push(pt(lon, lat, { i, r, color: stringToColor(d.Capture_Tech), label: d.Company, sort: -r }));
+                }
+                if (layers.includes('future')) {
+                    const r = Math.max(6, Math.min(25, Math.sqrt(Math.max(0, d.Future_Emission_Volume || 0)) * 1.5));
+                    lk.future[i] = d; F.future.push(pt(lon, lat, { i, r }));
+                }
+            });
+        }
+        if (layers.includes('util')) {
+            utilData.forEach((d, i) => {
+                const c = getFallbackCoords(d.Target_Company, d.Target_Plant);
+                if (!validLL(c.lon, c.lat)) return;
+                const r = Math.max(8, Math.min(20, Math.sqrt(Math.max(0, d.Expected_Demand || 0)) * 2));
+                lk.util[i] = d; F.util.push(pt(c.lon, c.lat, { i, r, label: d.Target_Company, sort: -r }));
+            });
+        }
+        if (layers.includes('storage')) {
+            storageData.forEach((d, i) => {
+                const src = getFallbackCoords(d.Source_Company, ''); const tgt = getStorageCoords(d.Storage_Site, hubs);
+                if (!validLL(src.lon, src.lat)) return;
+                lk.storage[i] = d;
+                F.storageLine.push(line([ll(src), ll(tgt)], { pipe: String(d.Transport_Method).includes('管線') ? 1 : 0 }));
+                F.storageSrc.push(pt(src.lon, src.lat));
+                F.storageSite.push(pt(tgt.lon, tgt.lat, { i, label: d.Storage_Site }));
+            });
+        }
+        return { F, lk };
+    }, [layersKey, ccsTopology, hubs, routeNodes, seaControlPoints, landControlPoints, captureData, utilData, storageData]);
+
+    // 事件處理器只註冊一次，透過 ref 取得最新資料與 setter
+    useEffect(() => {
+        stateRef.current = { lk: geo.lk, hubs, ccsTopology, routeNodes, isPlanning, setHubs, setClusters, setRouteNodes, setSeaControlPoints, setLandControlPoints };
+    });
+
+    useEffect(() => {
+        const map = mapRef.current;
+        if (!map || !styleRev) return;
+        Object.entries(geo.F).forEach(([k, feats]) => map.getSource(`ccus-${k}`)?.setData(fc(feats)));
+    }, [geo, styleRev]);
+
+    const baseNodes = (routeId) => stateRef.current.ccsTopology?.mainRoutes.find(r => r.id === routeId)?.nodes;
+
+    const onStyleReady = useCallback((map) => {
+        addCcusLayers(map);
+        const firstInit = !mapRef.current;
+        mapRef.current = map;
+        setStyleRev(r => r + 1);
+        if (!firstInit) return;
+
+        const canvas = map.getCanvasContainer();
+        const existing = (ids) => ids.filter(id => map.getLayer(id));
+        const query = (point, ids) => map.queryRenderedFeatures(point, { layers: existing(ids) });
+
+        const hoverFromFeature = (f) => {
+            const s = stateRef.current; const p = f.properties;
+            switch (f.layer.id) {
+                case 'ccus-hub': { const h = s.hubs?.[p.id]; return h && [`hub-${p.id}`, { ...h, nodeType: 'hub', hubType: h.type }]; }
+                case 'ccus-cluster-hit': { const c = s.lk.clusters[p.i]; return c && [`cl-${p.i}`, { ...c, nodeType: 'cluster' }]; }
+                case 'ccus-source-hit': { const d = s.lk.sources[p.i]; return d && [`src-${p.i}`, { ...d, nodeType: 'planning_source' }]; }
+                case 'ccus-capture': { const d = s.lk.capture[p.i]; return d && [`cap-${p.i}`, { ...d, nodeType: 'capture' }]; }
+                case 'ccus-future': { const d = s.lk.future[p.i]; return d && [`fut-${p.i}`, { ...d, nodeType: 'future' }]; }
+                case 'ccus-util': { const d = s.lk.util[p.i]; return d && [`util-${p.i}`, { ...d, nodeType: 'util' }]; }
+                case 'ccus-storage-site': { const d = s.lk.storage[p.i]; return d && [`sto-${p.i}`, { ...d, nodeType: 'storage' }]; }
+                default: return null;
+            }
+        };
+        const setHover = (h) => {
+            const key = h ? h[0] : null;
+            if (key === hoverKeyRef.current) return;
+            hoverKeyRef.current = key; setHoveredNode(h ? h[1] : null);
+        };
+
+        const moveDrag = (lngLat) => {
+            const d = dragRef.current; const s = stateRef.current;
+            d.moved = true;
+            const pos = { lat: lngLat.lat, lon: lngLat.lng };
+            if (d.layer === 'ccus-hub') s.setHubs?.(prev => ({ ...prev, [d.id]: { ...prev[d.id], ...pos } }));
+            else if (d.layer === 'ccus-cluster-hit') s.setClusters?.(prev => ({ ...prev, [d.id]: { ...prev[d.id], ...pos } }));
+            else if (d.layer === 'ccus-node-hit') s.setRouteNodes?.(prev => {
+                const nodes = [...(prev[d.routeId] || baseNodes(d.routeId) || [])];
+                if (!nodes[d.idx]) return prev;
+                nodes[d.idx] = { ...nodes[d.idx], ...pos };
+                return { ...prev, [d.routeId]: nodes };
+            });
+            else if (d.layer === 'ccus-sea-ctrl-hit') s.setSeaControlPoints?.(prev => {
+                const route = s.ccsTopology?.seaRoutes.find(r => r.id === d.routeId);
+                const cur = prev[d.routeId] || { c1: route?.c1, c2: route?.c2 };
+                return { ...prev, [d.routeId]: { ...cur, [d.cid]: pos } };
+            });
+            else if (d.layer === 'ccus-land-ctrl-hit') s.setLandControlPoints?.(prev => ({ ...prev, [d.routeId]: pos }));
+        };
+
+        const startDrag = (e) => {
+            if (!stateRef.current.isPlanning || e.originalEvent?.button === 2) return;
+            const f = query(e.point, CCUS_DRAGGABLE)[0];
+            if (!f) return;
+            e.preventDefault();
+            const p = f.properties;
+            dragRef.current = { layer: f.layer.id, id: p.id, routeId: p.routeId, idx: p.idx, cid: p.cid, moved: false };
+            canvas.style.cursor = 'grabbing';
+            setNodeMenu(null);
+        };
+        const endDrag = () => { if (dragRef.current) { dragRef.current = null; canvas.style.cursor = ''; } };
+
+        map.on('mousedown', startDrag);
+        map.on('touchstart', (e) => { if (e.points?.length === 1) startDrag(e); });
+        map.on('mouseup', endDrag);
+        map.on('touchend', endDrag);
+        map.on('touchmove', (e) => { if (dragRef.current) { e.preventDefault(); moveDrag(e.lngLat); } });
+        map.on('mousemove', (e) => {
+            if (dragRef.current) { moveDrag(e.lngLat); return; }
+            const s = stateRef.current;
+            const f = query(e.point, CCUS_INTERACTIVE)[0];
+            if (f) canvas.style.cursor = s.isPlanning && CCUS_DRAGGABLE.includes(f.layer.id) ? 'grab' : 'pointer';
+            else canvas.style.cursor = s.isPlanning && query(e.point, ['ccus-main-hit']).length ? 'crosshair' : '';
+            setHover(f ? hoverFromFeature(f) : null);
+        });
+        map.on('mouseout', () => { endDrag(); setHover(null); });
+
+        map.on('click', (e) => {
+            const s = stateRef.current;
+            if (s.isPlanning) {
+                const node = query(e.point, ['ccus-node-hit'])[0];
+                if (node) {
+                    setHover(null);
+                    setNodeMenu({ routeId: node.properties.routeId, nodeIdx: node.properties.idx, weight: node.properties.flow, x: e.point.x, y: e.point.y });
+                    return;
+                }
+            }
+            const f = query(e.point, CCUS_INTERACTIVE)[0];
+            const h = f && hoverFromFeature(f);
+            if (h) { setNodeMenu(null); setHover(h); return; }
+            const lineF = s.isPlanning && !f && query(e.point, ['ccus-main-hit'])[0];
+            if (lineF && s.setRouteNodes) {
+                // 點主管線：在最近的線段插入新節點
+                const routeId = lineF.properties.routeId;
+                s.setRouteNodes(prev => {
+                    const nodes = [...(prev[routeId] || baseNodes(routeId) || [])];
+                    if (nodes.length < 2) return prev;
+                    let best = Infinity; let insertIdx = 1;
+                    for (let i = 0; i < nodes.length - 1; i++) {
+                        const a = map.project([nodes[i].lon, nodes[i].lat]); const b = map.project([nodes[i + 1].lon, nodes[i + 1].lat]);
+                        const dd = distToSegment(e.point.x, e.point.y, a.x, a.y, b.x, b.y);
+                        if (dd < best) { best = dd; insertIdx = i + 1; }
+                    }
+                    nodes.splice(insertIdx, 0, { lat: e.lngLat.lat, lon: e.lngLat.lng });
+                    return { ...prev, [routeId]: nodes };
+                });
+                return;
+            }
+            setNodeMenu(null); setHover(null);
+        });
+
+        // 右鍵刪除管線節點（至少保留 3 點）
+        map.on('contextmenu', (e) => {
+            const s = stateRef.current;
+            if (!s.isPlanning || !s.setRouteNodes) return;
+            const node = query(e.point, ['ccus-node-hit'])[0];
+            if (!node) return;
+            e.preventDefault();
+            const { routeId, idx } = node.properties;
+            s.setRouteNodes(prev => {
+                const nodes = [...(prev[routeId] || baseNodes(routeId) || [])];
+                if (nodes.length <= 3) return prev;
+                nodes.splice(idx, 1);
+                return { ...prev, [routeId]: nodes };
+            });
+        });
+    }, []);
 
     const handleDuplicateNode = () => {
         if (!nodeMenu || !setRouteNodes) return;
+        const { routeId, nodeIdx } = nodeMenu;
         setRouteNodes(prev => {
-            const { routeId, nodeIdx } = nodeMenu;
-            const currentNodes = prev[routeId];
-            if (!currentNodes) return prev;
-            
-            const currNode = currentNodes[nodeIdx];
-            const newNode = { lat: currNode.lat - 0.05, lon: currNode.lon + 0.05 };
-            const newNodes = [...currentNodes];
-            newNodes.splice(nodeIdx + 1, 0, newNode);
-            return { ...prev, [routeId]: newNodes };
+            const nodes = [...(prev[routeId] || baseNodes(routeId) || [])];
+            const curr = nodes[nodeIdx];
+            if (!curr) return prev;
+            nodes.splice(nodeIdx + 1, 0, { lat: curr.lat - 0.05, lon: curr.lon + 0.05 });
+            return { ...prev, [routeId]: nodes };
         });
         setNodeMenu(null);
     };
 
     const handleDeleteNode = () => {
         if (!nodeMenu || !setRouteNodes) return;
+        const { routeId, nodeIdx } = nodeMenu;
         setRouteNodes(prev => {
-            const { routeId, nodeIdx } = nodeMenu;
-            const currentNodes = prev[routeId];
-            if (!currentNodes || currentNodes.length <= 3) return prev; 
-            const newNodes = [...currentNodes];
-            newNodes.splice(nodeIdx, 1);
-            return { ...prev, [routeId]: newNodes };
+            const nodes = [...(prev[routeId] || baseNodes(routeId) || [])];
+            if (nodes.length <= 3) return prev;
+            nodes.splice(nodeIdx, 1);
+            return { ...prev, [routeId]: nodes };
         });
         setNodeMenu(null);
     };
 
-    const handleMouseMove = (e) => {
-        if (dragState) {
-            const dx = e.clientX - dragState.startX; const dy = e.clientY - dragState.startY;
-            const dLon = dx / (MAP_CONSTANTS.baseScale * zoom); const dLat = -dy / (MAP_CONSTANTS.baseScale * 1.1 * zoom);
-            if (dragState.type === 'hub' && setHubs) {
-                setHubs(prev => ({...prev, [dragState.id]: { ...prev[dragState.id], lat: dragState.startLat + dLat, lon: dragState.startLon + dLon }}));
-            } else if (dragState.type === 'cluster' && setClusters) {
-                setClusters(prev => ({...prev, [dragState.id]: { ...prev[dragState.id], lat: dragState.startLat + dLat, lon: dragState.startLon + dLon }}));
-            } else if (dragState.type === 'routeNode' && setRouteNodes) {
-                setRouteNodes(prev => {
-                    const newRoutes = { ...prev };
-                    newRoutes[dragState.routeId] = [...newRoutes[dragState.routeId]];
-                    newRoutes[dragState.routeId][dragState.id] = { 
-                        ...newRoutes[dragState.routeId][dragState.id], 
-                        lat: dragState.startLat + dLat, 
-                        lon: dragState.startLon + dLon 
-                    };
-                    return newRoutes;
-                });
-            } else if (dragState.type === 'seaControl' && setSeaControlPoints) {
-                setSeaControlPoints(prev => {
-                    const newPoints = { ...prev };
-                    newPoints[dragState.routeId] = { ...newPoints[dragState.routeId] };
-                    newPoints[dragState.routeId][dragState.id] = {
-                        ...newPoints[dragState.routeId][dragState.id],
-                        lat: dragState.startLat + dLat,
-                        lon: dragState.startLon + dLon
-                    };
-                    return newPoints;
-                });
-            } else if (dragState.type === 'landControl' && setLandControlPoints) {
-                setLandControlPoints(prev => {
-                    const newPoints = { ...prev };
-                    newPoints[dragState.routeId] = {
-                        lat: dragState.startLat + dLat,
-                        lon: dragState.startLon + dLon
-                    };
-                    return newPoints;
-                });
-            }
-        } else if (isDragging) {
-            setPan(prev => ({ x: prev.x + (e.clientX - lastPos.x), y: prev.y + (e.clientY - lastPos.y) }));
-            setLastPos({ x: e.clientX, y: e.clientY });
-        }
-    };
-    
-    const handleMouseUp = () => { setIsDragging(false); setDragState(null); };
-    const handleMouseLeave = () => { setIsDragging(false); setDragState(null); };
+    const fitTo = (bounds) => mapRef.current?.fitBounds(bounds, { padding: 24, duration: 700 });
 
     const exportMapAsImage = () => {
-        const svgElement = document.getElementById('ccus-main-map');
-        if (!svgElement) return;
-
-        const clonedSvg = svgElement.cloneNode(true);
-        if (!clonedSvg.getAttribute('xmlns')) clonedSvg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
-        clonedSvg.setAttribute('width', '800');
-        clonedSvg.setAttribute('height', '900');
-        clonedSvg.style.backgroundColor = '#f8fafc';
-        clonedSvg.style.fontFamily = 'sans-serif';
-
-        const serializer = new XMLSerializer(); 
-        const svgString = serializer.serializeToString(clonedSvg);
-        
-        const canvas = document.createElement('canvas'); 
-        const ctx = canvas.getContext('2d');
-        const scale = 2; 
-        canvas.width = 800 * scale; 
-        canvas.height = 900 * scale;
-        ctx.scale(scale, scale);
-        
-        const img = new Image(); 
-        img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgString);
-        
-        img.onload = () => {
-            ctx.drawImage(img, 0, 0, 800, 900); 
-            const a = document.createElement('a'); 
-            a.download = 'CCUS_Pipeline_Map_HighRes.png'; 
-            a.href = canvas.toDataURL('image/png'); 
-            a.click();
-        }; 
+        const map = mapRef.current;
+        if (!map) return;
+        const a = document.createElement('a');
+        a.download = 'CCUS_Pipeline_Map.png';
+        a.href = map.getCanvas().toDataURL('image/png');
+        a.click();
     };
 
-    const textScale = Math.pow(zoom, 0.7);
-
-    const getFallbackCoords = (company, plant) => {
-        const cStr = String(company || ''); const pStr = String(plant || '');
-        const found = captureData.find(x => x.Company === cStr && (x.Plant === pStr || !pStr));
-        if (found && found.Latitude && found.Longitude) return { lat: found.Latitude, lon: found.Longitude };
-        return getApproximateCoordinates(pStr, cStr, '');
-    };
+    const regionBtn = 'px-3 py-1.5 hover:bg-blue-50 hover:text-blue-600 rounded transition-colors';
 
     return (
-        <div className="w-full h-full relative bg-slate-50/80 rounded-lg overflow-hidden border border-slate-200 min-h-[400px]" ref={containerRef} onContextMenu={(e)=>e.preventDefault()}>
-            
-            {/* 左側地圖工具列：快速導航與視圖切換 */}
-            <div className="absolute top-4 left-4 z-20 flex flex-col gap-2 pointer-events-auto">
-                <div className="flex bg-white/95 p-1 rounded-lg shadow-sm border border-slate-200 backdrop-blur text-xs font-bold text-slate-600">
-                    <button onClick={() => {setZoom(1); setPan({x:0, y:0});}} className="px-3 py-1.5 hover:bg-blue-50 hover:text-blue-600 rounded transition-colors">全視角</button>
-                    <button onClick={() => zoomToRegion(25.03, 121.30, 2.5)} className="px-3 py-1.5 hover:bg-blue-50 hover:text-blue-600 rounded transition-colors border-l border-slate-200">北區</button>
-                    <button onClick={() => zoomToRegion(24.05, 120.45, 3)} className="px-3 py-1.5 hover:bg-blue-50 hover:text-blue-600 rounded transition-colors border-l border-slate-200">中區</button>
-                    <button onClick={() => zoomToRegion(22.62, 120.31, 3.5)} className="px-3 py-1.5 hover:bg-blue-50 hover:text-blue-600 rounded transition-colors border-l border-slate-200">南區</button>
+        <div className="w-full h-full relative bg-slate-50/80 rounded-lg overflow-hidden border border-slate-200 min-h-[400px]" onContextMenu={(e) => e.preventDefault()}>
+            <MapLibreBase onStyleReady={onStyleReady} />
+
+            {/* 左上：快速導航 */}
+            <div className="absolute top-3 left-3 md:top-4 md:left-4 z-20 pointer-events-auto max-w-[calc(100%-4.5rem)] overflow-x-auto no-scrollbar">
+                <div className="flex bg-white/95 p-1 rounded-lg shadow-sm border border-slate-200 backdrop-blur text-sm font-bold text-slate-600 whitespace-nowrap">
+                    <button onClick={() => fitTo(TAIWAN_BOUNDS)} className={regionBtn}>全視角</button>
+                    {Object.entries(REGION_BOUNDS).map(([name, b]) => (
+                        <button key={name} onClick={() => fitTo(b)} className={`${regionBtn} border-l border-slate-200`}>{name}</button>
+                    ))}
                 </div>
             </div>
-
             <div className="absolute top-16 left-4 z-20 bg-white/95 backdrop-blur shadow-2xl rounded-xl border border-slate-200 p-3 transition-all duration-300 w-64 pointer-events-none" style={{ opacity: hoveredNode && !nodeMenu ? 1 : 0, transform: hoveredNode && !nodeMenu ? 'translateY(0)' : 'translateY(-10px)' }}>
                 {hoveredNode && hoveredNode.nodeType === 'hub' && (
                     <div>
@@ -573,352 +766,84 @@ const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], sto
                 </div>
             )}
 
-            <div className="absolute top-4 right-4 z-10 flex flex-col gap-2 bg-white/95 p-1.5 rounded-lg shadow-sm border border-slate-200 backdrop-blur">
-                <button onClick={() => setZoom(prev => Math.min(prev * 1.3, 10))} className="p-2 bg-slate-50 hover:bg-slate-200 rounded-md text-slate-600 transition-colors" title="放大"><ZoomIn size={18}/></button>
-                <button onClick={() => setZoom(prev => Math.max(prev / 1.3, 0.5))} className="p-2 bg-slate-50 hover:bg-slate-200 rounded-md text-slate-600 transition-colors" title="縮小"><ZoomOut size={18}/></button>
-                <button onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }} className="p-2 bg-slate-50 hover:bg-slate-200 rounded-md text-slate-600 transition-colors" title="重置畫面"><Maximize size={18}/></button>
-                <div className="w-full h-px bg-slate-200 my-1"></div>
-                <button onClick={exportMapAsImage} className="p-2 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-md transition-colors font-bold flex items-center justify-center" title="輸出高品質圖片"><DownloadCloud size={18}/></button>
+            {/* 右上：縮放與輸出 */}
+            <div className="absolute top-3 right-3 md:top-4 md:right-4 z-10 flex flex-col gap-1.5 md:gap-2 bg-white/95 p-1 md:p-1.5 rounded-lg shadow-sm border border-slate-200 backdrop-blur">
+                <button onClick={() => mapRef.current?.zoomIn()} className="hidden md:block p-2 bg-slate-50 hover:bg-slate-200 rounded-md text-slate-600 transition-colors" title="放大" aria-label="放大"><ZoomIn size={18}/></button>
+                <button onClick={() => mapRef.current?.zoomOut()} className="hidden md:block p-2 bg-slate-50 hover:bg-slate-200 rounded-md text-slate-600 transition-colors" title="縮小" aria-label="縮小"><ZoomOut size={18}/></button>
+                <button onClick={() => fitTo(TAIWAN_BOUNDS)} className="p-2 bg-slate-50 hover:bg-slate-200 rounded-md text-slate-600 transition-colors" title="重置畫面" aria-label="重置畫面"><Maximize size={18}/></button>
+                <div className="w-full h-px bg-slate-200 md:my-1"></div>
+                <button onClick={exportMapAsImage} className="p-2 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-md transition-colors font-bold flex items-center justify-center" title="輸出地圖圖片" aria-label="輸出地圖圖片"><DownloadCloud size={18}/></button>
             </div>
 
-            <svg id="ccus-main-map" viewBox={`0 0 ${baseWidth} ${baseHeight}`} className={`w-full h-full select-none ${isDragging ? 'cursor-grabbing' : 'cursor-default'} ${dragState ? 'cursor-move' : ''}`} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave={handleMouseLeave} ref={mapRef}>
-                <g className="map-content-group" transform={`translate(${baseWidth/2 + pan.x}, ${baseHeight/2 + pan.y}) scale(${zoom})`}>
-                    {mapPaths.map((p, i) => p.d && <path key={`map-${i}`} d={p.d} fill="#f8fafc" stroke="#cbd5e1" strokeWidth={1.5 / zoom} />)}
-
-                    {activeLayers.includes('planning') && ccsTopology && (
-                        <>
-                            {/* 海運航線 */}
-                            {ccsTopology.seaRoutes.map((route, i) => {
-                                const [x1, y1] = projectBase(route.from.lon, route.from.lat); const [x2, y2] = projectBase(route.to.lon, route.to.lat);
-                                const currentC1 = seaControlPoints[route.id]?.c1 || route.c1;
-                                const currentC2 = seaControlPoints[route.id]?.c2 || route.c2;
-                                const [cx1, cy1] = projectBase(currentC1.lon, currentC1.lat); 
-                                const [cx2, cy2] = projectBase(currentC2.lon, currentC2.lat);
-                                if (x1 === -9999 || x2 === -9999 || cx1 === -9999) return null;
-                                
-                                const midX = 0.125*x1 + 0.375*cx1 + 0.375*cx2 + 0.125*x2; const midY = 0.125*y1 + 0.375*cy1 + 0.375*cy2 + 0.125*y2;
-                                
-                                const isC1Dragged = dragState && dragState.id === 'c1' && dragState.routeId === route.id;
-                                const isC2Dragged = dragState && dragState.id === 'c2' && dragState.routeId === route.id;
-
-                                return (
-                                    <g key={`sea-route-${i}`}>
-                                        <path d={`M ${x1} ${y1} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${x2} ${y2}`} stroke="#0284c7" strokeWidth={Math.max(2, Math.log10(Math.max(10000, route.weight ?? route.flow ?? 0))/zoom)} strokeDasharray={`${6/zoom} ${6/zoom}`} fill="none" opacity={0.6}/>
-                                        <text x={midX} y={midY} fontSize={11/zoom} fill="#0369a1" textAnchor="middle" fontWeight="bold" style={{textShadow: '0 0 3px white', pointerEvents: 'none'}}>{route.label}</text>
-                                        
-                                        <circle cx={cx1} cy={cy1} r={16/zoom} fill="transparent" className={isC1Dragged ? "cursor-grabbing" : "cursor-grab hover:scale-125"} onMouseDown={(e) => handleNodeMouseDown(e, 'c1', 'seaControl', route.id)}/>
-                                        <circle cx={cx1} cy={cy1} r={4/zoom} fill="rgba(2,132,199,0.2)" stroke="#0284c7" strokeWidth={isC1Dragged ? 2/zoom : 1/zoom} strokeDasharray={`${2/zoom} ${2/zoom}`} pointerEvents="none"/>
-                                        
-                                        <circle cx={cx2} cy={cy2} r={16/zoom} fill="transparent" className={isC2Dragged ? "cursor-grabbing" : "cursor-grab hover:scale-125"} onMouseDown={(e) => handleNodeMouseDown(e, 'c2', 'seaControl', route.id)}/>
-                                        <circle cx={cx2} cy={cy2} r={4/zoom} fill="rgba(2,132,199,0.2)" stroke="#0284c7" strokeWidth={isC2Dragged ? 2/zoom : 1/zoom} strokeDasharray={`${2/zoom} ${2/zoom}`} pointerEvents="none"/>
-                                    </g>
-                                );
-                            })}
-                            
-                            {/* 陸運路線 (針對孤立廠區的琥珀色虛線) - 新增陸運控制點(可拖曳) */}
-                            {ccsTopology.landRoutes.map((route, i) => {
-                                const [x1, y1] = projectBase(route.from.lon, route.from.lat); const [x2, y2] = projectBase(route.to.lon, route.to.lat);
-                                if (x1 === -9999 || x2 === -9999) return null;
-                                
-                                const routeId = `land_${route.from.Company}_${route.to.id}`;
-                                const customControl = landControlPoints[routeId];
-                                
-                                let cx, cy;
-                                if (customControl) {
-                                    [cx, cy] = projectBase(customControl.lon, customControl.lat);
-                                } else {
-                                    cx = Math.min(x1, x2) - 40/zoom; // 預設向海側(西側)偏移更多
-                                    cy = (y1 + y2) / 2;
-                                }
-
-                                const midX = 0.25*x1 + 0.5*cx + 0.25*x2; const midY = 0.25*y1 + 0.5*cy + 0.25*y2;
-                                const isDragged = dragState && dragState.routeId === routeId && dragState.type === 'landControl';
-
-                                return (
-                                    <g key={`land-route-${i}`}>
-                                        <path d={`M ${x1} ${y1} Q ${cx} ${cy}, ${x2} ${y2}`} stroke="#f59e0b" strokeWidth={2/zoom} strokeDasharray={`${4/zoom} ${4/zoom}`} fill="none" opacity={0.7} />
-                                        <text x={midX} y={midY - (4/zoom)} fontSize={9/zoom} fill="#b45309" textAnchor="middle" fontWeight="bold" style={{textShadow: '0 0 3px white', pointerEvents: 'none'}}>陸運 {Number(route.distance||0).toFixed(0)}km</text>
-                                        
-                                        <circle cx={cx} cy={cy} r={16/zoom} fill="transparent" className={isDragged ? "cursor-grabbing" : "cursor-grab hover:scale-125"} onMouseDown={(e) => handleNodeMouseDown(e, 'land_ctrl', 'landControl', routeId)}/>
-                                        <circle cx={cx} cy={cy} r={4/zoom} fill="rgba(245,158,11,0.2)" stroke="#f59e0b" strokeWidth={isDragged ? 2/zoom : 1/zoom} strokeDasharray={`${2/zoom} ${2/zoom}`} pointerEvents="none"/>
-                                    </g>
-                                );
-                            })}
-                            
-                            {/* 廠區支線 (最短直線) */}
-                            {ccsTopology.branchRoutes.map((route, i) => {
-                                const [x1, y1] = projectBase(route.from.lon, route.from.lat); const [x2, y2] = projectBase(route.to.lon, route.to.lat);
-                                if (x1 === -9999 || x2 === -9999) return null;
-                                const strokeColor = route.isPriority ? "#94a3b8" : "#cbd5e1"; const strokeW = (route.isPriority ? 1.5 : 1) / zoom;
-                                const opac = route.isPriority ? 0.6 : 0.4;
-                                return (<path key={`branch-${i}`} d={`M ${x1} ${y1} L ${x2} ${y2}`} stroke={strokeColor} strokeWidth={strokeW} fill="none" opacity={opac} />);
-                            })}
-                            
-                            {/* 多節點主管線路徑 (不含節點圓點) */}
-                            {ccsTopology.mainRoutes.map((route, i) => {
-                                const currentNodes = routeNodes[route.id] || route.nodes;
-                                const pathNodes = currentNodes.map(n => projectBase(n.lon, n.lat));
-                                if (pathNodes.some(n => n[0] === -9999)) return null;
-                                
-                                let pathD = `M ${pathNodes[0][0]} ${pathNodes[0][1]} `;
-                                for (let j = 1; j < pathNodes.length; j++) pathD += `L ${pathNodes[j][0]} ${pathNodes[j][1]} `;
-                                
-                                const dist = route.recalcDist ? route.recalcDist(currentNodes) : route.distance;
-                                const isUnrealistic = dist > 50;
-                                const strokeColor = isUnrealistic ? "#f97316" : "#3b82f6"; const textColor = isUnrealistic ? "#c2410c" : "#1e40af";
-                                const midIdx = Math.floor(pathNodes.length / 2); const midX = pathNodes[midIdx][0]; const midY = pathNodes[midIdx][1];
-                                
-                                return (
-                                    <g key={`main-route-path-${i}`}>
-                                        <path d={pathD} stroke={strokeColor} strokeWidth={Math.max(2, Math.log10(Math.max(10000, route.weight ?? route.flow ?? 0)))/zoom} strokeDasharray={isUnrealistic ? `${6/zoom} ${4/zoom}` : "none"} fill="none" strokeLinejoin="round" opacity={isUnrealistic ? 0.7 : 0.85}/>
-                                        <path d={pathD} stroke="transparent" strokeWidth={20/zoom} fill="none" className="cursor-crosshair" onClick={(e) => handlePathClick(e, route.id, currentNodes)} />
-                                        <text x={midX} y={midY - (8/zoom)} fontSize={10/zoom} fill={textColor} textAnchor="middle" fontWeight="bold" style={{textShadow: '0 0 3px white', pointerEvents: 'none'}}>{Number(dist||0).toFixed(0)} km</text>
-                                    </g>
-                                );
-                            })}
-                            
-                            {/* 將所有可互動元素集中在最後繪製，確保位於最上層，並放大隱形感應區 */}
-                            {/* 中繼聚落點 (可拖曳) */}
-                            {clusters && Object.values(clusters).map((cluster, i) => {
-                                if (cluster.emissions <= 0) return null;
-                                const [cx, cy] = projectBase(cluster.lon, cluster.lat);
-                                if (cx === -9999) return null;
-                                const isDragged = dragState && dragState.id === cluster.id;
-                                return (
-                                    <g key={`cluster-${i}`} className={isDragged ? "cursor-grabbing" : "cursor-grab hover:scale-125 transition-transform"} onMouseEnter={() => setHoveredNode({...cluster, nodeType: 'cluster'})} onMouseLeave={() => setHoveredNode(null)} onMouseDown={(e) => handleNodeMouseDown(e, cluster.id, 'cluster')}>
-                                        <circle cx={cx} cy={cy} r={16/zoom} fill="transparent" />
-                                        <circle cx={cx} cy={cy} r={isDragged ? 5/zoom : 4/zoom} fill="#fff" stroke={isDragged ? "#fcd34d" : "#3b82f6"} strokeWidth={isDragged ? 2.5/zoom : 2/zoom} style={{ filter: 'drop-shadow(0px 2px 3px rgba(0,0,0,0.4))' }} pointerEvents="none"/>
-                                    </g>
-                                );
-                            })}
-                            
-                            {/* 主管線節點 (隱形大感應區、點擊出選單) */}
-                            {ccsTopology.mainRoutes.map(route => {
-                                const currentNodes = routeNodes[route.id] || route.nodes;
-                                const dist = route.recalcDist ? route.recalcDist(currentNodes) : route.distance;
-                                const strokeColor = dist > 50 ? "#f97316" : "#3b82f6";
-                                
-                                return currentNodes.slice(1, -1).map((n, idx) => {
-                                    const [cx, cy] = projectBase(n.lon, n.lat);
-                                    const actualIdx = idx + 1;
-                                    const isDragged = dragState && dragState.id === actualIdx && dragState.routeId === route.id;
-                                    return (
-                                        <g key={`node-${route.id}-${idx}`} 
-                                           className={isDragged ? "cursor-grabbing" : "cursor-pointer hover:scale-125 transition-transform"} 
-                                           onMouseDown={(e) => handleNodeMouseDown(e, actualIdx, 'routeNode', route.id)} 
-                                           onContextMenu={(e) => handleNodeContextMenu(e, route.id, actualIdx)}
-                                           onClick={(e) => handleNodeClick(e, actualIdx, 'routeNode', route.id, route.weight)}
-                                        >
-                                            <circle cx={cx} cy={cy} r={16/zoom} fill="transparent" />
-                                            <circle cx={cx} cy={cy} r={isDragged ? 5/zoom : 4/zoom} fill="#fff" stroke={isDragged ? "#fcd34d" : strokeColor} strokeWidth={isDragged ? 2.5/zoom : 2/zoom} style={{ filter: 'drop-shadow(0px 2px 3px rgba(0,0,0,0.4))' }} pointerEvents="none"/>
-                                        </g>
-                                    );
-                                });
-                            })}
-                            
-                            {/* 樞紐站 (隱形大感應區) */}
-                            {hubs && Object.values(hubs).map((hub, i) => {
-                                const [cx, cy] = projectBase(hub.lon, hub.lat);
-                                if (cx === -9999) return null;
-                                const isLandHub = hub.id === 'CENTRAL_HUB_LAND'; const isDragged = dragState && dragState.id === hub.id;
-                                return (
-                                    <g key={`hub-${i}`} className={isDragged ? "cursor-grabbing" : "cursor-grab hover:scale-110 transition-transform"} onMouseEnter={() => setHoveredNode({...hub, nodeType: 'hub', hubType: hub.type})} onMouseLeave={() => setHoveredNode(null)} onMouseDown={(e) => handleNodeMouseDown(e, hub.id, 'hub')}>
-                                        <rect x={cx - 16/zoom} y={cy - 16/zoom} width={32/zoom} height={32/zoom} fill="transparent" />
-                                        <rect x={cx - 10/zoom} y={cy - 10/zoom} width={20/zoom} height={20/zoom} fill={isLandHub ? "#b45309" : "#0ea5e9"} stroke={isDragged ? "#fbbf24" : "white"} strokeWidth={isDragged ? 3/zoom : 2/zoom} style={{ filter: 'drop-shadow(0px 3px 4px rgba(0,0,0,0.4))' }} pointerEvents="none" />
-                                        <text x={cx + 14/zoom} y={cy + 4/zoom} fontSize={12/textScale} fill={isLandHub ? "#78350f" : "#0369a1"} fontWeight="900" paintOrder="stroke" stroke="white" strokeWidth={3/textScale} className="pointer-events-none">{hub.name}</text>
-                                    </g>
-                                );
-                            })}
-                            
-                            {/* 廠區排放點源 (按比例縮放與電廠獨立顯色) */}
-                            {ccsTopology.validSources.map((d, i) => {
-                                const [cx, cy] = projectBase(d.lon, d.lat);
-                                if (cx === -9999) return null;
-                                const r = Math.max(3, Math.min(14, (3 + Math.sqrt(Math.max(0, d.Scope1 || 0) / 100000)))) / zoom;
-                                const isHovered = hoveredNode?.Company === d.Company && hoveredNode?.Plant === d.Plant;
-                                const isConnected = d.distanceToHub >= 0 || d.landDist > 0;
-                                const fillCol = d.isPowerPlant ? "#a855f7" : (d.isPriority ? "#e11d48" : "#f97316"); 
-                                const opac = isHovered ? 1 : (isConnected ? 0.9 : 0.3);
-                                return (
-                                    <g key={`s1-${i}`} className="cursor-pointer transition-all" onMouseEnter={() => setHoveredNode({...d, nodeType: 'planning_source'})} onMouseLeave={() => setHoveredNode(null)}>
-                                        <circle cx={cx} cy={cy} r={Math.max(r, 16/zoom)} fill="transparent" />
-                                        {d.isPriority && isConnected && <circle cx={cx} cy={cy} r={r * 1.6} fill={fillCol} opacity={0.25} pointerEvents="none"/>}
-                                        <circle cx={cx} cy={cy} r={r} fill={fillCol} fillOpacity={opac} stroke={isConnected ? "white" : "transparent"} strokeWidth={(d.isPriority ? 1.5 : 1) / zoom} style={d.isPriority && isConnected ? { filter: 'drop-shadow(0px 2px 3px rgba(0,0,0,0.4))' } : {}} pointerEvents="none"/>
-                                    </g>
-                                );
-                            })}
-                        </>
-                    )}
-
-                    {activeLayers.includes('capture') && captureData.map((d, i) => {
-                        const lat = cleanNumber(d.Latitude) || getFallbackCoords(d.Company, d.Plant).lat;
-                        const lon = cleanNumber(d.Longitude) || getFallbackCoords(d.Company, d.Plant).lon;
-                        const [cx, cy] = projectBase(lon, lat); if (cx === -9999) return null;
-                        const r = Math.max(6, Math.min(25, Math.sqrt(Math.max(0, d.Capture_Volume || 0)) * 1.5)) / zoom; 
-                        const isHovered = hoveredNode?.Company === d.Company;
-                        return (
-                            <g key={`cap-${i}`} className="cursor-pointer transition-all" onMouseEnter={() => setHoveredNode({...d, nodeType:'capture'})} onMouseLeave={() => setHoveredNode(null)}>
-                                <circle cx={cx} cy={cy} r={Math.max(r, 20/zoom)} fill="transparent" />
-                                <circle cx={cx} cy={cy} r={r} fill={stringToColor(d.Capture_Tech)} fillOpacity={isHovered ? 1 : 0.85} stroke="white" strokeWidth={1.5 / zoom} style={{ filter: 'drop-shadow(0px 2px 3px rgba(0,0,0,0.3))' }} pointerEvents="none"/>
-                                <text x={cx + r + (4/zoom)} y={cy + (3/zoom)} fontSize={11 / textScale} fill="#1e293b" fontWeight="900" paintOrder="stroke" stroke="white" strokeWidth={3/textScale} strokeLinejoin="round" className="pointer-events-none">{d.Company}</text>
-                            </g>
-                        );
-                    })}
-
-                    {activeLayers.includes('future') && captureData.map((d, i) => {
-                        const lat = cleanNumber(d.Latitude) || getFallbackCoords(d.Company, d.Plant).lat;
-                        const lon = cleanNumber(d.Longitude) || getFallbackCoords(d.Company, d.Plant).lon;
-                        const [cx, cy] = projectBase(lon, lat); if (cx === -9999) return null;
-                        const r = Math.max(6, Math.min(25, Math.sqrt(Math.max(0, d.Future_Emission_Volume || 0)) * 1.5)) / zoom; 
-                        const isHovered = hoveredNode?.Company === d.Company;
-                        return (
-                            <g key={`fut-${i}`} className="cursor-pointer transition-all" onMouseEnter={() => setHoveredNode({...d, nodeType:'future'})} onMouseLeave={() => setHoveredNode(null)}>
-                                <circle cx={cx} cy={cy} r={Math.max(r, 20/zoom)} fill="transparent" />
-                                <circle cx={cx} cy={cy} r={r} fill="#d97706" fillOpacity={isHovered ? 1 : 0.75} stroke="white" strokeWidth={1.5 / zoom} strokeDasharray={`${3/zoom} ${3/zoom}`} pointerEvents="none"/>
-                            </g>
-                        );
-                    })}
-
-                    {activeLayers.includes('util') && utilData.map((d, i) => {
-                        const coords = getFallbackCoords(d.Target_Company, d.Target_Plant);
-                        const [cx, cy] = projectBase(coords.lon, coords.lat); if (cx === -9999) return null;
-                        const r = Math.max(8, Math.min(20, Math.sqrt(Math.max(0, d.Expected_Demand || 0)) * 2)) / zoom;
-                        const isHovered = hoveredNode?.Target_Company === d.Target_Company;
-                        return (
-                            <g key={`util-${i}`} className="cursor-pointer transition-all" onMouseEnter={() => setHoveredNode({...d, nodeType:'util'})} onMouseLeave={() => setHoveredNode(null)}>
-                                <circle cx={cx} cy={cy} r={Math.max(r, 20/zoom)} fill="transparent" />
-                                <circle cx={cx} cy={cy} r={r} fill="#10b981" fillOpacity={isHovered ? 1 : 0.9} stroke="white" strokeWidth={2 / zoom} style={{ filter: 'drop-shadow(0px 2px 3px rgba(0,0,0,0.3))' }} pointerEvents="none"/>
-                                <text x={cx + r + (4/zoom)} y={cy + (3/zoom)} fontSize={11 / textScale} fill="#064e3b" fontWeight="900" paintOrder="stroke" stroke="white" strokeWidth={3/textScale} strokeLinejoin="round" className="pointer-events-none">{d.Target_Company}</text>
-                            </g>
-                        );
-                    })}
-
-                    {activeLayers.includes('storage') && storageData.map((d, i) => {
-                        const srcCoords = getFallbackCoords(d.Source_Company, '');
-                        const [x1, y1] = projectBase(srcCoords.lon, srcCoords.lat); if (x1 === -9999) return null;
-                        
-                        const getStorageCoords = (siteName) => {
-                             const safeSite = siteName || '';
-                             const hub = Object.values(hubs || {}).find(h => safeSite.includes(h.name.split(' ')[0]) || h.name.includes(safeSite.split(' ')[0]));
-                             if (hub) return { lat: hub.lat, lon: hub.lon };
-                             if (safeSite.includes('鐵砧山')) return { lat: 24.45, lon: 120.68 };
-                             if (safeSite.includes('麥寮')) return { lat: 23.80, lon: 120.10 };
-                             if (safeSite.includes('台中')) return { lat: 24.25, lon: 120.45 };
-                             if (safeSite.includes('林口') || safeSite.includes('台北')) return { lat: 25.14, lon: 121.32 };
-                             if (safeSite.includes('高雄')) return { lat: 22.55, lon: 120.32 };
-                             if (safeSite.includes('花蓮')) return { lat: 23.98, lon: 121.62 };
-                             return { lat: 23.6, lon: 120.9 };
-                        };
-                        const tgt = getStorageCoords(d.Storage_Site);
-                        const [x2, y2] = projectBase(tgt.lon, tgt.lat); 
-
-                        const isPipe = String(d.Transport_Method).includes('管線');
-                        const isHovered = hoveredNode?.Storage_Site === d.Storage_Site;
-                        return (
-                            <g key={`sto-${i}`} className="cursor-pointer transition-all" onMouseEnter={() => setHoveredNode({...d, nodeType:'storage'})} onMouseLeave={() => setHoveredNode(null)}>
-                                <line x1={x1} y1={y1} x2={x2} y2={y2} stroke={isPipe ? "#3b82f6" : "#f59e0b"} strokeWidth={3 / zoom} strokeDasharray={isPipe ? "0" : `${6/zoom} ${6/zoom}`} opacity={isHovered ? 1 : 0.6}/>
-                                <circle cx={x1} cy={y1} r={16 / zoom} fill="transparent" />
-                                <circle cx={x1} cy={y1} r={4 / zoom} fill="#64748b" pointerEvents="none"/>
-                                <circle cx={x2} cy={y2} r={10 / zoom} fill="#ef4444" fillOpacity={isHovered ? 1 : 0.9} stroke="white" strokeWidth={2 / zoom} style={{ filter: 'drop-shadow(0px 2px 3px rgba(0,0,0,0.3))' }} pointerEvents="none"/>
-                                <text x={x2 + (12/zoom)} y={y2 + (4/zoom)} fontSize={12 / textScale} fill="#991b1b" fontWeight="900" paintOrder="stroke" stroke="white" strokeWidth={3/textScale} strokeLinejoin="round" className="pointer-events-none">{d.Storage_Site}</text>
-                            </g>
-                        );
-                    })}
-                </g>
-
-                {/* 寫入原生的 SVG 圖例 */}
-                {activeLayers.includes('planning') && (
-                    <g transform={`translate(20, ${baseHeight - 310})`}>
-                        <rect x="0" y="0" width="280" height="260" fill="rgba(255,255,255,0.95)" rx="8" stroke="#e2e8f0" strokeWidth="1" />
-                        
-                        <rect x="12" y="15" width="10" height="10" fill="#0ea5e9" stroke="white" strokeWidth="1" />
-                        <text x="30" y="24" fontSize="11" fill="#334155" fontWeight="bold">海洋接收站 / 本土封存樞紐 (可拖曳)</text>
-                        
-                        <rect x="12" y="35" width="10" height="10" fill="#b45309" stroke="white" strokeWidth="1" />
-                        <text x="30" y="44" fontSize="11" fill="#334155" fontWeight="bold">陸地封存場域 (可拖曳)</text>
-                        
-                        <line x1="12" y1="55" x2="268" y2="55" stroke="#e2e8f0" strokeWidth="1" />
-                        
-                        <circle cx="17" cy="70" r="5" fill="#a855f7" stroke="white" strokeWidth="1" />
-                        <text x="30" y="74" fontSize="11" fill="#334155" fontWeight="bold">大型發電廠 (按比例顯示碳排)</text>
-
-                        <circle cx="17" cy="90" r="5" fill="#e11d48" stroke="white" strokeWidth="1" />
-                        <text x="30" y="94" fontSize="11" fill="#334155" fontWeight="bold">一般優先碳源 (≥ 2.5萬噸)</text>
-                        
-                        <circle cx="17" cy="110" r="3" fill="#f97316" opacity="0.8" />
-                        <text x="30" y="114" fontSize="11" fill="#334155" fontWeight="bold">次要碳源 (&lt; 2.5萬噸)</text>
-
-                        <line x1="12" y1="125" x2="268" y2="125" stroke="#e2e8f0" strokeWidth="1" />
-                        
-                        <circle cx="17" cy="140" r="4" fill="#fff" stroke="#3b82f6" strokeWidth="2" />
-                        <text x="30" y="144" fontSize="11" fill="#334155" fontWeight="bold">統一管線節點 (可拖曳)</text>
-                        <text x="30" y="156" fontSize="9" fill="#64748b">操作: 點藍線新增 / 左點菜單 / 右鍵刪除</text>
-
-                        <line x1="12" y1="175" x2="35" y2="175" stroke="#3b82f6" strokeWidth="3" />
-                        <text x="40" y="179" fontSize="11" fill="#334155" fontWeight="bold">自訂主幹管線 (&gt;50km以橘色警告)</text>
-                        
-                        <path d="M 12 195 L 35 195" stroke="#94a3b8" strokeWidth="2" fill="none" />
-                        <text x="40" y="199" fontSize="11" fill="#334155" fontWeight="bold">直線就近上管 (優先≤50km,次要≤20km)</text>
-                        
-                        <path d="M 12 215 Q 23.5 215, 35 210" stroke="#f59e0b" strokeWidth="1.5" strokeDasharray="4 4" fill="none" />
-                        <text x="40" y="219" fontSize="11" fill="#334155" fontWeight="bold">孤立廠區之陸運接駁路線 (可拖曳)</text>
-                        
-                        <line x1="12" y1="235" x2="35" y2="235" stroke="#0284c7" strokeWidth="2" strokeDasharray="6 6" opacity="0.6" />
-                        <circle cx="23" cy="235" r="3" fill="transparent" stroke="#0284c7" strokeWidth="1" />
-                        <text x="40" y="239" fontSize="11" fill="#334155" fontWeight="bold">樞紐海運外繞 (空心點可拖曳)</text>
-                    </g>
+            {/* 左下：圖例（手機預設收合） */}
+            <div className="absolute left-3 bottom-8 md:left-4 z-10 max-w-[calc(100%-1.5rem)]">
+                {legendOpen ? (
+                    <div className="bg-white/95 backdrop-blur rounded-xl border border-slate-200 shadow-sm p-3 text-[11px] text-slate-700 font-bold w-[272px] max-w-full space-y-1.5">
+                        <div className="flex items-center justify-between -mt-0.5 mb-1">
+                            <span className="text-xs text-slate-500 tracking-wider">圖例</span>
+                            <button onClick={() => setLegendOpen(false)} className="w-7 h-7 -mr-1 rounded-md hover:bg-slate-100 text-slate-400 flex items-center justify-center" aria-label="收合圖例"><X size={14}/></button>
+                        </div>
+                        {isPlanning ? (
+                            <>
+                                <LegendRow sym={<span className="w-3 h-3 bg-[#0ea5e9] border border-white shadow-sm" />}>海洋接收站／本土封存樞紐（可拖曳）</LegendRow>
+                                <LegendRow sym={<span className="w-3 h-3 bg-[#b45309] border border-white shadow-sm" />}>陸地封存場域（可拖曳）</LegendRow>
+                                <div className="h-px bg-slate-200 !my-2" />
+                                <LegendRow sym={<span className="w-3 h-3 rounded-full bg-[#a855f7]" />}>大型發電廠（依碳排大小）</LegendRow>
+                                <LegendRow sym={<span className="w-3 h-3 rounded-full bg-[#e11d48]" />}>一般優先碳源（≥ 2.5萬噸）</LegendRow>
+                                <LegendRow sym={<span className="w-2 h-2 rounded-full bg-[#f97316]" />}>次要碳源（&lt; 2.5萬噸）</LegendRow>
+                                <div className="h-px bg-slate-200 !my-2" />
+                                <LegendRow sym={<span className="w-2.5 h-2.5 rounded-full bg-white border-2 border-[#3b82f6]" />}>管線節點（可拖曳）</LegendRow>
+                                <div className="pl-6 -mt-1 text-[10px] font-medium text-slate-500">點藍線新增節點・點節點開選單・右鍵刪除</div>
+                                <LegendRow sym={<span className="w-5 h-[3px] bg-[#3b82f6]" />}>主幹管線（&gt;50km 以橘色虛線警示）</LegendRow>
+                                <LegendRow sym={<span className="w-5 h-[2px] bg-[#94a3b8]" />}>直線就近上管（優先≤50km，次要≤20km）</LegendRow>
+                                <LegendRow sym={<span className="w-5 border-t-2 border-dashed border-[#f59e0b]" />}>孤立廠區陸運接駁（控制點可拖曳）</LegendRow>
+                                <LegendRow sym={<span className="w-5 border-t-2 border-dashed border-[#0284c7]" />}>樞紐海運外繞（控制點可拖曳）</LegendRow>
+                            </>
+                        ) : (
+                            <>
+                                {activeLayers.includes('capture') && <LegendRow sym={<span className="w-3 h-3 rounded-full bg-[#3b82f6]" />}>捕捉端（依捕捉量，顏色為技術別）</LegendRow>}
+                                {activeLayers.includes('future') && <LegendRow sym={<span className="w-3 h-3 rounded-full bg-[#d97706]/70" />}>潛力擴充點源</LegendRow>}
+                                {activeLayers.includes('util') && <LegendRow sym={<span className="w-3 h-3 rounded-full bg-[#10b981]" />}>再利用端（依需求量）</LegendRow>}
+                                {activeLayers.includes('storage') && <LegendRow sym={<span className="w-3 h-3 rounded-full bg-[#ef4444]" />}>封存場域（實線管線／虛線船運）</LegendRow>}
+                            </>
+                        )}
+                    </div>
+                ) : (
+                    <button onClick={() => setLegendOpen(true)} className="h-9 px-3 rounded-lg bg-white/95 border border-slate-200 shadow-sm text-xs font-bold text-slate-600 flex items-center gap-1.5"><Layers size={14}/> 圖例</button>
                 )}
-
-                {!activeLayers.includes('planning') && (
-                    <g transform={`translate(20, ${baseHeight - (20 + activeLayers.length * 25)})`}>
-                        <rect x="0" y="0" width="180" height={15 + activeLayers.length * 25} fill="rgba(255,255,255,0.95)" rx="8" stroke="#e2e8f0" strokeWidth="1" />
-                        {activeLayers.map((layer, idx) => {
-                            const yOffset = 20 + idx * 25;
-                            if (layer === 'capture') return (
-                                <g key={layer} transform={`translate(15, ${yOffset})`}>
-                                    <circle cx="4" cy="-4" r="4" fill="#3b82f6" stroke="white" strokeWidth="1" />
-                                    <text x="15" y="0" fontSize="11" fill="#334155" fontWeight="bold">捕捉端 (依捕捉量)</text>
-                                </g>
-                            );
-                            if (layer === 'future') return (
-                                <g key={layer} transform={`translate(15, ${yOffset})`}>
-                                    <circle cx="4" cy="-4" r="4" fill="transparent" stroke="#d97706" strokeWidth="2" strokeDasharray="3 3" />
-                                    <text x="15" y="0" fontSize="11" fill="#334155" fontWeight="bold">潛力擴充點源</text>
-                                </g>
-                            );
-                            if (layer === 'util') return (
-                                <g key={layer} transform={`translate(15, ${yOffset})`}>
-                                    <circle cx="4" cy="-4" r="4" fill="#10b981" stroke="white" strokeWidth="1" />
-                                    <text x="15" y="0" fontSize="11" fill="#334155" fontWeight="bold">再利用端 (依需求量)</text>
-                                </g>
-                            );
-                            if (layer === 'storage') return (
-                                <g key={layer} transform={`translate(15, ${yOffset})`}>
-                                    <circle cx="4" cy="-4" r="5" fill="#ef4444" stroke="white" strokeWidth="1" />
-                                    <text x="15" y="0" fontSize="11" fill="#334155" fontWeight="bold">封存場域與專案管線</text>
-                                </g>
-                            );
-                            return null;
-                        })}
-                    </g>
-                )}
-            </svg>
+            </div>
         </div>
     );
 };
 
-const CcusDashboard = ({ onOpenTrade }) => {
+const LegendRow = ({ sym, children }) => (
+    <div className="flex items-center gap-2 leading-tight"><span className="w-4 flex items-center justify-center flex-shrink-0">{sym}</span><span>{children}</span></div>
+);
+
+const CCUS_TABS = [
+    { id: 'planning', label: '案場與管線規劃', icon: Map },
+    { id: 'chain', label: '價值鏈總覽', icon: Layers },
+    { id: 'capture', label: '捕捉與再利用', icon: FlaskConical },
+    { id: 'storage', label: '封存與成本', icon: Box },
+    { id: 'sources', label: '排放源清單', icon: List },
+];
+
+const CcusDashboard = () => {
     const [activeTab, setActiveTab] = useState('planning'); 
+    const [facilitySubTab, setFacilitySubTab] = useState('all'); 
+    const [captureData, setCaptureData] = useState([]);
+    const [utilizationData, setUtilizationData] = useState([]);
+    const [storageData, setStorageData] = useState([]);
     const [scope1Data, setScope1Data] = useState([]); 
-    const [mapPaths, setMapPaths] = useState([]); 
     const [loading, setLoading] = useState(true);
+    const [selectedYear, setSelectedYear] = useState('ALL');
+    const [transportMode, setTransportMode] = useState('ALL');
     
+    const [showFuturePotential, setShowFuturePotential] = useState(false);
     const [showPowerPlants, setShowPowerPlants] = useState(true); // 新增：電廠顯示開關
 
-    const [hubs, setHubs] = useState({});
-    const [clusters, setClusters] = useState({});
-    const [refParams, setRefParams] = useState({});
-    const [loadError, setLoadError] = useState(null);
+    const [hubs, setHubs] = useState(INITIAL_CCS_HUBS);
+    const [clusters, setClusters] = useState(INITIAL_CLUSTERS);
     const [routeNodes, setRouteNodes] = useState({});
     const [seaControlPoints, setSeaControlPoints] = useState({});
     const [landControlPoints, setLandControlPoints] = useState({});
@@ -928,27 +853,19 @@ const CcusDashboard = ({ onOpenTrade }) => {
     const [selectedHubId, setSelectedHubId] = useState('NORTH_HUB');
 
     useEffect(() => {
-        // 全部改讀資料庫：範疇一排放源（energy_facility_records / ccus_scope1）、已查證座標
-        // （ccus_emission_records）、封存樞紐與聚落節點（ccus_storage_sites / ccus_network_nodes）。
         const fetchAllData = async () => {
             setLoading(true);
             try {
-                const [rawScope1, verified, survey, counties] = await Promise.all([
-                    fetchScope1Rows(),
-                    fetchVerifiedEmitterCoords().catch(() => []),
-                    fetchCcusSurvey(),
-                    loadTaiwanCounties().catch(() => []),
+                const [resCap, resUtil, resStore, resScope1] = await Promise.all([
+                    fetch(CCUS_DATA_SOURCES.CAPTURE), fetch(CCUS_DATA_SOURCES.UTILIZATION),
+                    fetch(CCUS_DATA_SOURCES.STORAGE), fetch(CCUS_DATA_SOURCES.SCOPE1_URL).catch(() => null)
                 ]);
 
-                setMapPaths(counties.map(c => ({ d: c.d })));
-                setHubs(Object.fromEntries(survey.sites.filter(s => s.kind === 'hub').map(s => [s.site_id, {
-                    id: s.site_id, name: s.name, type: s.site_type, lat: Number(s.lat), lon: Number(s.lon), region: s.region,
-                }])));
-                setClusters(Object.fromEntries(survey.nodes.map(n => [n.node_id, {
-                    id: n.node_id, name: n.name, lat: Number(n.lat), lon: Number(n.lon), next: n.next_node_id, type: n.transport,
-                }])));
-                setRefParams(paramsByKey(survey.params));
-                const coordByControlNo = new globalThis.Map(verified.map(v => [v.control_no, v]));
+                const txtCap = await resCap.text(); const txtUtil = await resUtil.text();
+                const txtStore = await resStore.text(); const txtScope1 = resScope1 ? await resScope1.text() : '';
+
+                const rawCap = parseCSV(txtCap); const rawUtil = parseCSV(txtUtil);
+                const rawStore = parseCSV(txtStore); const rawScope1 = parseCSV(txtScope1);
 
                 setScope1Data(rawScope1.map(d => {
                     const keys = Object.keys(d);
@@ -967,37 +884,75 @@ const CcusDashboard = ({ onOpenTrade }) => {
                     const countyMatch = countyStr.match(/(基隆|台北|臺北|新北|桃園|新竹|苗栗|台中|臺中|彰化|南投|雲林|嘉義|台南|臺南|高雄|屏東|宜蘭|花蓮|台東|臺東)/);
                     if (countyMatch) countyStr = countyMatch[0].replace('臺', '台'); else countyStr = '未知';
 
-                    // 有查證過的地址座標就用（ccus_emission_records.coord_source = verified*），否則沿用公司名推估
-                    const v = coordByControlNo.get(String(d['管制編號'] || '').trim());
-                    const coords = v ? { lat: Number(v.latitude), lon: Number(v.longitude) } : getApproximateCoordinates(plantRaw, comp, countyStr);
+                    const coords = getApproximateCoordinates(plantRaw, comp, countyStr);
                     const zone = getIndustrialZone(plantRaw, comp, countyStr);
                     const region = getRefinedRegion(plantRaw, comp, countyStr);
                     const scope1Val = cleanNumber(d[emit1Key]); const scope2Val = cleanNumber(d[emit2Key]); const totalVal = cleanNumber(d[emitTotalKey]) || (scope1Val + scope2Val);
 
                     const isPowerPlant = comp.includes('台電') || rawName.includes('發電廠');
 
-                    return { Company: comp, Plant: rawName, Scope1: scope1Val, Scope2: scope2Val, TotalScope: totalVal, Industry: d[indKey] || '', County: countyStr, zone, Region: region, lat: coords.lat, lon: coords.lon, coordSource: v ? v.coord_source : 'estimated', isPowerPlant };
+                    return { Company: comp, Plant: rawName, Scope1: scope1Val, Scope2: scope2Val, TotalScope: totalVal, Industry: d[indKey] || '', County: countyStr, zone, Region: region, lat: coords.lat, lon: coords.lon, isPowerPlant };
                 }).filter(d => {
                     if (!d || d.TotalScope <= 0) return false;
                     const scope2Ratio = d.Scope2 / d.TotalScope;
                     if (scope2Ratio > 0.7 && d.Scope1 < 50000) return false; 
                     return true; 
                 }).sort((a,b) => b.Scope1 - a.Scope1)); 
-            } catch (err) { console.error(err); setLoadError(err.message); } finally { setLoading(false); }
+
+                setCaptureData(rawCap.map(d => {
+                    const capVol = cleanNumber(d.Capture_Volume); const capEng = cleanNumber(d.Captur_energy || d.Emission_Per_Ton); 
+                    return {
+                        ...d, Year: String(d.Year || '2025'), Label: `${simplifyCompanyName(d.Company)} ${d.Plant}`,
+                        Latitude: cleanNumber(d.Latitude), Longitude: cleanNumber(d.Longitude), Capture_Tech: d.Capture_Tech || '未知技術',
+                        Capture_Volume: capVol, Captur_energy: capEng, Net_Capture_Volume: cleanNumber(d.Net_Capture_Volume) || Math.max(0, capVol - capEng),
+                        TRL: String(d.TRL || '-'), Capture_Source: d.Capture_Source || '', Separation_Tech: d.Separation_Tech || '',
+                        Temperature: d.Temperature || '', Pressure: d.Pressure || '', Concentration: d.Concentration || '', Potential_Source: d.Potential_Source || '',
+                        Future_Emission_Volume: cleanNumber(d.Future_Emission_Volume), Future_Temperature: d.Future_Temperature || '', Future_Pressure: d.Future_Pressure || '', Future_Concentration: d.Future_Concentration || ''
+                    };
+                }));
+
+                setUtilizationData(rawUtil.map(d => {
+                    const expDemand = cleanNumber(d.Expected_Demand);
+                    return { ...d, Year: String(d.Year || '2025'), Expected_Demand: expDemand, Current_Demand: cleanNumber(d.Current_Demand), Product_Generated: expDemand * (String(d.Conversion_Tech).includes('甲醇') ? 0.7 : 1.5), TRL: String(d.TRL || '-'), Target_Company: d.Target_Company || '', Target_Plant: d.Target_Plant || '', Conversion_Tech: d.Conversion_Tech || '' };
+                }));
+
+                setStorageData(rawStore.map(d => {
+                    let mode = String(d.Transport_Method || ''); let dist = cleanNumber(d.Distance_km) || (mode.includes('海') ? 150 : 30); 
+                    return { ...d, Year: String(d.Year || '2025'), Capturable_Volume: cleanNumber(d.Capturable_Volume), Distance_km: dist, Cost_USD_Per_Ton: cleanNumber(d.Cost_USD_Per_Ton), Transport_Method: mode, Concentration: d.Concentration || '', Process_Type: d.Process_Type || '', Source_Company: d.Source_Company || '', Storage_Site: d.Storage_Site || '' };
+                }));
+
+            } catch (err) { console.error(err); } finally { setLoading(false); }
         };
         fetchAllData();
     }, []);
 
+    const availableYears = useMemo(() => Array.from(new Set([...captureData.map(d=>d.Year), ...utilizationData.map(d=>d.Year), ...storageData.map(d=>d.Year)])).filter(Boolean).sort(), [captureData, utilizationData, storageData]);
+    const fCapture = useMemo(() => captureData.filter(d => selectedYear === 'ALL' || d.Year === selectedYear), [captureData, selectedYear]);
+    const fUtil = useMemo(() => utilizationData.filter(d => selectedYear === 'ALL' || d.Year === selectedYear), [utilizationData, selectedYear]);
+    const fStorage = useMemo(() => storageData.filter(d => selectedYear === 'ALL' || d.Year === selectedYear), [storageData, selectedYear]);
+
+    const valueChainData = useMemo(() => {
+        const map = {};
+        const add = (comp, key, val) => {
+            const c = simplifyCompanyName(comp);
+            if (!map[c]) map[c] = { Company: c, Capture: 0, Future: 0, Util: 0, Storage: 0 };
+            map[c][key] += (Number(val) || 0);
+        };
+        fCapture.forEach(d => { add(d.Company, 'Capture', d.Net_Capture_Volume); add(d.Company, 'Future', d.Future_Emission_Volume); });
+        fUtil.forEach(d => { add(d.Target_Company, 'Util', d.Expected_Demand); });
+        fStorage.forEach(d => { add(d.Source_Company, 'Storage', d.Capturable_Volume); });
+        return Object.values(map).filter(d => d.Capture > 0 || d.Util > 0 || d.Storage > 0 || (showFuturePotential && d.Future > 0)).sort((a,b) => (b.Capture+b.Util+b.Storage) - (a.Capture+a.Util+a.Storage));
+    }, [fCapture, fUtil, fStorage, showFuturePotential]);
 
     const ccsTopology = useMemo(() => {
-        if (!scope1Data || scope1Data.length === 0 || Object.keys(clusters).length === 0 || Object.keys(hubs).length === 0) return null;
+        if (!scope1Data || scope1Data.length === 0) return null;
 
         const activeClusters = JSON.parse(JSON.stringify(clusters));
         Object.keys(activeClusters).forEach(k => { activeClusters[k].id = k; activeClusters[k].emissions = 0; activeClusters[k].sources = []; });
 
         const hubSources = {}; Object.keys(hubs).forEach(k => hubSources[k] = []);
         const validSources = []; const branchRoutes = []; const landRoutes = [];
-        const hubEmissions = Object.fromEntries(Object.keys(hubs).map(k => [k, 0]));
+        const hubEmissions = { NORTH_HUB: 0, CENTRAL_HUB_1: 0, CENTRAL_HUB_2: 0, CENTRAL_HUB_LAND: 0, SOUTH_HUB: 0, EAST_HUB: 0, SOUTHEAST_HUB: 0 };
 
         const allMainNodes = [];
         Object.values(activeClusters).forEach(c => allMainNodes.push({id: c.id, lat: c.lat, lon: c.lon, name: c.name}));
@@ -1162,6 +1117,15 @@ const CcusDashboard = ({ onOpenTrade }) => {
         return Object.values(map).sort((a,b) => b.total - a.total);
     }, [ccsTopology, scope1Data, listRegion, showPowerPlants]);
 
+    const { totalCapture, totalExpectedDemand, avgCost } = useMemo(() => {
+        const tCap = fCapture.reduce((sum, row) => sum + (Number(row.Net_Capture_Volume) || 0), 0);
+        const tDemand = fUtil.reduce((sum, row) => sum + (Number(row.Expected_Demand) || 0), 0);
+        let costSum = 0, volSum = 0;
+        fStorage.filter(row => transportMode === 'ALL' || row.Transport_Method.includes(transportMode)).forEach(row => {
+            if ((Number(row.Cost_USD_Per_Ton) || 0) > 0 && (Number(row.Capturable_Volume) || 0) > 0) { costSum += (Number(row.Cost_USD_Per_Ton)||0) * (Number(row.Capturable_Volume)||0); volSum += (Number(row.Capturable_Volume)||0); }
+        });
+        return { totalCapture: tCap, totalExpectedDemand: tDemand, avgCost: volSum > 0 ? (costSum / volSum) : 0 };
+    }, [fCapture, fUtil, fStorage, transportMode]);
 
     const availableIndustries = useMemo(() => ['ALL', ...Array.from(new Set(scope1Data.filter(d => showPowerPlants || !d.isPowerPlant).map(d => d.Industry))).filter(Boolean)], [scope1Data, showPowerPlants]);
     const filteredScope1Data = useMemo(() => {
@@ -1179,45 +1143,57 @@ const CcusDashboard = ({ onOpenTrade }) => {
     }, [ccsTopology, selectedHubId]);
 
     if (loading) return <div className="p-10 text-center animate-pulse text-teal-600 flex flex-col items-center"><RefreshCw className="animate-spin mb-2"/> CCUS 地理資料建構中...</div>;
-    if (loadError && activeTab === 'planning' && scope1Data.length === 0) return <div className="m-4 p-6 rounded-xl border border-rose-200 bg-rose-50 text-rose-700 text-sm"><div className="font-bold mb-1">資料庫讀取失敗</div>{loadError}</div>;
 
+    const activeLayersMap = {
+        'all': ['capture', 'future', 'util', 'storage'],
+        'capture': ['capture', 'future'],
+        'utilization': ['util'],
+        'storage': ['storage'],
+        'planning': ['planning']
+    };
 
     return (
-        <div className="space-y-6 animate-fade-in pb-10 min-h-screen p-4 bg-slate-50">
-            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col sm:flex-row justify-between items-center gap-4">
-                <div className="flex items-center gap-3">
-                    <div className="flex items-center gap-2 text-lg text-teal-800 font-bold"><Leaf className="text-teal-500"/> CCUS 碳捕捉與封存戰情室</div>
+        <div className="space-y-5 md:space-y-6 animate-fade-in pb-10 min-h-screen px-3 py-4 md:p-6">
+            <div className="card overflow-hidden">
+                <div className="flex items-center gap-3 px-3 md:px-5 pt-3">
+                    <div className="hidden md:flex items-center gap-2 text-lg text-brand-ink font-bold whitespace-nowrap"><Leaf className="text-brand"/> CCUS 碳捕捉與封存戰情室</div>
+                    <span className="text-xs font-bold text-brand-muted md:ml-auto">資料年度</span>
+                    <select value={selectedYear} onChange={e => setSelectedYear(e.target.value)} className="h-10 bg-white border border-brand-line text-brand font-bold px-3 rounded-lg outline-none cursor-pointer hover:bg-slate-200 transition-colors">
+                        {availableYears.map(y => <option key={y} value={y}>{y}年</option>)}<option value="ALL">全年度</option>
+                    </select>
                 </div>
-                <div className="flex flex-wrap bg-slate-100 p-1 rounded-xl font-bold text-sm">
-                    <button onClick={() => setActiveTab('planning')} className={`px-4 py-2 rounded-lg flex items-center gap-2 transition-all ${activeTab === 'planning' ? 'bg-white shadow text-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}><Map size={16}/> 案場與管線規劃</button>
-                    {CCUS_SURVEY_TABS.map((tab) => {
-                        const TabIcon = tab.icon;
-                        return <button key={tab.value} onClick={() => setActiveTab(tab.value)} className={`px-4 py-2 rounded-lg flex items-center gap-2 transition-all ${activeTab === tab.value ? 'bg-white shadow text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}><TabIcon size={16}/> {tab.label}</button>;
-                    })}
+                <div role="tablist" aria-label="CCUS 分頁" className="flex overflow-x-auto no-scrollbar px-2 md:px-4 mt-1 border-t border-brand-line">
+                    {CCUS_TABS.map(({ id, label, icon }) => { const TabIcon = icon; return (
+                        <button key={id} role="tab" aria-selected={activeTab === id} onClick={() => setActiveTab(id)} className={`tab-btn ${activeTab === id ? 'tab-btn-on' : ''}`}>
+                            <TabIcon size={17}/> {label}
+                        </button>
+                    ); })}
                 </div>
             </div>
 
-            {activeTab === 'planning' && (
-                <div className="space-y-6 animate-fade-in">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between">
+            {(activeTab === 'planning' || activeTab === 'sources') && (
+                <div className="space-y-5 md:space-y-6 animate-fade-in">
+                    <div className="flex md:grid md:grid-cols-3 gap-3 md:gap-6 overflow-x-auto no-scrollbar snap-x -mx-3 px-3 md:mx-0 md:px-0 [&>*]:min-w-[80%] [&>*]:snap-start md:[&>*]:min-w-0 [&>*]:flex-shrink-0 md:[&>*]:flex-shrink">
+                        <div className="card p-5 flex items-center justify-between">
                             <div><p className="text-xs text-slate-500 font-bold mb-1 uppercase">符合門檻之廠區總排放量 (範疇 1+2)</p><h3 className="text-2xl font-black text-rose-700">{(Number(scope1Stats.total || 0) / 10000).toFixed(1)} <span className="text-sm font-medium text-slate-500">萬噸</span></h3></div>
                             <div className="w-12 h-12 rounded-full bg-rose-50 flex items-center justify-center text-rose-600"><AlertTriangle size={24}/></div>
                         </div>
-                        <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between border-l-4 border-l-indigo-500">
+                        <div className="card p-5 flex items-center justify-between border-l-4 border-l-indigo-500">
                             <div><p className="text-xs text-slate-500 font-bold mb-1 uppercase">高潛力工業區集群數</p><h3 className="text-2xl font-black text-indigo-700">{scope1Stats.topZones.filter(z=>z.Total>1000000).length} <span className="text-sm font-medium text-slate-500">個 (&gt;百萬噸)</span></h3></div>
                             <div className="w-12 h-12 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600"><Layers size={24}/></div>
                         </div>
-                        <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between border-l-4 border-l-sky-500">
+                        <div className="card p-5 flex items-center justify-between border-l-4 border-l-sky-500">
                             <div><p className="text-xs text-slate-500 font-bold mb-1 uppercase">自動推演管線距離評估</p><h3 className="text-2xl font-black text-sky-700">啟用 <span className="text-sm font-medium text-slate-500">可自由規劃多節點</span></h3></div>
                             <div className="w-12 h-12 rounded-full bg-sky-50 flex items-center justify-center text-sky-600"><Route size={24}/></div>
                         </div>
                     </div>
 
+                    {activeTab === 'planning' && (
+                    <>
                     <div className="grid grid-cols-1 gap-6">
-                        <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex flex-col h-[65vh] min-h-[500px] max-h-[800px]">
+                        <div className="card p-3 flex flex-col h-[65vh] min-h-[500px] max-h-[800px]">
                             <div className="flex justify-between items-center mb-3 border-b pb-2">
-                                <h3 className="font-bold text-slate-700 text-sm flex items-center gap-2"><Map size={16} className="text-indigo-500"/> CCS 案場與共通管線拓樸分析</h3>
+                                <h3 className="font-bold text-slate-800 text-base flex items-center gap-2"><Map size={16} className="text-indigo-500"/> CCS 案場與共通管線拓樸分析</h3>
                                 <label className="flex items-center gap-2 text-xs font-bold text-slate-600 cursor-pointer bg-slate-100 px-3 py-1.5 rounded-lg shadow-inner">
                                     <input type="checkbox" checked={showPowerPlants} onChange={e => setShowPowerPlants(e.target.checked)} className="rounded text-purple-600 focus:ring-purple-500" />
                                     顯示大型發電廠 (紫標)
@@ -1225,15 +1201,15 @@ const CcusDashboard = ({ onOpenTrade }) => {
                             </div>
                             <div className="flex-1 w-full h-full relative min-h-0">
                                 <ErrorBoundary>
-                                    <TaiwanCcusMap activeLayers={['planning']} scope1Data={scope1Data} mapPaths={mapPaths} ccsTopology={ccsTopology} hubs={hubs} setHubs={setHubs} clusters={clusters} setClusters={setClusters} routeNodes={routeNodes} setRouteNodes={setRouteNodes} seaControlPoints={seaControlPoints} setSeaControlPoints={setSeaControlPoints} landControlPoints={landControlPoints} setLandControlPoints={setLandControlPoints} />
+                                    <TaiwanCcusMap activeLayers={['planning']} ccsTopology={ccsTopology} hubs={hubs} setHubs={setHubs} setClusters={setClusters} routeNodes={routeNodes} setRouteNodes={setRouteNodes} seaControlPoints={seaControlPoints} setSeaControlPoints={setSeaControlPoints} landControlPoints={landControlPoints} setLandControlPoints={setLandControlPoints} />
                                 </ErrorBoundary>
                             </div>
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col h-[400px]">
-                            <h3 className="font-bold text-slate-700 text-sm mb-3 border-b pb-2 flex items-center gap-2"><MapPin size={16} className="text-indigo-500"/> 區域與樞紐碳排分佈</h3>
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
+                        <div className="card p-4 flex flex-col h-[400px]">
+                            <h3 className="font-bold text-slate-800 text-base mb-3 border-b pb-2 flex items-center gap-2"><MapPin size={16} className="text-indigo-500"/> 區域與樞紐碳排分佈</h3>
                             <div className="overflow-y-auto custom-scrollbar pr-2 space-y-4 flex-1">
                                 <div>
                                     <h4 className="text-xs font-bold text-slate-500 mb-2">地理分區原生排放量 (範疇一)</h4>
@@ -1263,8 +1239,8 @@ const CcusDashboard = ({ onOpenTrade }) => {
                             </div>
                         </div>
 
-                        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col h-[400px]">
-                            <h3 className="font-bold text-slate-700 text-sm mb-3 border-b pb-2 flex items-center gap-2"><Route size={16} className="text-sky-500"/> 區域管線佈建可行性分析</h3>
+                        <div className="card p-4 flex flex-col h-[400px]">
+                            <h3 className="font-bold text-slate-800 text-base mb-3 border-b pb-2 flex items-center gap-2"><Route size={16} className="text-sky-500"/> 區域管線佈建可行性分析</h3>
                             <div className="flex flex-col gap-2 overflow-y-auto pr-2 custom-scrollbar">
                                 <div className="bg-slate-50 p-3 rounded border border-slate-200">
                                     <div className="text-xs font-bold text-slate-500 mb-1">【南區】多節點集中 ➔ 港口接收外銷</div>
@@ -1279,54 +1255,15 @@ const CcusDashboard = ({ onOpenTrade }) => {
                                     <div className="text-xs text-slate-600 leading-relaxed">排放源相對分散。新竹先往北牽至桃園內陸，再與桃園沿海會合，集中至林口沿岸，轉由海管輸送至林口外海封存。大於50km之主幹管線(橘色虛線)需依賴陸運車隊。</div>
                                 </div>
                                 <div className="bg-emerald-50 p-3 rounded border border-emerald-200">
-                                    <div className="text-xs font-bold text-emerald-700 mb-1">💡 運輸成本基準參考（資料表 energy_ref_parameters）</div>
-                                    <ul className="text-xs text-emerald-700 leading-relaxed space-y-0.5">
-                                        {Object.values(refParams).filter(p => p.category === 'cost_benchmark').map(p => (
-                                            <li key={p.key}>{p.label}：<b>{Number(p.value).toLocaleString()}</b> {p.unit}{p.note ? `（${p.note}）` : ''}</li>
-                                        ))}
-                                    </ul>
-                                    <div className="text-[10px] text-emerald-600 mt-1">短距孤立廠區(&lt;50km)建議採陸運槽車。</div>
+                                    <div className="text-xs font-bold text-emerald-700 mb-1">💡 IEA 運輸成本基準參考 (2023)</div>
+                                    <div className="text-xs text-emerald-600 leading-relaxed">陸地管線約 $2~4/噸/100km；離岸管線約 $3~6/噸/100km；海運因包含液化及港口固定費用起步較高(約$15~20/噸)，但距離增加的邊際成本極低。短距孤立廠區(&lt;50km)建議採陸運槽車。</div>
                                 </div>
                             </div>
                         </div>
 
-                        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col h-[400px]">
+                        <div className="card p-4 flex flex-col h-[450px]">
                             <div className="flex justify-between items-center mb-3 border-b pb-2">
-                                <h3 className="font-bold text-slate-700 text-sm flex items-center gap-2"><MapPin size={16} className="text-indigo-500"/> 縣市排放量總表 (萬噸)</h3>
-                                <select value={listRegion} onChange={e => setListRegion(e.target.value)} className="bg-slate-50 border border-slate-200 text-slate-600 font-bold px-2 py-1 rounded outline-none text-xs">
-                                    <option value="ALL">全區域</option><option value="北區">北區</option><option value="中區">中區</option><option value="南區">南區</option><option value="東區">東區</option>
-                                </select>
-                            </div>
-                            <div className="flex-1 overflow-auto custom-scrollbar border border-slate-100 rounded-lg">
-                                <table className="w-full text-xs text-left">
-                                    <thead className="bg-slate-50 sticky top-0 shadow-sm z-10">
-                                        <tr>
-                                            <th className="p-3">縣市</th>
-                                            <th className="p-3 text-right text-rose-600">範疇一(可CCS)</th>
-                                            <th className="p-3 text-right text-slate-500">範疇二</th>
-                                            <th className="p-3 text-right font-bold text-slate-700">總和</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-slate-100">
-                                        {countyStats.map(row => (
-                                            <tr key={row.name} className="hover:bg-slate-50 transition-colors">
-                                                <td className="p-3 font-bold text-slate-700">{row.name}</td>
-                                                <td className="p-3 text-right font-mono text-rose-600">{(row.scope1/10000).toFixed(1)}</td>
-                                                <td className="p-3 text-right font-mono text-slate-500">{(row.scope2/10000).toFixed(1)}</td>
-                                                <td className="p-3 text-right font-mono font-bold text-slate-800">{(row.total/10000).toFixed(1)}</td>
-                                            </tr>
-                                        ))}
-                                        {countyStats.length === 0 && <tr><td colSpan={4} className="p-8 text-center text-slate-400">無區域資料</td></tr>}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col h-[450px]">
-                            <div className="flex justify-between items-center mb-3 border-b pb-2">
-                                <h3 className="font-bold text-slate-700 text-sm flex items-center gap-2">
+                                <h3 className="font-bold text-slate-800 text-base flex items-center gap-2">
                                     <Anchor size={16} className="text-blue-500"/> 封存點位管網接收碳源分析
                                 </h3>
                                 <select 
@@ -1352,7 +1289,7 @@ const CcusDashboard = ({ onOpenTrade }) => {
                             </div>
 
                             <div className="overflow-y-auto custom-scrollbar flex-1 border border-slate-100 rounded-lg">
-                                <table className="w-full text-xs text-left relative">
+                                <table className="w-full text-sm text-left relative whitespace-nowrap">
                                     <thead className="bg-blue-50/50 sticky top-0 shadow-sm z-10">
                                         <tr>
                                             <th className="p-3 text-blue-800">事業名稱</th>
@@ -1364,7 +1301,7 @@ const CcusDashboard = ({ onOpenTrade }) => {
                                     <tbody className="divide-y divide-blue-50">
                                         {selectedHubSources.map((row, i) => (
                                             <tr key={i} className="hover:bg-blue-50/30 transition-colors">
-                                                <td className="p-3 font-bold text-slate-700 truncate max-w-[150px]" title={row.Plant}>
+                                                <td className="p-3 font-bold text-slate-700 truncate max-w-[180px] md:max-w-[220px]" title={row.Plant}>
                                                     {row.isPowerPlant ? <span className="mr-1 text-[10px] text-purple-600 font-black" title="大型電廠">●</span> : (row.isPriority ? <span className="mr-1 text-[10px] text-rose-500 font-black" title="優先碳源">●</span> : <span className="mr-1 text-[10px] text-orange-400 font-black" title="次要碳源">●</span>)}
                                                     {row.Plant}
                                                 </td>
@@ -1380,10 +1317,49 @@ const CcusDashboard = ({ onOpenTrade }) => {
                                 </table>
                             </div>
                         </div>
+                    </div>
+                    </>
+                    )}
 
-                        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col h-[450px]">
+                    {activeTab === 'sources' && (
+                    <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 md:gap-6">
+                        <div className="lg:col-span-2 min-w-0">
+                        <div className="card p-4 flex flex-col h-[640px]">
+                            <div className="flex justify-between items-center mb-3 border-b pb-2">
+                                <h3 className="font-bold text-slate-800 text-base flex items-center gap-2"><MapPin size={16} className="text-indigo-500"/> 縣市排放量總表 (萬噸)</h3>
+                                <select value={listRegion} onChange={e => setListRegion(e.target.value)} className="bg-slate-50 border border-slate-200 text-slate-600 font-bold px-2 py-1 rounded outline-none text-xs">
+                                    <option value="ALL">全區域</option><option value="北區">北區</option><option value="中區">中區</option><option value="南區">南區</option><option value="東區">東區</option>
+                                </select>
+                            </div>
+                            <div className="flex-1 overflow-auto custom-scrollbar border border-slate-100 rounded-lg">
+                                <table className="w-full text-sm text-left whitespace-nowrap">
+                                    <thead className="bg-slate-50 sticky top-0 shadow-sm z-10">
+                                        <tr>
+                                            <th className="p-3">縣市</th>
+                                            <th className="p-3 text-right text-rose-600">範疇一(可CCS)</th>
+                                            <th className="p-3 text-right text-slate-500">範疇二</th>
+                                            <th className="p-3 text-right font-bold text-slate-700">總和</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {countyStats.map(row => (
+                                            <tr key={row.name} className="hover:bg-slate-50 transition-colors">
+                                                <td className="p-3 font-bold text-slate-700">{row.name}</td>
+                                                <td className="p-3 text-right font-mono text-rose-600">{(row.scope1/10000).toFixed(1)}</td>
+                                                <td className="p-3 text-right font-mono text-slate-500">{(row.scope2/10000).toFixed(1)}</td>
+                                                <td className="p-3 text-right font-mono font-bold text-slate-800">{(row.total/10000).toFixed(1)}</td>
+                                            </tr>
+                                        ))}
+                                        {countyStats.length === 0 && <tr><td colSpan={4} className="p-8 text-center text-slate-400">無區域資料</td></tr>}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        </div>
+                        <div className="lg:col-span-3 min-w-0">
+                        <div className="card p-4 flex flex-col h-[640px]">
                             <div className="flex flex-wrap justify-between items-center mb-3 border-b pb-2 gap-2">
-                                <h3 className="font-bold text-slate-700 text-sm flex items-center gap-2"><List size={16} className="text-rose-500"/> 排放點源總表 (含孤立點)</h3>
+                                <h3 className="font-bold text-slate-800 text-base flex items-center gap-2"><List size={16} className="text-rose-500"/> 排放點源總表 (含孤立點)</h3>
                                 <div className="flex gap-2">
                                     <div className="flex items-center gap-1 bg-slate-50 px-2 py-1 rounded border border-slate-200 text-xs">
                                         <Filter size={12} className="text-slate-400"/>
@@ -1401,7 +1377,7 @@ const CcusDashboard = ({ onOpenTrade }) => {
                             </div>
                             
                             <div className="overflow-y-auto custom-scrollbar flex-1 border border-slate-100 rounded-lg">
-                                <table className="w-full text-xs text-left relative">
+                                <table className="w-full text-sm text-left relative whitespace-nowrap">
                                     <thead className="bg-slate-50 sticky top-0 shadow-sm z-10">
                                         <tr>
                                             <th className="p-3">事業名稱</th>
@@ -1414,7 +1390,7 @@ const CcusDashboard = ({ onOpenTrade }) => {
                                     <tbody className="divide-y divide-slate-100">
                                         {filteredScope1Data.map((row, i) => (
                                             <tr key={i} className="hover:bg-rose-50 transition-colors">
-                                                <td className="p-3 font-bold text-slate-700 truncate max-w-[150px]" title={row.Plant}>
+                                                <td className="p-3 font-bold text-slate-700 truncate max-w-[180px] md:max-w-[220px]" title={row.Plant}>
                                                     {row.isPowerPlant ? <span className="mr-1 text-[10px] text-purple-600 font-black" title="大型電廠">●</span> : (row.isPriority ? <span className="mr-1 text-[10px] text-rose-500 font-black" title="優先碳源">●</span> : <span className="mr-1 text-[10px] text-orange-400 font-black" title="次要碳源">●</span>)}
                                                     {row.Plant}
                                                 </td>
@@ -1429,14 +1405,248 @@ const CcusDashboard = ({ onOpenTrade }) => {
                                 </table>
                             </div>
                         </div>
+                        </div>
                     </div>
+                    )}
                 </div>
             )}
 
-            {/* CCUS 問卷資料：整合地圖 / 碳捕捉 / 碳封存 / 碳再利用（資料來源：Supabase 問卷整併表） */}
-            {activeTab !== 'planning' && (
-                <div className="animate-fade-in">
-                    <CcusSurveyPanel view={activeTab} onOpenTrade={onOpenTrade} />
+            {/* 合併版 CCUS 設施總覽 */}
+            {['chain', 'capture', 'storage'].includes(activeTab) && (
+                <div className="space-y-6 animate-fade-in">
+                    <div className="flex md:grid md:grid-cols-3 gap-3 md:gap-6 overflow-x-auto no-scrollbar snap-x -mx-3 px-3 md:mx-0 md:px-0 [&>*]:min-w-[80%] [&>*]:snap-start md:[&>*]:min-w-0 [&>*]:flex-shrink-0 md:[&>*]:flex-shrink">
+                        <div className="card p-5 flex items-center justify-between">
+                            <div><p className="text-xs text-slate-500 font-bold mb-1 uppercase tracking-wider">現行淨捕捉量總和</p><h3 className="text-3xl font-black text-blue-800">{Number(totalCapture||0).toFixed(1)} <span className="text-sm font-medium text-slate-500">萬噸/年</span></h3></div>
+                            <div className="w-14 h-14 rounded-full bg-blue-100 flex items-center justify-center text-blue-600"><Leaf size={28}/></div>
+                        </div>
+                        <div className="card p-5 flex items-center justify-between">
+                            <div><p className="text-xs text-slate-500 font-bold mb-1 uppercase tracking-wider">預期再利用 CO₂ 總需求</p><h3 className="text-3xl font-black text-emerald-800">{Number(totalExpectedDemand||0).toFixed(1)} <span className="text-sm font-medium text-slate-500">萬噸/年</span></h3></div>
+                            <div className="w-14 h-14 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600"><FlaskConical size={28}/></div>
+                        </div>
+                        <div className="card p-5 flex items-center justify-between">
+                            <div><p className="text-xs text-slate-500 font-bold mb-1 uppercase tracking-wider">總規劃封存量</p><h3 className="text-3xl font-black text-rose-800">{Number(fStorage.reduce((s, r)=>s+(Number(r.Capturable_Volume)||0), 0)).toFixed(1)} <span className="text-sm font-medium text-slate-500">萬噸/年</span></h3></div>
+                            <div className="w-14 h-14 rounded-full bg-rose-100 flex items-center justify-center text-rose-600"><Box size={28}/></div>
+                        </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 md:gap-6 items-stretch">
+                        {activeTab === 'chain' && (<div className="lg:col-span-6 card p-3 flex flex-col h-[65vh] min-h-[500px] max-h-[800px]">
+                            <div className="flex justify-between items-center mb-3 border-b pb-2">
+                                <h3 className="font-bold text-slate-800 text-base flex items-center gap-2"><MapPin size={16} className="text-slate-500"/> CCUS 全價值鏈分佈</h3>
+                                <div className="flex bg-slate-100 p-1 rounded-lg text-xs md:text-sm font-bold shadow-inner overflow-x-auto no-scrollbar">
+                                    <button onClick={() => setFacilitySubTab('all')} className={`px-3 py-1.5 whitespace-nowrap rounded-md ${facilitySubTab === 'all' ? 'bg-white shadow text-slate-800' : 'text-slate-500'}`}>全視角</button>
+                                    <button onClick={() => setFacilitySubTab('capture')} className={`px-3 py-1.5 whitespace-nowrap rounded-md ${facilitySubTab === 'capture' ? 'bg-blue-500 text-white shadow' : 'text-slate-500'}`}>捕捉端</button>
+                                    <button onClick={() => setFacilitySubTab('utilization')} className={`px-3 py-1.5 whitespace-nowrap rounded-md ${facilitySubTab === 'utilization' ? 'bg-emerald-500 text-white shadow' : 'text-slate-500'}`}>再利用端</button>
+                                    <button onClick={() => setFacilitySubTab('storage')} className={`px-3 py-1.5 whitespace-nowrap rounded-md ${facilitySubTab === 'storage' ? 'bg-rose-500 text-white shadow' : 'text-slate-500'}`}>封存端</button>
+                                </div>
+                            </div>
+                            <div className="flex-1 w-full h-full relative min-h-0">
+                                <ErrorBoundary>
+                                    <TaiwanCcusMap activeLayers={activeLayersMap[facilitySubTab]} captureData={fCapture} utilData={fUtil} storageData={fStorage} hubs={hubs} setHubs={setHubs} />
+                                </ErrorBoundary>
+                            </div>
+                        </div>)}
+
+                        <div className={`${activeTab === 'chain' ? 'lg:col-span-6' : 'lg:col-span-12'} min-w-0 flex flex-col gap-4 md:gap-6`}>
+                            {activeTab === 'chain' && facilitySubTab === 'all' && (
+                                <>
+                                    <div className="card p-4 flex flex-col min-h-[350px]">
+                                        <div className="flex justify-between items-center mb-3 border-b pb-2">
+                                            <h3 className="font-bold text-slate-800 text-base flex items-center gap-2"><Activity size={16} className="text-blue-500"/> 企業價值鏈橫向對照 (捕捉 vs 去化)</h3>
+                                            <label className="flex items-center gap-2 text-xs font-bold text-slate-600 cursor-pointer">
+                                                <input type="checkbox" checked={showFuturePotential} onChange={e => setShowFuturePotential(e.target.checked)} className="rounded text-blue-600 focus:ring-blue-500" />
+                                                顯示未來擴充潛力
+                                            </label>
+                                        </div>
+                                        <div className="flex-1 min-h-0 w-full relative">
+                                            <ErrorBoundary>
+                                                <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
+                                                    <ComposedChart data={valueChainData.slice(0, 10)} margin={{top: 10, right: 10, bottom: 20, left: 0}}>
+                                                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                                                        <XAxis dataKey="Company" tick={{fontSize: 10}} interval={0} angle={-30} textAnchor="end" />
+                                                        <YAxis tick={{fontSize: 10}} />
+                                                        <Tooltip contentStyle={{fontSize: '12px', borderRadius: '8px'}} formatter={v => Number(v||0).toFixed(1)} />
+                                                        <Legend wrapperStyle={{fontSize: '10px'}}/>
+                                                        <Bar dataKey="Capture" name="淨捕捉量" stackId="source" fill="#3b82f6" barSize={15} />
+                                                        {showFuturePotential && <Bar dataKey="Future" name="未來擴充潛力" stackId="source" fill="#93c5fd" barSize={15} />}
+                                                        <Bar dataKey="Util" name="再利用需求" stackId="sink" fill="#10b981" barSize={15} />
+                                                        <Bar dataKey="Storage" name="可封存量" stackId="sink" fill="#f59e0b" barSize={15} radius={[2, 2, 0, 0]} />
+                                                    </ComposedChart>
+                                                </ResponsiveContainer>
+                                            </ErrorBoundary>
+                                        </div>
+                                    </div>
+                                    <div className="card p-4 flex-1 flex flex-col min-h-[300px]">
+                                        <h3 className="font-bold text-slate-800 text-base mb-3 border-b pb-2 flex items-center gap-2"><List size={16} className="text-slate-500"/> CCUS 價值鏈總覽表</h3>
+                                        <div className="flex-1 overflow-auto custom-scrollbar">
+                                            <table className="w-full text-sm text-left whitespace-nowrap">
+                                                <thead className="bg-slate-100 sticky top-0 shadow-sm">
+                                                    <tr><th className="p-2">公司名稱</th><th className="p-2 text-right text-blue-600">淨捕捉量</th><th className="p-2 text-right text-blue-400">未來潛力</th><th className="p-2 text-right text-emerald-600">再利用需求</th><th className="p-2 text-right text-amber-600">可封存量</th></tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-100">
+                                                    {valueChainData.map((row, i) => (
+                                                        <tr key={i} className="hover:bg-slate-50 transition-colors">
+                                                            <td className="p-2 font-bold text-slate-700">{row.Company}</td>
+                                                            <td className="p-2 text-right font-mono text-blue-600">{(Number(row.Capture)||0) > 0 ? Number(row.Capture).toFixed(1) : '-'}</td>
+                                                            <td className="p-2 text-right font-mono text-blue-400">{(Number(row.Future)||0) > 0 ? Number(row.Future).toFixed(1) : '-'}</td>
+                                                            <td className="p-2 text-right font-mono text-emerald-600">{(Number(row.Util)||0) > 0 ? Number(row.Util).toFixed(1) : '-'}</td>
+                                                            <td className="p-2 text-right font-mono text-amber-600">{(Number(row.Storage)||0) > 0 ? Number(row.Storage).toFixed(1) : '-'}</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </>
+                            )}
+
+                            {((activeTab === 'chain' && facilitySubTab === 'capture') || activeTab === 'capture') && (
+                                <>
+                                    <div className="card p-4 flex flex-col min-h-[350px]">
+                                        <h3 className="font-bold text-slate-800 text-base mb-3 border-b pb-2 flex items-center gap-2"><Activity size={16} className="text-blue-500"/> 技術解析：總捕捉量 vs 設備耗能</h3>
+                                        <div className="flex-1 min-h-0 w-full relative">
+                                            <ErrorBoundary>
+                                                <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
+                                                    <BarChart data={fCapture.filter(r => (Number(r.Capture_Volume)||0) > 0).sort((a,b) => (Number(b.Capture_Volume)||0) - (Number(a.Capture_Volume)||0))} layout="vertical" margin={{ top: 5, right: 30, left: 10, bottom: 5 }} barGap={2} barSize={20}>
+                                                        <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false}/>
+                                                        <XAxis type="number" fontSize={10} unit=" 萬噸"/>
+                                                        <YAxis dataKey="Label" type="category" width={120} interval={0} tick={<CaptureYAxisTick data={fCapture.filter(r => (Number(r.Capture_Volume)||0) > 0)} />}/>
+                                                        <Tooltip content={<CaptureTooltip />}/>
+                                                        <Legend wrapperStyle={{fontSize:'10px'}} verticalAlign="top"/>
+                                                        <Bar dataKey="Net_Capture_Volume" name="淨捕捉量" stackId="capture" fill="#10b981"><LabelList dataKey="Net_Capture_Volume" position="insideLeft" fill="white" fontSize={10} fontWeight="bold" formatter={(v) => Number(v||0) > 0 ? `淨 ${Number(v||0).toFixed(1)}` : ''}/></Bar>
+                                                        <Bar dataKey="Captur_energy" name="設備耗能" stackId="capture" fill="#ef4444" radius={[0, 4, 4, 0]}><LabelList dataKey="Capture_Volume" position="right" fill="#475569" fontSize={10} fontWeight="bold" formatter={(v) => `總 ${Number(v||0).toFixed(1)}`} /></Bar>
+                                                    </BarChart>
+                                                </ResponsiveContainer>
+                                            </ErrorBoundary>
+                                        </div>
+                                    </div>
+                                    <div className="card p-4 flex-1 flex flex-col min-h-[300px]">
+                                        <h3 className="font-bold text-slate-800 text-base mb-3 border-b pb-2 flex items-center gap-2"><List size={16} className="text-blue-500"/> 現有捕捉設施明細</h3>
+                                        <div className="flex-1 overflow-auto custom-scrollbar">
+                                            <table className="w-full text-sm text-left whitespace-nowrap">
+                                                <thead className="bg-blue-50 sticky top-0 shadow-sm">
+                                                    <tr><th className="p-2">公司廠區</th><th className="p-2">捕捉技術</th><th className="p-2">TRL</th><th className="p-2 text-right">總捕捉量</th><th className="p-2 text-right text-rose-500">耗能扣除</th><th className="p-2 text-right font-bold text-emerald-600">淨捕捉量</th></tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-100">
+                                                    {fCapture.filter(r => (Number(r.Capture_Volume)||0) > 0).map((row, i) => (
+                                                        <tr key={i} className="hover:bg-slate-50 transition-colors">
+                                                            <td className="p-2 font-bold text-slate-700">{row.Label}</td>
+                                                            <td className="p-2"><span className="px-2 py-0.5 bg-white border border-blue-200 text-blue-700 rounded">{row.Capture_Tech}</span></td>
+                                                            <td className="p-2 font-mono">{row.TRL}</td>
+                                                            <td className="p-2 text-right font-mono font-bold text-blue-600">{Number(row.Capture_Volume||0).toFixed(1)}</td>
+                                                            <td className="p-2 text-right font-mono text-rose-500">-{Number(row.Captur_energy||0).toFixed(1)}</td>
+                                                            <td className="p-2 text-right font-mono font-bold text-emerald-600">{Number(row.Net_Capture_Volume||0).toFixed(1)}</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </>
+                            )}
+
+                            {((activeTab === 'chain' && facilitySubTab === 'utilization') || activeTab === 'capture') && (
+                                <>
+                                    <div className="card p-4 flex flex-col min-h-0 h-full">
+                                        <h3 className="font-bold text-slate-800 text-base mb-4 border-b pb-2 flex items-center gap-2"><FlaskConical size={16} className="text-emerald-500"/> 再利用製程與需求清單</h3>
+                                        <div className="flex-1 overflow-auto custom-scrollbar pr-2 space-y-3">
+                                            {fUtil.map((item, idx) => {
+                                                const trlNum = parseInt(String(item.TRL).split('-')[0]) || 0;
+                                                const isDeveloping = trlNum < 6 || (Number(item.Current_Demand)||0) === 0;
+                                                return (
+                                                    <div key={idx} className={`flex flex-col sm:flex-row items-stretch w-full rounded-xl border shadow-sm overflow-hidden relative ${isDeveloping ? 'bg-slate-50 border-dashed border-slate-300 opacity-80' : 'bg-white border-slate-200'}`}>
+                                                        <div className="flex-1 p-3 flex flex-col items-center justify-center border-r border-slate-100 relative">
+                                                            {isDeveloping && <div className="absolute top-0 right-0 bg-amber-500 text-white text-[9px] font-bold px-2 rounded-bl shadow-sm">開發中</div>}
+                                                            <div className="font-bold text-slate-700 mb-1 text-center text-sm">{item.Target_Company} {item.Target_Plant}</div>
+                                                            <div className="flex gap-2">
+                                                                <div className="bg-emerald-50 border border-emerald-100 rounded px-2 py-1 text-center"><div className="text-sm font-mono font-black text-emerald-600">{Number(item.Expected_Demand||0).toFixed(1)}</div><div className="text-[9px] text-emerald-500 font-bold">預期需求</div></div>
+                                                                <div className="bg-slate-50 border border-slate-100 rounded px-2 py-1 text-center"><div className={`text-sm font-mono font-black ${Number(item.Current_Demand||0) > 0 ? 'text-slate-600' : 'text-slate-300'}`}>{Number(item.Current_Demand||0).toFixed(1)}</div><div className="text-[9px] text-slate-500 font-bold">當前需求</div></div>
+                                                            </div>
+                                                        </div>
+                                                        <div className={`w-32 text-white flex flex-col items-center justify-center p-2 relative shadow-inner ${isDeveloping ? 'bg-slate-500' : 'bg-slate-800'}`}>
+                                                            <div className="text-[10px] text-slate-300 font-bold mb-1">轉化技術</div>
+                                                            <div className="text-xs font-bold text-center leading-tight text-amber-300 mb-1">{item.Conversion_Tech}</div>
+                                                            <div className={`text-[9px] px-2 rounded border ${isDeveloping ? 'bg-rose-900 border-rose-700 text-rose-200' : 'bg-slate-700 border-slate-600 text-amber-100'}`}>TRL {item.TRL}</div>
+                                                        </div>
+                                                        <div className="flex-1 p-3 flex flex-col items-center justify-center relative">
+                                                            <div className="font-bold text-slate-700 mb-1 text-center text-sm">{String(item.Conversion_Tech).split('轉')[1] || '高階產品'}</div>
+                                                            <div className="bg-purple-50 border border-purple-100 rounded px-3 py-1 text-center shadow-sm">
+                                                                <div className="text-xl font-mono font-black text-purple-600">{Number(item.Product_Generated||0).toFixed(1)}</div><div className="text-[10px] text-purple-500 font-bold">產出萬噸/年</div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                            {fUtil.length === 0 && <div className="text-slate-400 text-sm py-10 text-center">無再利用轉化數據</div>}
+                                        </div>
+                                    </div>
+                                </>
+                            )}
+
+                            {((activeTab === 'chain' && facilitySubTab === 'storage') || activeTab === 'storage') && (
+                                <>
+                                    <div className="card p-4 flex flex-col min-h-[350px]">
+                                        <div className="flex justify-between items-center mb-3 border-b pb-2">
+                                            <h3 className="font-bold text-slate-800 text-base flex items-center gap-2"><Box size={16} className="text-amber-500"/> 封存成本與距離矩陣</h3>
+                                            <select value={transportMode} onChange={(e) => setTransportMode(e.target.value)} className="text-xs border rounded p-1 bg-slate-50 outline-none">
+                                                <option value="ALL">全部方式</option><option value="管線">管線</option><option value="陸運">陸運</option><option value="海運">海運</option>
+                                            </select>
+                                        </div>
+                                        <div className="flex-1 min-h-0 w-full relative">
+                                            <div className="absolute top-0 right-2 text-[10px] text-slate-400 bg-white/80 px-2 rounded z-10 border border-slate-100 shadow-sm">圓點大小 = 封存量能</div>
+                                            <ErrorBoundary>
+                                                <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
+                                                    <ScatterChart margin={{ top: 10, right: 10, bottom: 20, left: 0 }}>
+                                                        <CartesianGrid strokeDasharray="3 3"/>
+                                                        <XAxis type="number" dataKey="Distance_km" name="運輸距離" unit=" km" tick={{fontSize: 10}}>
+                                                            <Label value="運輸距離 (km)" position="insideBottom" offset={-10} fontSize={11} fill="#475569" fontWeight="bold"/>
+                                                        </XAxis>
+                                                        <YAxis type="number" dataKey="Cost_USD_Per_Ton" name="總成本" unit=" USD" tick={{fontSize: 10}}>
+                                                            <Label value="全價值鏈成本 (USD/噸)" angle={-90} position="insideLeft" offset={10} fontSize={11} fill="#475569" fontWeight="bold"/>
+                                                        </YAxis>
+                                                        <ZAxis type="number" dataKey="Capturable_Volume" range={[100, 1000]} name="封存量" />
+                                                        <Tooltip cursor={{strokeDasharray:'3 3'}} formatter={(v, n) => [Number(v||0).toFixed(1), n]} contentStyle={{borderRadius:'8px', fontSize:'12px'}}/>
+                                                        <Scatter name="封存專案" data={fStorage.filter(r => transportMode === 'ALL' || r.Transport_Method.includes(transportMode)).map(d => ({...d, Distance_km: Number(d.Distance_km)||0, Cost_USD_Per_Ton: Number(d.Cost_USD_Per_Ton)||0, Capturable_Volume: Number(d.Capturable_Volume)||0}))}>
+                                                            <LabelList dataKey="Storage_Site" position="top" style={{fontSize:10, fill:'#334155', fontWeight:'bold'}} />
+                                                            {fStorage.filter(r => transportMode === 'ALL' || r.Transport_Method.includes(transportMode)).map((entry, index) => {
+                                                                let dotColor = '#94a3b8';
+                                                                if (String(entry.Transport_Method).includes('管線')) dotColor = '#3b82f6';
+                                                                if (String(entry.Transport_Method).includes('陸運')) dotColor = '#f59e0b';
+                                                                if (String(entry.Transport_Method).includes('海運')) dotColor = '#14b8a6';
+                                                                return <Cell key={`cell-${index}`} fill={dotColor} fillOpacity={0.8} stroke="white" strokeWidth={1} />;
+                                                            })}
+                                                        </Scatter>
+                                                    </ScatterChart>
+                                                </ResponsiveContainer>
+                                            </ErrorBoundary>
+                                        </div>
+                                    </div>
+                                    <div className="card p-4 flex-1 flex flex-col min-h-[300px]">
+                                        <h3 className="font-bold text-slate-800 text-base mb-3 border-b pb-2 flex items-center gap-2"><List size={16} className="text-amber-500"/> 封存專案明細</h3>
+                                        <div className="flex-1 overflow-auto custom-scrollbar">
+                                            <table className="w-full text-sm text-left whitespace-nowrap">
+                                                <thead className="bg-amber-50 sticky top-0 shadow-sm">
+                                                    <tr><th className="p-2">碳源 ➔ 封存場</th><th className="p-2 text-center">方式</th><th className="p-2 text-right">距離</th><th className="p-2 text-right">封存量</th><th className="p-2 text-right">成本(USD)</th></tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-100">
+                                                    {[...fStorage].filter(r => transportMode === 'ALL' || r.Transport_Method.includes(transportMode)).sort((a,b) => (Number(a.Cost_USD_Per_Ton)||0) - (Number(b.Cost_USD_Per_Ton)||0)).map((row, i) => (
+                                                        <tr key={i} className="hover:bg-amber-50/50 transition-colors">
+                                                            <td className="p-2 font-bold text-slate-700 truncate max-w-[120px]">{row.Source_Company} ➔ {row.Storage_Site}</td>
+                                                            <td className="p-2 text-center"><span className="px-1.5 py-0.5 rounded border border-slate-200 bg-white font-bold">{row.Transport_Method}</span></td>
+                                                            <td className="p-2 text-right font-mono text-slate-600">{Number(row.Distance_km||0).toFixed(0)}</td>
+                                                            <td className="p-2 text-right font-mono text-blue-600">{Number(row.Capturable_Volume||0).toFixed(1)}</td>
+                                                            <td className="p-2 text-right font-mono font-bold text-rose-600">${Number(row.Cost_USD_Per_Ton||0).toFixed(1)}</td>
+                                                        </tr>
+                                                    ))}
+                                                    {fStorage.filter(r => transportMode === 'ALL' || r.Transport_Method.includes(transportMode)).length === 0 && <tr><td colSpan={5} className="p-4 text-center text-slate-400">無符合條件之專案</td></tr>}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    </div>
                 </div>
             )}
         </div>
