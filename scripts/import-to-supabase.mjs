@@ -39,7 +39,7 @@ if (!SUPABASE_DB_HOST || !SUPABASE_DB_PASSWORD) {
 }
 
 const DB_CONFIG = {
-  host: SUPABASE_DB_HOST,
+  host: SUPABASE_DB_HOST.trim().replace(/^@/, ''), // 容錯：從連線字串複製時常多帶一個 @
   port: Number(SUPABASE_DB_PORT) || 5432,
   user: SUPABASE_DB_USER || 'postgres',
   password: SUPABASE_DB_PASSWORD,
