@@ -136,7 +136,7 @@ export default function CarbonFeeMap({ plans, onSelectPlan }) {
         <TaiwanLayerMap
           layers={layers}
           countyFill={countyFill}
-          height={640}
+          height="min(640px, 70vh)"
           footnote="點位為縣市中心的示意位置（資料表目前只有縣市與地址，尚無經緯度）；一個事業採取多類措施時會同時出現在多個圖層。"
         />
       </div>

@@ -50,9 +50,10 @@
    `brand` 與 `index.css` 的 `.card` / `.seg` / `.tab-btn`）。版面外框在 `src/components/layout/AppChrome.jsx`：
    電腦版左側功能列、手機版上方標題列 + 底部導覽列（貿易／氫能／CCUS／碳費／更多）。模組清單在
    `src/config/modules.js`。貿易模組已改為分段篩選、分頁與手機可左右滑動圖表（`ScrollableChart`）；
-   CCUS 已拆成五個分頁（案場與管線規劃／價值鏈總覽／捕捉與再利用／封存與成本／排放源清單，定義在
-   `CcusDashboard.jsx` 的 `CCUS_TABS`），沿用原本的地圖與表格元件；氫能也拆成五個分頁（供需總覽／結構分析／碳排強度／區域解析／原始資料，
-   `HydrogenDashboard.jsx` 的 `H2_TABS`）；碳費拆成四個分頁（總覽／產業與地區／減量措施／計畫明細，
+   CCUS 拆成六個分頁（案場與管線規劃／整合地圖／碳捕捉／碳封存／碳再利用／排放源清單，定義在
+   `CcusDashboard.jsx` 的 `CCUS_TABS`；中間四個是問卷資料頁，來自 `src/components/energy/ccusTabs.js`）；
+   氫能拆成六個分頁（供需總覽／結構分析／碳排強度／區域解析／問卷深度分析／原始資料，
+   `HydrogenDashboard.jsx` 的 `H2_TABS`）；碳費拆成五個分頁（總覽／產業與地區／區域地圖／減量措施／計畫明細，
    `CarbonFeeDashboard.jsx` 的 `CF_TABS`），手機版計畫明細為卡片、明細改為底部抽屜。地圖拖曳已改用 pointer
    事件，手機可單指平移。
    可安裝到手機主畫面（PWA）：`public/manifest.webmanifest` + `public/icons/`（圖示由 `public/brand/nz-mark.png` 產生），
@@ -98,7 +99,8 @@
   （例如 `toLegacyHydrogen()` 把問卷表組回氫能戰情室既有圖表的資料形狀、`ccusSummary()` 對應問卷
   「總覽」分頁），色票 `src/lib/energy/palette.js`。新頁面在 `src/components/energy/`
   （CCUS 整合地圖/碳捕捉/碳封存/碳再利用、氫能「問卷深度分析」），共用疊圖地圖
-  `src/components/maps/TaiwanLayerMap.jsx`（只吃 props，介面改版時可直接搬）。碳費區域地圖
+  `src/components/maps/TaiwanLayerMap.jsx`（只吃 props；底圖用共用的 `map/MapLibreBase`，點位以形狀＋顏色
+  canvas 圖示畫成 symbol 圖層、可勾選疊圖、縣市面量圖用 `countyFill`）。碳費區域地圖
   `src/components/CarbonFeeMap.jsx`（carbonfee_facilities 目前沒有座標，先放縣市中心示意位置）。
 - 氫能戰情室不再有寫死的備用數字（MOCK）、公司名關鍵字推估座標/工業區；碳排參考線讀
   `energy_ref_parameters`。CCUS 規劃地圖的樞紐/聚落節點讀 `ccus_storage_sites`(kind='hub') /

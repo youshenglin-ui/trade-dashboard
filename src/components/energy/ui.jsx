@@ -4,11 +4,11 @@ import React, { useMemo, useState } from 'react';
 import { ArrowDown, ArrowUp, ChevronDown, ChevronRight } from 'lucide-react';
 
 export const Card = ({ title, subtitle, right, children, className = '', icon: Icon }) => (
-  <section className={`bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex flex-col ${className}`}>
+  <section className={`card p-4 flex flex-col min-w-0 ${className}`}>
     {(title || right) && (
       <div className="flex flex-wrap items-start justify-between gap-2 mb-3 border-b border-slate-100 pb-2">
         <div>
-          {title && <h3 className="font-bold text-slate-700 text-sm flex items-center gap-2">{Icon && <Icon size={16} className="text-slate-500" />}{title}</h3>}
+          {title && <h3 className="font-bold text-slate-800 text-base flex items-center gap-2">{Icon && <Icon size={16} className="text-slate-500" />}{title}</h3>}
           {subtitle && <p className="text-[11px] text-slate-500 mt-0.5">{subtitle}</p>}
         </div>
         {right}
@@ -19,7 +19,7 @@ export const Card = ({ title, subtitle, right, children, className = '', icon: I
 );
 
 export const Kpi = ({ label, value, unit, note }) => (
-  <div className="bg-white rounded-xl border border-slate-200 shadow-sm px-4 py-3">
+  <div className="card px-4 py-3">
     <div className="text-[11px] font-bold text-slate-500">{label}</div>
     <div className="text-2xl font-black text-slate-800 font-mono leading-tight mt-1">
       {value}
@@ -41,10 +41,10 @@ export const Badge = ({ children, tone = 'slate', title }) => {
 };
 
 export const Segmented = ({ value, onChange, options }) => (
-  <div className="inline-flex bg-slate-100 p-1 rounded-lg text-xs font-bold">
+  <div className="seg">
     {options.map((o) => (
       <button key={o.value} type="button" onClick={() => onChange(o.value)}
-        className={`px-3 py-1 rounded-md transition-colors ${value === o.value ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}>
+        className={`seg-btn ${value === o.value ? 'seg-btn-on' : ''}`}>
         {o.label}
       </button>
     ))}

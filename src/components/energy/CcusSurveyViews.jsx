@@ -65,7 +65,7 @@ export function CcusOverviewView({ data, onOpenTrade }) {
         <TaiwanLayerMap
           layers={layers}
           defaultActive={['sources', 'capture', 'plans', 'utilization', 'storage']}
-          height={680}
+          height="min(680px, 70vh)"
           footnote="座標：廠區主檔地址經 OpenStreetMap 定位（部分為人工校正，見資料表 energy_plants.coord_source）；管網樞紐為規劃情境假設。"
         />
         {missing.length > 0 && <p className="text-[11px] text-amber-700 mt-2">無座標未上圖：{missing.join('；')}</p>}
@@ -335,7 +335,7 @@ export function CcusStorageView({ data }) {
     <div className="space-y-4">
       <div className="grid grid-cols-1 xl:grid-cols-5 gap-4">
         <Card className="xl:col-span-2" title="封存場址與管網樞紐" subtitle="樞紐為管線規劃情境假設（預設隱藏，可勾選）" icon={Box}>
-          <TaiwanLayerMap layers={storageMap} defaultActive={['storage', 'sources']} height={520} />
+          <TaiwanLayerMap layers={storageMap} defaultActive={['storage', 'sources']} height="min(520px, 65vh)" />
         </Card>
         <div className="xl:col-span-3 space-y-4">
           <Card title="封存場址" subtitle="資料：問卷「封存與其他」分頁（零星資料），量能未明者照原文。">
@@ -473,7 +473,7 @@ export function CcusUtilizationView({ data, onOpenTrade }) {
           const imp = latestPrice(priceRows, r.product, '進口');
           const exp = latestPrice(priceRows, r.product, '出口');
           return (
-            <div key={r.id} className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex flex-col gap-2">
+            <div key={r.id} className="card p-4 flex flex-col gap-2 min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-bold text-slate-800">{r.product}</span>
                 <span className="text-xs text-slate-500">{r.short_name}</span>

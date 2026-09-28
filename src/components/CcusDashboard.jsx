@@ -7,8 +7,11 @@ import {
   Leaf, RefreshCw, Target, Activity, MapPin, DollarSign, Box, AlertTriangle,
   Truck, Ship, GripHorizontal, FlaskConical, Plus, ZoomIn, ZoomOut, Maximize, Factory, List, Rocket, Map, Route, Anchor, Layers, Filter, PieChart as PieChartIcon, DownloadCloud, Copy, Trash2, X
 } from 'lucide-react';
-import { CCUS_DATA_SOURCES } from '../config/dataSources';
 import { cleanNumber } from '../utils/helpers';
+import { fetchCcusSurvey, fetchScope1Rows, fetchVerifiedEmitterCoords } from '../lib/energy/fetchEnergySurvey';
+import { paramsByKey } from '../lib/energy/energyMetrics';
+import CcusSurveyPanel from './energy/CcusSurveyViews';
+import { CCUS_SURVEY_TABS } from './energy/ccusTabs';
 import MapLibreBase from './map/MapLibreBase';
 import { TAIWAN_BOUNDS, REGION_BOUNDS, LABEL_FONT, fc, pt, line, validLL, cubicBezier, quadBezier, addSquareIcon } from './map/mapUtils';
 
@@ -42,27 +45,6 @@ const stringToColor = (str) => {
     return COLORS_POOL[Math.abs(hash) % COLORS_POOL.length];
 };
 
-const parseCSV = (text) => {
-    if (!text || text.includes('<!DOCTYPE html>')) return [];
-    const result = []; let row = []; let current = ''; let inQuotes = false;
-    for (let i = 0; i < text.length; i++) {
-        const char = text[i], nextChar = text[i + 1];
-        if (char === '"') {
-            if (inQuotes && nextChar === '"') { current += '"'; i++; } 
-            else { inQuotes = !inQuotes; }
-        } else if (char === ',' && !inQuotes) { row.push(current.trim()); current = '';
-        } else if ((char === '\n' || (char === '\r' && nextChar === '\n')) && !inQuotes) {
-            if (char === '\r') i++; 
-            row.push(current.trim()); result.push(row); row = []; current = '';
-        } else { current += char; }
-    }
-    if (current || row.length > 0) { row.push(current.trim()); result.push(row); }
-    if (result.length < 2) return [];
-    const headers = result[0].map(h => h.replace(/^[\uFEFF\s]+|[\s]+$/g, ''));
-    return result.slice(1).map(rowArray => {
-        const obj = {}; headers.forEach((h, i) => { obj[h] = rowArray[i] !== undefined ? rowArray[i] : ''; }); return obj;
-    });
-};
 
 const calcDistanceKm = (lat1, lon1, lat2, lon2) => {
     const R = 6371; 
@@ -173,38 +155,7 @@ const getApproximateCoordinates = (plant, company, county) => {
     return { lat: 23.6 + offsetLat, lon: 119.9 + offsetLon }; 
 };
 
-// 封存與接收樞紐預設設定
-const INITIAL_CCS_HUBS = {
-    'NORTH_HUB': { id: 'NORTH_HUB', name: '台北港/林口 (陸地轉海域)', type: '🛢️ 本土外海封存', lat: 25.14, lon: 121.32, region: '北區' },
-    'CENTRAL_HUB_1': { id: 'CENTRAL_HUB_1', name: '台中港接收站 (陸地轉海域)', type: '🛢️ 本土外海封存', lat: 24.25, lon: 120.45, region: '中區' },
-    'CENTRAL_HUB_2': { id: 'CENTRAL_HUB_2', name: '麥寮外海 (陸地轉海域)', type: '🛢️ 本土外海封存', lat: 23.80, lon: 120.10, region: '中區' },
-    'CENTRAL_HUB_LAND': { id: 'CENTRAL_HUB_LAND', name: '苗栗鐵砧山 (陸地封存)', type: '⛰️ 陸地封存場域', lat: 24.45, lon: 120.68, region: '中區' }, 
-    'SOUTH_HUB': { id: 'SOUTH_HUB', name: '高雄港接收站 (輸出轉運)', type: '🚢 港口接收轉運', lat: 22.55, lon: 120.32, region: '南區' },
-    'EAST_HUB': { id: 'EAST_HUB', name: '花蓮港接收站 (輸出北送)', type: '🚢 港口接收轉運', lat: 23.98, lon: 121.62, region: '東區' },
-    'SOUTHEAST_HUB': { id: 'SOUTHEAST_HUB', name: '台東接收站 (南迴轉運)', type: '🚢 港口接收轉運', lat: 22.75, lon: 121.15, region: '南區' } 
-};
-
-const INITIAL_CLUSTERS = {
-    'C_KEE_PORT': { id: 'C_KEE_PORT', name: '基隆港轉運站', lat: 25.15, lon: 121.74, next: 'NORTH_HUB', type: 'sea' },
-    'C_TPE': { id: 'C_TPE', name: '北北基聚落', lat: 25.05, lon: 121.45, next: 'NORTH_HUB', type: 'land' },
-    'C_TYN_IN': { id: 'C_TYN_IN', name: '桃園內陸聚落', lat: 24.95, lon: 121.25, next: 'C_TYN_COAST', type: 'land' },
-    'C_TYN_COAST': { id: 'C_TYN_COAST', name: '桃園沿海聚落', lat: 25.05, lon: 121.10, next: 'NORTH_HUB', type: 'land' },
-    'C_HSZ': { id: 'C_HSZ', name: '新竹聚落', lat: 24.80, lon: 121.00, next: 'C_TYN_IN', type: 'land' },
-    'C_MIA': { id: 'C_MIA', name: '苗栗聚落', lat: 24.55, lon: 120.80, next: 'CENTRAL_HUB_LAND', type: 'land' },
-    'C_TXG': { id: 'C_TXG', name: '台中聚落', lat: 24.20, lon: 120.60, next: 'CENTRAL_HUB_1', type: 'land' },
-    'C_CHW_N': { id: 'C_CHW_N', name: '彰北聚落', lat: 24.10, lon: 120.45, next: 'CENTRAL_HUB_1', type: 'land' },
-    'C_CHW_S': { id: 'C_CHW_S', name: '彰南聚落', lat: 23.95, lon: 120.35, next: 'CENTRAL_HUB_2', type: 'land' }, 
-    'C_YUN_IN': { id: 'C_YUN_IN', name: '雲林內陸聚落', lat: 23.75, lon: 120.45, next: 'CENTRAL_HUB_2', type: 'land' },
-    'C_CYI': { id: 'C_CYI', name: '嘉義聚落', lat: 23.45, lon: 120.30, next: 'C_YUN_IN', type: 'land' },
-    'C_TNN': { id: 'C_TNN', name: '台南聚落', lat: 23.10, lon: 120.25, next: 'C_KHH_N', type: 'land' },
-    'C_KHH_IN': { id: 'C_KHH_IN', name: '高雄內陸(大樹等)', lat: 22.70, lon: 120.40, next: 'C_KHH_N', type: 'land' },
-    'C_KHH_N': { id: 'C_KHH_N', name: '北高雄(仁武大社)', lat: 22.72, lon: 120.35, next: 'SOUTH_HUB', type: 'land' },
-    'C_KHH_S': { id: 'C_KHH_S', name: '南高雄(林園大發)', lat: 22.53, lon: 120.38, next: 'SOUTH_HUB', type: 'land' },
-    'C_PTG': { id: 'C_PTG', name: '屏東聚落', lat: 22.50, lon: 120.45, next: 'C_KHH_S', type: 'land' },
-    'C_YIL': { id: 'C_YIL', name: '宜蘭聚落', lat: 24.70, lon: 121.75, next: 'NORTH_HUB', type: 'sea' }, 
-    'C_HUA': { id: 'C_HUA', name: '花蓮聚落', lat: 23.98, lon: 121.60, next: 'C_KEE_PORT', type: 'sea' }, 
-    'C_TTT': { id: 'C_TTT', name: '台東聚落', lat: 22.75, lon: 121.14, next: 'SOUTH_HUB', type: 'sea' } 
-};
+// 封存樞紐（ccus_storage_sites, kind='hub'）與聚落節點（ccus_network_nodes）改由資料庫讀取，見 supabase/energy_survey_seed.sql
 
 class ErrorBoundary extends React.Component {
     constructor(props) { super(props); this.state = { hasError: false }; }
@@ -269,7 +220,7 @@ const flowWidth = (route) => Math.max(2, Math.log10(Math.max(10000, Number(route
 
 const getStorageCoords = (siteName, hubs) => {
     const safeSite = siteName || '';
-    const hub = Object.values(hubs || INITIAL_CCS_HUBS).find(h => safeSite.includes(h.name.split(' ')[0]) || h.name.includes(safeSite.split(' ')[0]));
+    const hub = Object.values(hubs || {}).find(h => safeSite.includes(h.name.split(' ')[0]) || h.name.includes(safeSite.split(' ')[0]));
     if (hub) return { lat: hub.lat, lon: hub.lon };
     if (safeSite.includes('鐵砧山')) return { lat: 24.45, lon: 120.68 };
     if (safeSite.includes('麥寮')) return { lat: 23.80, lon: 120.10 };
@@ -820,30 +771,24 @@ const LegendRow = ({ sym, children }) => (
     <div className="flex items-center gap-2 leading-tight"><span className="w-4 flex items-center justify-center flex-shrink-0">{sym}</span><span>{children}</span></div>
 );
 
+// 案場與管線規劃、排放源清單用範疇一登錄資料；整合地圖/碳捕捉/碳封存/碳再利用用問卷整併資料庫
 const CCUS_TABS = [
     { id: 'planning', label: '案場與管線規劃', icon: Map },
-    { id: 'chain', label: '價值鏈總覽', icon: Layers },
-    { id: 'capture', label: '捕捉與再利用', icon: FlaskConical },
-    { id: 'storage', label: '封存與成本', icon: Box },
+    ...CCUS_SURVEY_TABS.map(t => ({ id: t.value, label: t.label, icon: t.icon })),
     { id: 'sources', label: '排放源清單', icon: List },
 ];
 
-const CcusDashboard = () => {
+const CcusDashboard = ({ onOpenTrade }) => {
     const [activeTab, setActiveTab] = useState('planning'); 
-    const [facilitySubTab, setFacilitySubTab] = useState('all'); 
-    const [captureData, setCaptureData] = useState([]);
-    const [utilizationData, setUtilizationData] = useState([]);
-    const [storageData, setStorageData] = useState([]);
     const [scope1Data, setScope1Data] = useState([]); 
     const [loading, setLoading] = useState(true);
-    const [selectedYear, setSelectedYear] = useState('ALL');
-    const [transportMode, setTransportMode] = useState('ALL');
     
-    const [showFuturePotential, setShowFuturePotential] = useState(false);
     const [showPowerPlants, setShowPowerPlants] = useState(true); // 新增：電廠顯示開關
 
-    const [hubs, setHubs] = useState(INITIAL_CCS_HUBS);
-    const [clusters, setClusters] = useState(INITIAL_CLUSTERS);
+    const [hubs, setHubs] = useState({});
+    const [clusters, setClusters] = useState({});
+    const [refParams, setRefParams] = useState({});
+    const [loadError, setLoadError] = useState(null);
     const [routeNodes, setRouteNodes] = useState({});
     const [seaControlPoints, setSeaControlPoints] = useState({});
     const [landControlPoints, setLandControlPoints] = useState({});
@@ -853,19 +798,24 @@ const CcusDashboard = () => {
     const [selectedHubId, setSelectedHubId] = useState('NORTH_HUB');
 
     useEffect(() => {
+        // 全部改讀資料庫：範疇一排放源（energy_facility_records / ccus_scope1）、已查證座標
+        // （ccus_emission_records）、封存樞紐與聚落節點（ccus_storage_sites / ccus_network_nodes）。
         const fetchAllData = async () => {
             setLoading(true);
             try {
-                const [resCap, resUtil, resStore, resScope1] = await Promise.all([
-                    fetch(CCUS_DATA_SOURCES.CAPTURE), fetch(CCUS_DATA_SOURCES.UTILIZATION),
-                    fetch(CCUS_DATA_SOURCES.STORAGE), fetch(CCUS_DATA_SOURCES.SCOPE1_URL).catch(() => null)
+                const [rawScope1, verified, survey] = await Promise.all([
+                    fetchScope1Rows(),
+                    fetchVerifiedEmitterCoords().catch(() => []),
+                    fetchCcusSurvey(),
                 ]);
-
-                const txtCap = await resCap.text(); const txtUtil = await resUtil.text();
-                const txtStore = await resStore.text(); const txtScope1 = resScope1 ? await resScope1.text() : '';
-
-                const rawCap = parseCSV(txtCap); const rawUtil = parseCSV(txtUtil);
-                const rawStore = parseCSV(txtStore); const rawScope1 = parseCSV(txtScope1);
+                setHubs(Object.fromEntries(survey.sites.filter(s => s.kind === 'hub').map(s => [s.site_id, {
+                    id: s.site_id, name: s.name, type: s.site_type, lat: Number(s.lat), lon: Number(s.lon), region: s.region,
+                }])));
+                setClusters(Object.fromEntries(survey.nodes.map(n => [n.node_id, {
+                    id: n.node_id, name: n.name, lat: Number(n.lat), lon: Number(n.lon), next: n.next_node_id, type: n.transport,
+                }])));
+                setRefParams(paramsByKey(survey.params));
+                const coordByControlNo = new globalThis.Map(verified.map(v => [v.control_no, v]));
 
                 setScope1Data(rawScope1.map(d => {
                     const keys = Object.keys(d);
@@ -884,75 +834,36 @@ const CcusDashboard = () => {
                     const countyMatch = countyStr.match(/(基隆|台北|臺北|新北|桃園|新竹|苗栗|台中|臺中|彰化|南投|雲林|嘉義|台南|臺南|高雄|屏東|宜蘭|花蓮|台東|臺東)/);
                     if (countyMatch) countyStr = countyMatch[0].replace('臺', '台'); else countyStr = '未知';
 
-                    const coords = getApproximateCoordinates(plantRaw, comp, countyStr);
+                    // 有查證過的地址座標就用（ccus_emission_records.coord_source = verified*），否則沿用公司名推估
+                    const v = coordByControlNo.get(String(d['管制編號'] || '').trim());
+                    const coords = v ? { lat: Number(v.latitude), lon: Number(v.longitude) } : getApproximateCoordinates(plantRaw, comp, countyStr);
                     const zone = getIndustrialZone(plantRaw, comp, countyStr);
                     const region = getRefinedRegion(plantRaw, comp, countyStr);
                     const scope1Val = cleanNumber(d[emit1Key]); const scope2Val = cleanNumber(d[emit2Key]); const totalVal = cleanNumber(d[emitTotalKey]) || (scope1Val + scope2Val);
 
                     const isPowerPlant = comp.includes('台電') || rawName.includes('發電廠');
 
-                    return { Company: comp, Plant: rawName, Scope1: scope1Val, Scope2: scope2Val, TotalScope: totalVal, Industry: d[indKey] || '', County: countyStr, zone, Region: region, lat: coords.lat, lon: coords.lon, isPowerPlant };
+                    return { Company: comp, Plant: rawName, Scope1: scope1Val, Scope2: scope2Val, TotalScope: totalVal, Industry: d[indKey] || '', County: countyStr, zone, Region: region, lat: coords.lat, lon: coords.lon, coordSource: v ? v.coord_source : 'estimated', isPowerPlant };
                 }).filter(d => {
                     if (!d || d.TotalScope <= 0) return false;
                     const scope2Ratio = d.Scope2 / d.TotalScope;
                     if (scope2Ratio > 0.7 && d.Scope1 < 50000) return false; 
                     return true; 
                 }).sort((a,b) => b.Scope1 - a.Scope1)); 
-
-                setCaptureData(rawCap.map(d => {
-                    const capVol = cleanNumber(d.Capture_Volume); const capEng = cleanNumber(d.Captur_energy || d.Emission_Per_Ton); 
-                    return {
-                        ...d, Year: String(d.Year || '2025'), Label: `${simplifyCompanyName(d.Company)} ${d.Plant}`,
-                        Latitude: cleanNumber(d.Latitude), Longitude: cleanNumber(d.Longitude), Capture_Tech: d.Capture_Tech || '未知技術',
-                        Capture_Volume: capVol, Captur_energy: capEng, Net_Capture_Volume: cleanNumber(d.Net_Capture_Volume) || Math.max(0, capVol - capEng),
-                        TRL: String(d.TRL || '-'), Capture_Source: d.Capture_Source || '', Separation_Tech: d.Separation_Tech || '',
-                        Temperature: d.Temperature || '', Pressure: d.Pressure || '', Concentration: d.Concentration || '', Potential_Source: d.Potential_Source || '',
-                        Future_Emission_Volume: cleanNumber(d.Future_Emission_Volume), Future_Temperature: d.Future_Temperature || '', Future_Pressure: d.Future_Pressure || '', Future_Concentration: d.Future_Concentration || ''
-                    };
-                }));
-
-                setUtilizationData(rawUtil.map(d => {
-                    const expDemand = cleanNumber(d.Expected_Demand);
-                    return { ...d, Year: String(d.Year || '2025'), Expected_Demand: expDemand, Current_Demand: cleanNumber(d.Current_Demand), Product_Generated: expDemand * (String(d.Conversion_Tech).includes('甲醇') ? 0.7 : 1.5), TRL: String(d.TRL || '-'), Target_Company: d.Target_Company || '', Target_Plant: d.Target_Plant || '', Conversion_Tech: d.Conversion_Tech || '' };
-                }));
-
-                setStorageData(rawStore.map(d => {
-                    let mode = String(d.Transport_Method || ''); let dist = cleanNumber(d.Distance_km) || (mode.includes('海') ? 150 : 30); 
-                    return { ...d, Year: String(d.Year || '2025'), Capturable_Volume: cleanNumber(d.Capturable_Volume), Distance_km: dist, Cost_USD_Per_Ton: cleanNumber(d.Cost_USD_Per_Ton), Transport_Method: mode, Concentration: d.Concentration || '', Process_Type: d.Process_Type || '', Source_Company: d.Source_Company || '', Storage_Site: d.Storage_Site || '' };
-                }));
-
-            } catch (err) { console.error(err); } finally { setLoading(false); }
+            } catch (err) { console.error(err); setLoadError(err.message); } finally { setLoading(false); }
         };
         fetchAllData();
     }, []);
 
-    const availableYears = useMemo(() => Array.from(new Set([...captureData.map(d=>d.Year), ...utilizationData.map(d=>d.Year), ...storageData.map(d=>d.Year)])).filter(Boolean).sort(), [captureData, utilizationData, storageData]);
-    const fCapture = useMemo(() => captureData.filter(d => selectedYear === 'ALL' || d.Year === selectedYear), [captureData, selectedYear]);
-    const fUtil = useMemo(() => utilizationData.filter(d => selectedYear === 'ALL' || d.Year === selectedYear), [utilizationData, selectedYear]);
-    const fStorage = useMemo(() => storageData.filter(d => selectedYear === 'ALL' || d.Year === selectedYear), [storageData, selectedYear]);
-
-    const valueChainData = useMemo(() => {
-        const map = {};
-        const add = (comp, key, val) => {
-            const c = simplifyCompanyName(comp);
-            if (!map[c]) map[c] = { Company: c, Capture: 0, Future: 0, Util: 0, Storage: 0 };
-            map[c][key] += (Number(val) || 0);
-        };
-        fCapture.forEach(d => { add(d.Company, 'Capture', d.Net_Capture_Volume); add(d.Company, 'Future', d.Future_Emission_Volume); });
-        fUtil.forEach(d => { add(d.Target_Company, 'Util', d.Expected_Demand); });
-        fStorage.forEach(d => { add(d.Source_Company, 'Storage', d.Capturable_Volume); });
-        return Object.values(map).filter(d => d.Capture > 0 || d.Util > 0 || d.Storage > 0 || (showFuturePotential && d.Future > 0)).sort((a,b) => (b.Capture+b.Util+b.Storage) - (a.Capture+a.Util+a.Storage));
-    }, [fCapture, fUtil, fStorage, showFuturePotential]);
-
     const ccsTopology = useMemo(() => {
-        if (!scope1Data || scope1Data.length === 0) return null;
+        if (!scope1Data || scope1Data.length === 0 || Object.keys(clusters).length === 0 || Object.keys(hubs).length === 0) return null;
 
         const activeClusters = JSON.parse(JSON.stringify(clusters));
         Object.keys(activeClusters).forEach(k => { activeClusters[k].id = k; activeClusters[k].emissions = 0; activeClusters[k].sources = []; });
 
         const hubSources = {}; Object.keys(hubs).forEach(k => hubSources[k] = []);
         const validSources = []; const branchRoutes = []; const landRoutes = [];
-        const hubEmissions = { NORTH_HUB: 0, CENTRAL_HUB_1: 0, CENTRAL_HUB_2: 0, CENTRAL_HUB_LAND: 0, SOUTH_HUB: 0, EAST_HUB: 0, SOUTHEAST_HUB: 0 };
+        const hubEmissions = Object.fromEntries(Object.keys(hubs).map(k => [k, 0]));
 
         const allMainNodes = [];
         Object.values(activeClusters).forEach(c => allMainNodes.push({id: c.id, lat: c.lat, lon: c.lon, name: c.name}));
@@ -1117,15 +1028,6 @@ const CcusDashboard = () => {
         return Object.values(map).sort((a,b) => b.total - a.total);
     }, [ccsTopology, scope1Data, listRegion, showPowerPlants]);
 
-    const { totalCapture, totalExpectedDemand, avgCost } = useMemo(() => {
-        const tCap = fCapture.reduce((sum, row) => sum + (Number(row.Net_Capture_Volume) || 0), 0);
-        const tDemand = fUtil.reduce((sum, row) => sum + (Number(row.Expected_Demand) || 0), 0);
-        let costSum = 0, volSum = 0;
-        fStorage.filter(row => transportMode === 'ALL' || row.Transport_Method.includes(transportMode)).forEach(row => {
-            if ((Number(row.Cost_USD_Per_Ton) || 0) > 0 && (Number(row.Capturable_Volume) || 0) > 0) { costSum += (Number(row.Cost_USD_Per_Ton)||0) * (Number(row.Capturable_Volume)||0); volSum += (Number(row.Capturable_Volume)||0); }
-        });
-        return { totalCapture: tCap, totalExpectedDemand: tDemand, avgCost: volSum > 0 ? (costSum / volSum) : 0 };
-    }, [fCapture, fUtil, fStorage, transportMode]);
 
     const availableIndustries = useMemo(() => ['ALL', ...Array.from(new Set(scope1Data.filter(d => showPowerPlants || !d.isPowerPlant).map(d => d.Industry))).filter(Boolean)], [scope1Data, showPowerPlants]);
     const filteredScope1Data = useMemo(() => {
@@ -1143,24 +1045,14 @@ const CcusDashboard = () => {
     }, [ccsTopology, selectedHubId]);
 
     if (loading) return <div className="p-10 text-center animate-pulse text-teal-600 flex flex-col items-center"><RefreshCw className="animate-spin mb-2"/> CCUS 地理資料建構中...</div>;
+    if (loadError && (activeTab === 'planning' || activeTab === 'sources') && scope1Data.length === 0) return <div className="m-4 p-6 rounded-xl border border-rose-200 bg-rose-50 text-rose-700 text-sm"><div className="font-bold mb-1">資料庫讀取失敗</div>{loadError}</div>;
 
-    const activeLayersMap = {
-        'all': ['capture', 'future', 'util', 'storage'],
-        'capture': ['capture', 'future'],
-        'utilization': ['util'],
-        'storage': ['storage'],
-        'planning': ['planning']
-    };
 
     return (
         <div className="space-y-5 md:space-y-6 animate-fade-in pb-10 min-h-screen px-3 py-4 md:p-6">
             <div className="card overflow-hidden">
                 <div className="flex items-center gap-3 px-3 md:px-5 pt-3">
                     <div className="hidden md:flex items-center gap-2 text-lg text-brand-ink font-bold whitespace-nowrap"><Leaf className="text-brand"/> CCUS 碳捕捉與封存戰情室</div>
-                    <span className="text-xs font-bold text-brand-muted md:ml-auto">資料年度</span>
-                    <select value={selectedYear} onChange={e => setSelectedYear(e.target.value)} className="h-10 bg-white border border-brand-line text-brand font-bold px-3 rounded-lg outline-none cursor-pointer hover:bg-slate-200 transition-colors">
-                        {availableYears.map(y => <option key={y} value={y}>{y}年</option>)}<option value="ALL">全年度</option>
-                    </select>
                 </div>
                 <div role="tablist" aria-label="CCUS 分頁" className="flex overflow-x-auto no-scrollbar px-2 md:px-4 mt-1 border-t border-brand-line">
                     {CCUS_TABS.map(({ id, label, icon }) => { const TabIcon = icon; return (
@@ -1255,8 +1147,13 @@ const CcusDashboard = () => {
                                     <div className="text-xs text-slate-600 leading-relaxed">排放源相對分散。新竹先往北牽至桃園內陸，再與桃園沿海會合，集中至林口沿岸，轉由海管輸送至林口外海封存。大於50km之主幹管線(橘色虛線)需依賴陸運車隊。</div>
                                 </div>
                                 <div className="bg-emerald-50 p-3 rounded border border-emerald-200">
-                                    <div className="text-xs font-bold text-emerald-700 mb-1">💡 IEA 運輸成本基準參考 (2023)</div>
-                                    <div className="text-xs text-emerald-600 leading-relaxed">陸地管線約 $2~4/噸/100km；離岸管線約 $3~6/噸/100km；海運因包含液化及港口固定費用起步較高(約$15~20/噸)，但距離增加的邊際成本極低。短距孤立廠區(&lt;50km)建議採陸運槽車。</div>
+                                    <div className="text-xs font-bold text-emerald-700 mb-1">💡 運輸成本基準參考（資料表 energy_ref_parameters）</div>
+                                    <ul className="text-xs text-emerald-700 leading-relaxed space-y-0.5">
+                                        {Object.values(refParams).filter(p => p.category === 'cost_benchmark').map(p => (
+                                            <li key={p.key}>{p.label}：<b>{Number(p.value).toLocaleString()}</b> {p.unit}{p.note ? `（${p.note}）` : ''}</li>
+                                        ))}
+                                    </ul>
+                                    <div className="text-[10px] text-emerald-600 mt-1">海運起步成本高但距離邊際成本低；短距孤立廠區(&lt;50km)建議採陸運槽車。</div>
                                 </div>
                             </div>
                         </div>
@@ -1411,242 +1308,10 @@ const CcusDashboard = () => {
                 </div>
             )}
 
-            {/* 合併版 CCUS 設施總覽 */}
-            {['chain', 'capture', 'storage'].includes(activeTab) && (
-                <div className="space-y-6 animate-fade-in">
-                    <div className="flex md:grid md:grid-cols-3 gap-3 md:gap-6 overflow-x-auto no-scrollbar snap-x -mx-3 px-3 md:mx-0 md:px-0 [&>*]:min-w-[80%] [&>*]:snap-start md:[&>*]:min-w-0 [&>*]:flex-shrink-0 md:[&>*]:flex-shrink">
-                        <div className="card p-5 flex items-center justify-between">
-                            <div><p className="text-xs text-slate-500 font-bold mb-1 uppercase tracking-wider">現行淨捕捉量總和</p><h3 className="text-3xl font-black text-blue-800">{Number(totalCapture||0).toFixed(1)} <span className="text-sm font-medium text-slate-500">萬噸/年</span></h3></div>
-                            <div className="w-14 h-14 rounded-full bg-blue-100 flex items-center justify-center text-blue-600"><Leaf size={28}/></div>
-                        </div>
-                        <div className="card p-5 flex items-center justify-between">
-                            <div><p className="text-xs text-slate-500 font-bold mb-1 uppercase tracking-wider">預期再利用 CO₂ 總需求</p><h3 className="text-3xl font-black text-emerald-800">{Number(totalExpectedDemand||0).toFixed(1)} <span className="text-sm font-medium text-slate-500">萬噸/年</span></h3></div>
-                            <div className="w-14 h-14 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600"><FlaskConical size={28}/></div>
-                        </div>
-                        <div className="card p-5 flex items-center justify-between">
-                            <div><p className="text-xs text-slate-500 font-bold mb-1 uppercase tracking-wider">總規劃封存量</p><h3 className="text-3xl font-black text-rose-800">{Number(fStorage.reduce((s, r)=>s+(Number(r.Capturable_Volume)||0), 0)).toFixed(1)} <span className="text-sm font-medium text-slate-500">萬噸/年</span></h3></div>
-                            <div className="w-14 h-14 rounded-full bg-rose-100 flex items-center justify-center text-rose-600"><Box size={28}/></div>
-                        </div>
-                    </div>
-                    
-                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 md:gap-6 items-stretch">
-                        {activeTab === 'chain' && (<div className="lg:col-span-6 card p-3 flex flex-col h-[65vh] min-h-[500px] max-h-[800px]">
-                            <div className="flex justify-between items-center mb-3 border-b pb-2">
-                                <h3 className="font-bold text-slate-800 text-base flex items-center gap-2"><MapPin size={16} className="text-slate-500"/> CCUS 全價值鏈分佈</h3>
-                                <div className="flex bg-slate-100 p-1 rounded-lg text-xs md:text-sm font-bold shadow-inner overflow-x-auto no-scrollbar">
-                                    <button onClick={() => setFacilitySubTab('all')} className={`px-3 py-1.5 whitespace-nowrap rounded-md ${facilitySubTab === 'all' ? 'bg-white shadow text-slate-800' : 'text-slate-500'}`}>全視角</button>
-                                    <button onClick={() => setFacilitySubTab('capture')} className={`px-3 py-1.5 whitespace-nowrap rounded-md ${facilitySubTab === 'capture' ? 'bg-blue-500 text-white shadow' : 'text-slate-500'}`}>捕捉端</button>
-                                    <button onClick={() => setFacilitySubTab('utilization')} className={`px-3 py-1.5 whitespace-nowrap rounded-md ${facilitySubTab === 'utilization' ? 'bg-emerald-500 text-white shadow' : 'text-slate-500'}`}>再利用端</button>
-                                    <button onClick={() => setFacilitySubTab('storage')} className={`px-3 py-1.5 whitespace-nowrap rounded-md ${facilitySubTab === 'storage' ? 'bg-rose-500 text-white shadow' : 'text-slate-500'}`}>封存端</button>
-                                </div>
-                            </div>
-                            <div className="flex-1 w-full h-full relative min-h-0">
-                                <ErrorBoundary>
-                                    <TaiwanCcusMap activeLayers={activeLayersMap[facilitySubTab]} captureData={fCapture} utilData={fUtil} storageData={fStorage} hubs={hubs} setHubs={setHubs} />
-                                </ErrorBoundary>
-                            </div>
-                        </div>)}
-
-                        <div className={`${activeTab === 'chain' ? 'lg:col-span-6' : 'lg:col-span-12'} min-w-0 flex flex-col gap-4 md:gap-6`}>
-                            {activeTab === 'chain' && facilitySubTab === 'all' && (
-                                <>
-                                    <div className="card p-4 flex flex-col min-h-[350px]">
-                                        <div className="flex justify-between items-center mb-3 border-b pb-2">
-                                            <h3 className="font-bold text-slate-800 text-base flex items-center gap-2"><Activity size={16} className="text-blue-500"/> 企業價值鏈橫向對照 (捕捉 vs 去化)</h3>
-                                            <label className="flex items-center gap-2 text-xs font-bold text-slate-600 cursor-pointer">
-                                                <input type="checkbox" checked={showFuturePotential} onChange={e => setShowFuturePotential(e.target.checked)} className="rounded text-blue-600 focus:ring-blue-500" />
-                                                顯示未來擴充潛力
-                                            </label>
-                                        </div>
-                                        <div className="flex-1 min-h-0 w-full relative">
-                                            <ErrorBoundary>
-                                                <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
-                                                    <ComposedChart data={valueChainData.slice(0, 10)} margin={{top: 10, right: 10, bottom: 20, left: 0}}>
-                                                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                                                        <XAxis dataKey="Company" tick={{fontSize: 10}} interval={0} angle={-30} textAnchor="end" />
-                                                        <YAxis tick={{fontSize: 10}} />
-                                                        <Tooltip contentStyle={{fontSize: '12px', borderRadius: '8px'}} formatter={v => Number(v||0).toFixed(1)} />
-                                                        <Legend wrapperStyle={{fontSize: '10px'}}/>
-                                                        <Bar dataKey="Capture" name="淨捕捉量" stackId="source" fill="#3b82f6" barSize={15} />
-                                                        {showFuturePotential && <Bar dataKey="Future" name="未來擴充潛力" stackId="source" fill="#93c5fd" barSize={15} />}
-                                                        <Bar dataKey="Util" name="再利用需求" stackId="sink" fill="#10b981" barSize={15} />
-                                                        <Bar dataKey="Storage" name="可封存量" stackId="sink" fill="#f59e0b" barSize={15} radius={[2, 2, 0, 0]} />
-                                                    </ComposedChart>
-                                                </ResponsiveContainer>
-                                            </ErrorBoundary>
-                                        </div>
-                                    </div>
-                                    <div className="card p-4 flex-1 flex flex-col min-h-[300px]">
-                                        <h3 className="font-bold text-slate-800 text-base mb-3 border-b pb-2 flex items-center gap-2"><List size={16} className="text-slate-500"/> CCUS 價值鏈總覽表</h3>
-                                        <div className="flex-1 overflow-auto custom-scrollbar">
-                                            <table className="w-full text-sm text-left whitespace-nowrap">
-                                                <thead className="bg-slate-100 sticky top-0 shadow-sm">
-                                                    <tr><th className="p-2">公司名稱</th><th className="p-2 text-right text-blue-600">淨捕捉量</th><th className="p-2 text-right text-blue-400">未來潛力</th><th className="p-2 text-right text-emerald-600">再利用需求</th><th className="p-2 text-right text-amber-600">可封存量</th></tr>
-                                                </thead>
-                                                <tbody className="divide-y divide-slate-100">
-                                                    {valueChainData.map((row, i) => (
-                                                        <tr key={i} className="hover:bg-slate-50 transition-colors">
-                                                            <td className="p-2 font-bold text-slate-700">{row.Company}</td>
-                                                            <td className="p-2 text-right font-mono text-blue-600">{(Number(row.Capture)||0) > 0 ? Number(row.Capture).toFixed(1) : '-'}</td>
-                                                            <td className="p-2 text-right font-mono text-blue-400">{(Number(row.Future)||0) > 0 ? Number(row.Future).toFixed(1) : '-'}</td>
-                                                            <td className="p-2 text-right font-mono text-emerald-600">{(Number(row.Util)||0) > 0 ? Number(row.Util).toFixed(1) : '-'}</td>
-                                                            <td className="p-2 text-right font-mono text-amber-600">{(Number(row.Storage)||0) > 0 ? Number(row.Storage).toFixed(1) : '-'}</td>
-                                                        </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    </div>
-                                </>
-                            )}
-
-                            {((activeTab === 'chain' && facilitySubTab === 'capture') || activeTab === 'capture') && (
-                                <>
-                                    <div className="card p-4 flex flex-col min-h-[350px]">
-                                        <h3 className="font-bold text-slate-800 text-base mb-3 border-b pb-2 flex items-center gap-2"><Activity size={16} className="text-blue-500"/> 技術解析：總捕捉量 vs 設備耗能</h3>
-                                        <div className="flex-1 min-h-0 w-full relative">
-                                            <ErrorBoundary>
-                                                <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
-                                                    <BarChart data={fCapture.filter(r => (Number(r.Capture_Volume)||0) > 0).sort((a,b) => (Number(b.Capture_Volume)||0) - (Number(a.Capture_Volume)||0))} layout="vertical" margin={{ top: 5, right: 30, left: 10, bottom: 5 }} barGap={2} barSize={20}>
-                                                        <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false}/>
-                                                        <XAxis type="number" fontSize={10} unit=" 萬噸"/>
-                                                        <YAxis dataKey="Label" type="category" width={120} interval={0} tick={<CaptureYAxisTick data={fCapture.filter(r => (Number(r.Capture_Volume)||0) > 0)} />}/>
-                                                        <Tooltip content={<CaptureTooltip />}/>
-                                                        <Legend wrapperStyle={{fontSize:'10px'}} verticalAlign="top"/>
-                                                        <Bar dataKey="Net_Capture_Volume" name="淨捕捉量" stackId="capture" fill="#10b981"><LabelList dataKey="Net_Capture_Volume" position="insideLeft" fill="white" fontSize={10} fontWeight="bold" formatter={(v) => Number(v||0) > 0 ? `淨 ${Number(v||0).toFixed(1)}` : ''}/></Bar>
-                                                        <Bar dataKey="Captur_energy" name="設備耗能" stackId="capture" fill="#ef4444" radius={[0, 4, 4, 0]}><LabelList dataKey="Capture_Volume" position="right" fill="#475569" fontSize={10} fontWeight="bold" formatter={(v) => `總 ${Number(v||0).toFixed(1)}`} /></Bar>
-                                                    </BarChart>
-                                                </ResponsiveContainer>
-                                            </ErrorBoundary>
-                                        </div>
-                                    </div>
-                                    <div className="card p-4 flex-1 flex flex-col min-h-[300px]">
-                                        <h3 className="font-bold text-slate-800 text-base mb-3 border-b pb-2 flex items-center gap-2"><List size={16} className="text-blue-500"/> 現有捕捉設施明細</h3>
-                                        <div className="flex-1 overflow-auto custom-scrollbar">
-                                            <table className="w-full text-sm text-left whitespace-nowrap">
-                                                <thead className="bg-blue-50 sticky top-0 shadow-sm">
-                                                    <tr><th className="p-2">公司廠區</th><th className="p-2">捕捉技術</th><th className="p-2">TRL</th><th className="p-2 text-right">總捕捉量</th><th className="p-2 text-right text-rose-500">耗能扣除</th><th className="p-2 text-right font-bold text-emerald-600">淨捕捉量</th></tr>
-                                                </thead>
-                                                <tbody className="divide-y divide-slate-100">
-                                                    {fCapture.filter(r => (Number(r.Capture_Volume)||0) > 0).map((row, i) => (
-                                                        <tr key={i} className="hover:bg-slate-50 transition-colors">
-                                                            <td className="p-2 font-bold text-slate-700">{row.Label}</td>
-                                                            <td className="p-2"><span className="px-2 py-0.5 bg-white border border-blue-200 text-blue-700 rounded">{row.Capture_Tech}</span></td>
-                                                            <td className="p-2 font-mono">{row.TRL}</td>
-                                                            <td className="p-2 text-right font-mono font-bold text-blue-600">{Number(row.Capture_Volume||0).toFixed(1)}</td>
-                                                            <td className="p-2 text-right font-mono text-rose-500">-{Number(row.Captur_energy||0).toFixed(1)}</td>
-                                                            <td className="p-2 text-right font-mono font-bold text-emerald-600">{Number(row.Net_Capture_Volume||0).toFixed(1)}</td>
-                                                        </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    </div>
-                                </>
-                            )}
-
-                            {((activeTab === 'chain' && facilitySubTab === 'utilization') || activeTab === 'capture') && (
-                                <>
-                                    <div className="card p-4 flex flex-col min-h-0 h-full">
-                                        <h3 className="font-bold text-slate-800 text-base mb-4 border-b pb-2 flex items-center gap-2"><FlaskConical size={16} className="text-emerald-500"/> 再利用製程與需求清單</h3>
-                                        <div className="flex-1 overflow-auto custom-scrollbar pr-2 space-y-3">
-                                            {fUtil.map((item, idx) => {
-                                                const trlNum = parseInt(String(item.TRL).split('-')[0]) || 0;
-                                                const isDeveloping = trlNum < 6 || (Number(item.Current_Demand)||0) === 0;
-                                                return (
-                                                    <div key={idx} className={`flex flex-col sm:flex-row items-stretch w-full rounded-xl border shadow-sm overflow-hidden relative ${isDeveloping ? 'bg-slate-50 border-dashed border-slate-300 opacity-80' : 'bg-white border-slate-200'}`}>
-                                                        <div className="flex-1 p-3 flex flex-col items-center justify-center border-r border-slate-100 relative">
-                                                            {isDeveloping && <div className="absolute top-0 right-0 bg-amber-500 text-white text-[9px] font-bold px-2 rounded-bl shadow-sm">開發中</div>}
-                                                            <div className="font-bold text-slate-700 mb-1 text-center text-sm">{item.Target_Company} {item.Target_Plant}</div>
-                                                            <div className="flex gap-2">
-                                                                <div className="bg-emerald-50 border border-emerald-100 rounded px-2 py-1 text-center"><div className="text-sm font-mono font-black text-emerald-600">{Number(item.Expected_Demand||0).toFixed(1)}</div><div className="text-[9px] text-emerald-500 font-bold">預期需求</div></div>
-                                                                <div className="bg-slate-50 border border-slate-100 rounded px-2 py-1 text-center"><div className={`text-sm font-mono font-black ${Number(item.Current_Demand||0) > 0 ? 'text-slate-600' : 'text-slate-300'}`}>{Number(item.Current_Demand||0).toFixed(1)}</div><div className="text-[9px] text-slate-500 font-bold">當前需求</div></div>
-                                                            </div>
-                                                        </div>
-                                                        <div className={`w-32 text-white flex flex-col items-center justify-center p-2 relative shadow-inner ${isDeveloping ? 'bg-slate-500' : 'bg-slate-800'}`}>
-                                                            <div className="text-[10px] text-slate-300 font-bold mb-1">轉化技術</div>
-                                                            <div className="text-xs font-bold text-center leading-tight text-amber-300 mb-1">{item.Conversion_Tech}</div>
-                                                            <div className={`text-[9px] px-2 rounded border ${isDeveloping ? 'bg-rose-900 border-rose-700 text-rose-200' : 'bg-slate-700 border-slate-600 text-amber-100'}`}>TRL {item.TRL}</div>
-                                                        </div>
-                                                        <div className="flex-1 p-3 flex flex-col items-center justify-center relative">
-                                                            <div className="font-bold text-slate-700 mb-1 text-center text-sm">{String(item.Conversion_Tech).split('轉')[1] || '高階產品'}</div>
-                                                            <div className="bg-purple-50 border border-purple-100 rounded px-3 py-1 text-center shadow-sm">
-                                                                <div className="text-xl font-mono font-black text-purple-600">{Number(item.Product_Generated||0).toFixed(1)}</div><div className="text-[10px] text-purple-500 font-bold">產出萬噸/年</div>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                );
-                                            })}
-                                            {fUtil.length === 0 && <div className="text-slate-400 text-sm py-10 text-center">無再利用轉化數據</div>}
-                                        </div>
-                                    </div>
-                                </>
-                            )}
-
-                            {((activeTab === 'chain' && facilitySubTab === 'storage') || activeTab === 'storage') && (
-                                <>
-                                    <div className="card p-4 flex flex-col min-h-[350px]">
-                                        <div className="flex justify-between items-center mb-3 border-b pb-2">
-                                            <h3 className="font-bold text-slate-800 text-base flex items-center gap-2"><Box size={16} className="text-amber-500"/> 封存成本與距離矩陣</h3>
-                                            <select value={transportMode} onChange={(e) => setTransportMode(e.target.value)} className="text-xs border rounded p-1 bg-slate-50 outline-none">
-                                                <option value="ALL">全部方式</option><option value="管線">管線</option><option value="陸運">陸運</option><option value="海運">海運</option>
-                                            </select>
-                                        </div>
-                                        <div className="flex-1 min-h-0 w-full relative">
-                                            <div className="absolute top-0 right-2 text-[10px] text-slate-400 bg-white/80 px-2 rounded z-10 border border-slate-100 shadow-sm">圓點大小 = 封存量能</div>
-                                            <ErrorBoundary>
-                                                <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
-                                                    <ScatterChart margin={{ top: 10, right: 10, bottom: 20, left: 0 }}>
-                                                        <CartesianGrid strokeDasharray="3 3"/>
-                                                        <XAxis type="number" dataKey="Distance_km" name="運輸距離" unit=" km" tick={{fontSize: 10}}>
-                                                            <Label value="運輸距離 (km)" position="insideBottom" offset={-10} fontSize={11} fill="#475569" fontWeight="bold"/>
-                                                        </XAxis>
-                                                        <YAxis type="number" dataKey="Cost_USD_Per_Ton" name="總成本" unit=" USD" tick={{fontSize: 10}}>
-                                                            <Label value="全價值鏈成本 (USD/噸)" angle={-90} position="insideLeft" offset={10} fontSize={11} fill="#475569" fontWeight="bold"/>
-                                                        </YAxis>
-                                                        <ZAxis type="number" dataKey="Capturable_Volume" range={[100, 1000]} name="封存量" />
-                                                        <Tooltip cursor={{strokeDasharray:'3 3'}} formatter={(v, n) => [Number(v||0).toFixed(1), n]} contentStyle={{borderRadius:'8px', fontSize:'12px'}}/>
-                                                        <Scatter name="封存專案" data={fStorage.filter(r => transportMode === 'ALL' || r.Transport_Method.includes(transportMode)).map(d => ({...d, Distance_km: Number(d.Distance_km)||0, Cost_USD_Per_Ton: Number(d.Cost_USD_Per_Ton)||0, Capturable_Volume: Number(d.Capturable_Volume)||0}))}>
-                                                            <LabelList dataKey="Storage_Site" position="top" style={{fontSize:10, fill:'#334155', fontWeight:'bold'}} />
-                                                            {fStorage.filter(r => transportMode === 'ALL' || r.Transport_Method.includes(transportMode)).map((entry, index) => {
-                                                                let dotColor = '#94a3b8';
-                                                                if (String(entry.Transport_Method).includes('管線')) dotColor = '#3b82f6';
-                                                                if (String(entry.Transport_Method).includes('陸運')) dotColor = '#f59e0b';
-                                                                if (String(entry.Transport_Method).includes('海運')) dotColor = '#14b8a6';
-                                                                return <Cell key={`cell-${index}`} fill={dotColor} fillOpacity={0.8} stroke="white" strokeWidth={1} />;
-                                                            })}
-                                                        </Scatter>
-                                                    </ScatterChart>
-                                                </ResponsiveContainer>
-                                            </ErrorBoundary>
-                                        </div>
-                                    </div>
-                                    <div className="card p-4 flex-1 flex flex-col min-h-[300px]">
-                                        <h3 className="font-bold text-slate-800 text-base mb-3 border-b pb-2 flex items-center gap-2"><List size={16} className="text-amber-500"/> 封存專案明細</h3>
-                                        <div className="flex-1 overflow-auto custom-scrollbar">
-                                            <table className="w-full text-sm text-left whitespace-nowrap">
-                                                <thead className="bg-amber-50 sticky top-0 shadow-sm">
-                                                    <tr><th className="p-2">碳源 ➔ 封存場</th><th className="p-2 text-center">方式</th><th className="p-2 text-right">距離</th><th className="p-2 text-right">封存量</th><th className="p-2 text-right">成本(USD)</th></tr>
-                                                </thead>
-                                                <tbody className="divide-y divide-slate-100">
-                                                    {[...fStorage].filter(r => transportMode === 'ALL' || r.Transport_Method.includes(transportMode)).sort((a,b) => (Number(a.Cost_USD_Per_Ton)||0) - (Number(b.Cost_USD_Per_Ton)||0)).map((row, i) => (
-                                                        <tr key={i} className="hover:bg-amber-50/50 transition-colors">
-                                                            <td className="p-2 font-bold text-slate-700 truncate max-w-[120px]">{row.Source_Company} ➔ {row.Storage_Site}</td>
-                                                            <td className="p-2 text-center"><span className="px-1.5 py-0.5 rounded border border-slate-200 bg-white font-bold">{row.Transport_Method}</span></td>
-                                                            <td className="p-2 text-right font-mono text-slate-600">{Number(row.Distance_km||0).toFixed(0)}</td>
-                                                            <td className="p-2 text-right font-mono text-blue-600">{Number(row.Capturable_Volume||0).toFixed(1)}</td>
-                                                            <td className="p-2 text-right font-mono font-bold text-rose-600">${Number(row.Cost_USD_Per_Ton||0).toFixed(1)}</td>
-                                                        </tr>
-                                                    ))}
-                                                    {fStorage.filter(r => transportMode === 'ALL' || r.Transport_Method.includes(transportMode)).length === 0 && <tr><td colSpan={5} className="p-4 text-center text-slate-400">無符合條件之專案</td></tr>}
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    </div>
-                                </>
-                            )}
-                        </div>
-                    </div>
+            {/* CCUS 問卷資料：整合地圖 / 碳捕捉 / 碳封存 / 碳再利用（資料來源：Supabase 問卷整併表） */}
+            {CCUS_SURVEY_TABS.some(t => t.value === activeTab) && (
+                <div className="animate-fade-in">
+                    <CcusSurveyPanel view={activeTab} onOpenTrade={onOpenTrade} />
                 </div>
             )}
         </div>
