@@ -491,12 +491,13 @@ const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], sto
         <div className="w-full h-full relative bg-slate-50/80 rounded-lg overflow-hidden border border-slate-200 min-h-[400px]" ref={containerRef} onContextMenu={(e)=>e.preventDefault()}>
             
             {/* 左側地圖工具列：快速導航與視圖切換 */}
-            <div className="absolute top-4 left-4 z-20 flex flex-col gap-2 pointer-events-auto">
-                <div className="flex bg-white/95 p-1 rounded-lg shadow-sm border border-slate-200 backdrop-blur text-xs font-bold text-slate-600">
+            <div className="absolute top-3 left-3 md:top-4 md:left-4 z-20 flex flex-col gap-2 pointer-events-auto max-w-[calc(100%-4.5rem)] overflow-x-auto no-scrollbar">
+                <div className="flex bg-white/95 p-1 rounded-lg shadow-sm border border-slate-200 backdrop-blur text-sm font-bold text-slate-600 whitespace-nowrap">
                     <button onClick={() => {setZoom(1); setPan({x:0, y:0});}} className="px-3 py-1.5 hover:bg-blue-50 hover:text-blue-600 rounded transition-colors">全視角</button>
                     <button onClick={() => zoomToRegion(25.03, 121.30, 2.5)} className="px-3 py-1.5 hover:bg-blue-50 hover:text-blue-600 rounded transition-colors border-l border-slate-200">北區</button>
                     <button onClick={() => zoomToRegion(24.05, 120.45, 3)} className="px-3 py-1.5 hover:bg-blue-50 hover:text-blue-600 rounded transition-colors border-l border-slate-200">中區</button>
                     <button onClick={() => zoomToRegion(22.62, 120.31, 3.5)} className="px-3 py-1.5 hover:bg-blue-50 hover:text-blue-600 rounded transition-colors border-l border-slate-200">南區</button>
+                    <button onClick={() => zoomToRegion(23.85, 121.45, 2.2)} className="px-3 py-1.5 hover:bg-blue-50 hover:text-blue-600 rounded transition-colors border-l border-slate-200">東區</button>
                 </div>
             </div>
 
@@ -955,6 +956,14 @@ const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], sto
     );
 };
 
+const CCUS_TABS = [
+    { id: 'planning', label: '案場與管線規劃', icon: Map },
+    { id: 'chain', label: '價值鏈總覽', icon: Layers },
+    { id: 'capture', label: '捕捉與再利用', icon: FlaskConical },
+    { id: 'storage', label: '封存與成本', icon: Box },
+    { id: 'sources', label: '排放源清單', icon: List },
+];
+
 const CcusDashboard = () => {
     const [activeTab, setActiveTab] = useState('planning'); 
     const [facilitySubTab, setFacilitySubTab] = useState('all'); 
@@ -1297,40 +1306,46 @@ const CcusDashboard = () => {
 
     return (
         <div className="space-y-5 md:space-y-6 animate-fade-in pb-10 min-h-screen px-3 py-4 md:p-6">
-            <div className="card p-3 md:p-4 flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3">
-                <div className="flex items-center gap-3">
+            <div className="card overflow-hidden">
+                <div className="flex items-center gap-3 px-3 md:px-5 pt-3">
                     <div className="hidden md:flex items-center gap-2 text-lg text-brand-ink font-bold whitespace-nowrap"><Leaf className="text-brand"/> CCUS 碳捕捉與封存戰情室</div>
-                    <select value={selectedYear} onChange={e => setSelectedYear(e.target.value)} className="bg-slate-100 border border-slate-200 text-slate-700 font-bold px-3 py-1 rounded-lg outline-none cursor-pointer hover:bg-slate-200 transition-colors">
+                    <span className="text-xs font-bold text-brand-muted md:ml-auto">資料年度</span>
+                    <select value={selectedYear} onChange={e => setSelectedYear(e.target.value)} className="h-10 bg-white border border-brand-line text-brand font-bold px-3 rounded-lg outline-none cursor-pointer hover:bg-slate-200 transition-colors">
                         {availableYears.map(y => <option key={y} value={y}>{y}年</option>)}<option value="ALL">全年度</option>
                     </select>
                 </div>
-                <div className="flex bg-slate-100 p-1 rounded-xl font-bold text-sm overflow-x-auto no-scrollbar">
-                    <button onClick={() => setActiveTab('planning')} className={`px-4 py-2 rounded-lg flex items-center gap-2 transition-all ${activeTab === 'planning' ? 'bg-white shadow text-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}><Map size={16}/> 案場與管線規劃</button>
-                    <button onClick={() => setActiveTab('facilities')} className={`px-4 py-2 rounded-lg flex items-center gap-2 transition-all ${activeTab === 'facilities' ? 'bg-white shadow text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}><Layers size={16}/> CCUS 設施與專案總覽</button>
+                <div role="tablist" aria-label="CCUS 分頁" className="flex overflow-x-auto no-scrollbar px-2 md:px-4 mt-1 border-t border-brand-line">
+                    {CCUS_TABS.map(({ id, label, icon: TabIcon }) => (
+                        <button key={id} role="tab" aria-selected={activeTab === id} onClick={() => setActiveTab(id)} className={`tab-btn ${activeTab === id ? 'tab-btn-on' : ''}`}>
+                            <TabIcon size={17}/> {label}
+                        </button>
+                    ))}
                 </div>
             </div>
 
-            {activeTab === 'planning' && (
-                <div className="space-y-6 animate-fade-in">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between">
+            {(activeTab === 'planning' || activeTab === 'sources') && (
+                <div className="space-y-5 md:space-y-6 animate-fade-in">
+                    <div className="flex md:grid md:grid-cols-3 gap-3 md:gap-6 overflow-x-auto no-scrollbar snap-x -mx-3 px-3 md:mx-0 md:px-0 [&>*]:min-w-[80%] [&>*]:snap-start md:[&>*]:min-w-0 [&>*]:flex-shrink-0 md:[&>*]:flex-shrink">
+                        <div className="card p-5 flex items-center justify-between">
                             <div><p className="text-xs text-slate-500 font-bold mb-1 uppercase">符合門檻之廠區總排放量 (範疇 1+2)</p><h3 className="text-2xl font-black text-rose-700">{(Number(scope1Stats.total || 0) / 10000).toFixed(1)} <span className="text-sm font-medium text-slate-500">萬噸</span></h3></div>
                             <div className="w-12 h-12 rounded-full bg-rose-50 flex items-center justify-center text-rose-600"><AlertTriangle size={24}/></div>
                         </div>
-                        <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between border-l-4 border-l-indigo-500">
+                        <div className="card p-5 flex items-center justify-between border-l-4 border-l-indigo-500">
                             <div><p className="text-xs text-slate-500 font-bold mb-1 uppercase">高潛力工業區集群數</p><h3 className="text-2xl font-black text-indigo-700">{scope1Stats.topZones.filter(z=>z.Total>1000000).length} <span className="text-sm font-medium text-slate-500">個 (&gt;百萬噸)</span></h3></div>
                             <div className="w-12 h-12 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600"><Layers size={24}/></div>
                         </div>
-                        <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between border-l-4 border-l-sky-500">
+                        <div className="card p-5 flex items-center justify-between border-l-4 border-l-sky-500">
                             <div><p className="text-xs text-slate-500 font-bold mb-1 uppercase">自動推演管線距離評估</p><h3 className="text-2xl font-black text-sky-700">啟用 <span className="text-sm font-medium text-slate-500">可自由規劃多節點</span></h3></div>
                             <div className="w-12 h-12 rounded-full bg-sky-50 flex items-center justify-center text-sky-600"><Route size={24}/></div>
                         </div>
                     </div>
 
+                    {activeTab === 'planning' && (
+                    <>
                     <div className="grid grid-cols-1 gap-6">
-                        <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex flex-col h-[65vh] min-h-[500px] max-h-[800px]">
+                        <div className="card p-3 flex flex-col h-[65vh] min-h-[500px] max-h-[800px]">
                             <div className="flex justify-between items-center mb-3 border-b pb-2">
-                                <h3 className="font-bold text-slate-700 text-sm flex items-center gap-2"><Map size={16} className="text-indigo-500"/> CCS 案場與共通管線拓樸分析</h3>
+                                <h3 className="font-bold text-slate-800 text-base flex items-center gap-2"><Map size={16} className="text-indigo-500"/> CCS 案場與共通管線拓樸分析</h3>
                                 <label className="flex items-center gap-2 text-xs font-bold text-slate-600 cursor-pointer bg-slate-100 px-3 py-1.5 rounded-lg shadow-inner">
                                     <input type="checkbox" checked={showPowerPlants} onChange={e => setShowPowerPlants(e.target.checked)} className="rounded text-purple-600 focus:ring-purple-500" />
                                     顯示大型發電廠 (紫標)
@@ -1344,9 +1359,9 @@ const CcusDashboard = () => {
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col h-[400px]">
-                            <h3 className="font-bold text-slate-700 text-sm mb-3 border-b pb-2 flex items-center gap-2"><MapPin size={16} className="text-indigo-500"/> 區域與樞紐碳排分佈</h3>
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
+                        <div className="card p-4 flex flex-col h-[400px]">
+                            <h3 className="font-bold text-slate-800 text-base mb-3 border-b pb-2 flex items-center gap-2"><MapPin size={16} className="text-indigo-500"/> 區域與樞紐碳排分佈</h3>
                             <div className="overflow-y-auto custom-scrollbar pr-2 space-y-4 flex-1">
                                 <div>
                                     <h4 className="text-xs font-bold text-slate-500 mb-2">地理分區原生排放量 (範疇一)</h4>
@@ -1376,8 +1391,8 @@ const CcusDashboard = () => {
                             </div>
                         </div>
 
-                        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col h-[400px]">
-                            <h3 className="font-bold text-slate-700 text-sm mb-3 border-b pb-2 flex items-center gap-2"><Route size={16} className="text-sky-500"/> 區域管線佈建可行性分析</h3>
+                        <div className="card p-4 flex flex-col h-[400px]">
+                            <h3 className="font-bold text-slate-800 text-base mb-3 border-b pb-2 flex items-center gap-2"><Route size={16} className="text-sky-500"/> 區域管線佈建可行性分析</h3>
                             <div className="flex flex-col gap-2 overflow-y-auto pr-2 custom-scrollbar">
                                 <div className="bg-slate-50 p-3 rounded border border-slate-200">
                                     <div className="text-xs font-bold text-slate-500 mb-1">【南區】多節點集中 ➔ 港口接收外銷</div>
@@ -1398,43 +1413,9 @@ const CcusDashboard = () => {
                             </div>
                         </div>
 
-                        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col h-[400px]">
+                        <div className="card p-4 flex flex-col h-[450px]">
                             <div className="flex justify-between items-center mb-3 border-b pb-2">
-                                <h3 className="font-bold text-slate-700 text-sm flex items-center gap-2"><MapPin size={16} className="text-indigo-500"/> 縣市排放量總表 (萬噸)</h3>
-                                <select value={listRegion} onChange={e => setListRegion(e.target.value)} className="bg-slate-50 border border-slate-200 text-slate-600 font-bold px-2 py-1 rounded outline-none text-xs">
-                                    <option value="ALL">全區域</option><option value="北區">北區</option><option value="中區">中區</option><option value="南區">南區</option><option value="東區">東區</option>
-                                </select>
-                            </div>
-                            <div className="flex-1 overflow-auto custom-scrollbar border border-slate-100 rounded-lg">
-                                <table className="w-full text-xs text-left">
-                                    <thead className="bg-slate-50 sticky top-0 shadow-sm z-10">
-                                        <tr>
-                                            <th className="p-3">縣市</th>
-                                            <th className="p-3 text-right text-rose-600">範疇一(可CCS)</th>
-                                            <th className="p-3 text-right text-slate-500">範疇二</th>
-                                            <th className="p-3 text-right font-bold text-slate-700">總和</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-slate-100">
-                                        {countyStats.map(row => (
-                                            <tr key={row.name} className="hover:bg-slate-50 transition-colors">
-                                                <td className="p-3 font-bold text-slate-700">{row.name}</td>
-                                                <td className="p-3 text-right font-mono text-rose-600">{(row.scope1/10000).toFixed(1)}</td>
-                                                <td className="p-3 text-right font-mono text-slate-500">{(row.scope2/10000).toFixed(1)}</td>
-                                                <td className="p-3 text-right font-mono font-bold text-slate-800">{(row.total/10000).toFixed(1)}</td>
-                                            </tr>
-                                        ))}
-                                        {countyStats.length === 0 && <tr><td colSpan={4} className="p-8 text-center text-slate-400">無區域資料</td></tr>}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col h-[450px]">
-                            <div className="flex justify-between items-center mb-3 border-b pb-2">
-                                <h3 className="font-bold text-slate-700 text-sm flex items-center gap-2">
+                                <h3 className="font-bold text-slate-800 text-base flex items-center gap-2">
                                     <Anchor size={16} className="text-blue-500"/> 封存點位管網接收碳源分析
                                 </h3>
                                 <select 
@@ -1460,7 +1441,7 @@ const CcusDashboard = () => {
                             </div>
 
                             <div className="overflow-y-auto custom-scrollbar flex-1 border border-slate-100 rounded-lg">
-                                <table className="w-full text-xs text-left relative">
+                                <table className="w-full text-sm text-left relative whitespace-nowrap">
                                     <thead className="bg-blue-50/50 sticky top-0 shadow-sm z-10">
                                         <tr>
                                             <th className="p-3 text-blue-800">事業名稱</th>
@@ -1472,7 +1453,7 @@ const CcusDashboard = () => {
                                     <tbody className="divide-y divide-blue-50">
                                         {selectedHubSources.map((row, i) => (
                                             <tr key={i} className="hover:bg-blue-50/30 transition-colors">
-                                                <td className="p-3 font-bold text-slate-700 truncate max-w-[150px]" title={row.Plant}>
+                                                <td className="p-3 font-bold text-slate-700 truncate max-w-[180px] md:max-w-[220px]" title={row.Plant}>
                                                     {row.isPowerPlant ? <span className="mr-1 text-[10px] text-purple-600 font-black" title="大型電廠">●</span> : (row.isPriority ? <span className="mr-1 text-[10px] text-rose-500 font-black" title="優先碳源">●</span> : <span className="mr-1 text-[10px] text-orange-400 font-black" title="次要碳源">●</span>)}
                                                     {row.Plant}
                                                 </td>
@@ -1488,10 +1469,49 @@ const CcusDashboard = () => {
                                 </table>
                             </div>
                         </div>
+                    </div>
+                    </>
+                    )}
 
-                        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col h-[450px]">
+                    {activeTab === 'sources' && (
+                    <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 md:gap-6">
+                        <div className="lg:col-span-2 min-w-0">
+                        <div className="card p-4 flex flex-col h-[640px]">
+                            <div className="flex justify-between items-center mb-3 border-b pb-2">
+                                <h3 className="font-bold text-slate-800 text-base flex items-center gap-2"><MapPin size={16} className="text-indigo-500"/> 縣市排放量總表 (萬噸)</h3>
+                                <select value={listRegion} onChange={e => setListRegion(e.target.value)} className="bg-slate-50 border border-slate-200 text-slate-600 font-bold px-2 py-1 rounded outline-none text-xs">
+                                    <option value="ALL">全區域</option><option value="北區">北區</option><option value="中區">中區</option><option value="南區">南區</option><option value="東區">東區</option>
+                                </select>
+                            </div>
+                            <div className="flex-1 overflow-auto custom-scrollbar border border-slate-100 rounded-lg">
+                                <table className="w-full text-sm text-left whitespace-nowrap">
+                                    <thead className="bg-slate-50 sticky top-0 shadow-sm z-10">
+                                        <tr>
+                                            <th className="p-3">縣市</th>
+                                            <th className="p-3 text-right text-rose-600">範疇一(可CCS)</th>
+                                            <th className="p-3 text-right text-slate-500">範疇二</th>
+                                            <th className="p-3 text-right font-bold text-slate-700">總和</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {countyStats.map(row => (
+                                            <tr key={row.name} className="hover:bg-slate-50 transition-colors">
+                                                <td className="p-3 font-bold text-slate-700">{row.name}</td>
+                                                <td className="p-3 text-right font-mono text-rose-600">{(row.scope1/10000).toFixed(1)}</td>
+                                                <td className="p-3 text-right font-mono text-slate-500">{(row.scope2/10000).toFixed(1)}</td>
+                                                <td className="p-3 text-right font-mono font-bold text-slate-800">{(row.total/10000).toFixed(1)}</td>
+                                            </tr>
+                                        ))}
+                                        {countyStats.length === 0 && <tr><td colSpan={4} className="p-8 text-center text-slate-400">無區域資料</td></tr>}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        </div>
+                        <div className="lg:col-span-3 min-w-0">
+                        <div className="card p-4 flex flex-col h-[640px]">
                             <div className="flex flex-wrap justify-between items-center mb-3 border-b pb-2 gap-2">
-                                <h3 className="font-bold text-slate-700 text-sm flex items-center gap-2"><List size={16} className="text-rose-500"/> 排放點源總表 (含孤立點)</h3>
+                                <h3 className="font-bold text-slate-800 text-base flex items-center gap-2"><List size={16} className="text-rose-500"/> 排放點源總表 (含孤立點)</h3>
                                 <div className="flex gap-2">
                                     <div className="flex items-center gap-1 bg-slate-50 px-2 py-1 rounded border border-slate-200 text-xs">
                                         <Filter size={12} className="text-slate-400"/>
@@ -1509,7 +1529,7 @@ const CcusDashboard = () => {
                             </div>
                             
                             <div className="overflow-y-auto custom-scrollbar flex-1 border border-slate-100 rounded-lg">
-                                <table className="w-full text-xs text-left relative">
+                                <table className="w-full text-sm text-left relative whitespace-nowrap">
                                     <thead className="bg-slate-50 sticky top-0 shadow-sm z-10">
                                         <tr>
                                             <th className="p-3">事業名稱</th>
@@ -1522,7 +1542,7 @@ const CcusDashboard = () => {
                                     <tbody className="divide-y divide-slate-100">
                                         {filteredScope1Data.map((row, i) => (
                                             <tr key={i} className="hover:bg-rose-50 transition-colors">
-                                                <td className="p-3 font-bold text-slate-700 truncate max-w-[150px]" title={row.Plant}>
+                                                <td className="p-3 font-bold text-slate-700 truncate max-w-[180px] md:max-w-[220px]" title={row.Plant}>
                                                     {row.isPowerPlant ? <span className="mr-1 text-[10px] text-purple-600 font-black" title="大型電廠">●</span> : (row.isPriority ? <span className="mr-1 text-[10px] text-rose-500 font-black" title="優先碳源">●</span> : <span className="mr-1 text-[10px] text-orange-400 font-black" title="次要碳源">●</span>)}
                                                     {row.Plant}
                                                 </td>
@@ -1537,37 +1557,39 @@ const CcusDashboard = () => {
                                 </table>
                             </div>
                         </div>
+                        </div>
                     </div>
+                    )}
                 </div>
             )}
 
             {/* 合併版 CCUS 設施總覽 */}
-            {activeTab === 'facilities' && (
+            {['chain', 'capture', 'storage'].includes(activeTab) && (
                 <div className="space-y-6 animate-fade-in">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between">
+                    <div className="flex md:grid md:grid-cols-3 gap-3 md:gap-6 overflow-x-auto no-scrollbar snap-x -mx-3 px-3 md:mx-0 md:px-0 [&>*]:min-w-[80%] [&>*]:snap-start md:[&>*]:min-w-0 [&>*]:flex-shrink-0 md:[&>*]:flex-shrink">
+                        <div className="card p-5 flex items-center justify-between">
                             <div><p className="text-xs text-slate-500 font-bold mb-1 uppercase tracking-wider">現行淨捕捉量總和</p><h3 className="text-3xl font-black text-blue-800">{Number(totalCapture||0).toFixed(1)} <span className="text-sm font-medium text-slate-500">萬噸/年</span></h3></div>
                             <div className="w-14 h-14 rounded-full bg-blue-100 flex items-center justify-center text-blue-600"><Leaf size={28}/></div>
                         </div>
-                        <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between">
+                        <div className="card p-5 flex items-center justify-between">
                             <div><p className="text-xs text-slate-500 font-bold mb-1 uppercase tracking-wider">預期再利用 CO₂ 總需求</p><h3 className="text-3xl font-black text-emerald-800">{Number(totalExpectedDemand||0).toFixed(1)} <span className="text-sm font-medium text-slate-500">萬噸/年</span></h3></div>
                             <div className="w-14 h-14 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600"><FlaskConical size={28}/></div>
                         </div>
-                        <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between">
+                        <div className="card p-5 flex items-center justify-between">
                             <div><p className="text-xs text-slate-500 font-bold mb-1 uppercase tracking-wider">總規劃封存量</p><h3 className="text-3xl font-black text-rose-800">{Number(fStorage.reduce((s, r)=>s+(Number(r.Capturable_Volume)||0), 0)).toFixed(1)} <span className="text-sm font-medium text-slate-500">萬噸/年</span></h3></div>
                             <div className="w-14 h-14 rounded-full bg-rose-100 flex items-center justify-center text-rose-600"><Box size={28}/></div>
                         </div>
                     </div>
                     
-                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
-                        <div className="lg:col-span-6 bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex flex-col h-[65vh] min-h-[500px] max-h-[800px]">
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 md:gap-6 items-stretch">
+                        {activeTab === 'chain' && (<div className="lg:col-span-6 card p-3 flex flex-col h-[65vh] min-h-[500px] max-h-[800px]">
                             <div className="flex justify-between items-center mb-3 border-b pb-2">
-                                <h3 className="font-bold text-slate-700 text-sm flex items-center gap-2"><MapPin size={16} className="text-slate-500"/> CCUS 全價值鏈分佈</h3>
-                                <div className="flex bg-slate-100 p-1 rounded-lg text-[10px] font-bold shadow-inner">
-                                    <button onClick={() => setFacilitySubTab('all')} className={`px-3 py-1 rounded-md ${facilitySubTab === 'all' ? 'bg-white shadow text-slate-800' : 'text-slate-500'}`}>全視角</button>
-                                    <button onClick={() => setFacilitySubTab('capture')} className={`px-3 py-1 rounded-md ${facilitySubTab === 'capture' ? 'bg-blue-500 text-white shadow' : 'text-slate-500'}`}>捕捉端</button>
-                                    <button onClick={() => setFacilitySubTab('utilization')} className={`px-3 py-1 rounded-md ${facilitySubTab === 'utilization' ? 'bg-emerald-500 text-white shadow' : 'text-slate-500'}`}>再利用端</button>
-                                    <button onClick={() => setFacilitySubTab('storage')} className={`px-3 py-1 rounded-md ${facilitySubTab === 'storage' ? 'bg-rose-500 text-white shadow' : 'text-slate-500'}`}>封存端</button>
+                                <h3 className="font-bold text-slate-800 text-base flex items-center gap-2"><MapPin size={16} className="text-slate-500"/> CCUS 全價值鏈分佈</h3>
+                                <div className="flex bg-slate-100 p-1 rounded-lg text-xs md:text-sm font-bold shadow-inner overflow-x-auto no-scrollbar">
+                                    <button onClick={() => setFacilitySubTab('all')} className={`px-3 py-1.5 whitespace-nowrap rounded-md ${facilitySubTab === 'all' ? 'bg-white shadow text-slate-800' : 'text-slate-500'}`}>全視角</button>
+                                    <button onClick={() => setFacilitySubTab('capture')} className={`px-3 py-1.5 whitespace-nowrap rounded-md ${facilitySubTab === 'capture' ? 'bg-blue-500 text-white shadow' : 'text-slate-500'}`}>捕捉端</button>
+                                    <button onClick={() => setFacilitySubTab('utilization')} className={`px-3 py-1.5 whitespace-nowrap rounded-md ${facilitySubTab === 'utilization' ? 'bg-emerald-500 text-white shadow' : 'text-slate-500'}`}>再利用端</button>
+                                    <button onClick={() => setFacilitySubTab('storage')} className={`px-3 py-1.5 whitespace-nowrap rounded-md ${facilitySubTab === 'storage' ? 'bg-rose-500 text-white shadow' : 'text-slate-500'}`}>封存端</button>
                                 </div>
                             </div>
                             <div className="flex-1 w-full h-full relative min-h-0">
@@ -1575,14 +1597,14 @@ const CcusDashboard = () => {
                                     <TaiwanCcusMap activeLayers={activeLayersMap[facilitySubTab]} captureData={fCapture} utilData={fUtil} storageData={fStorage} mapPaths={mapPaths} hubs={hubs} setHubs={setHubs} />
                                 </ErrorBoundary>
                             </div>
-                        </div>
+                        </div>)}
 
-                        <div className="lg:col-span-6 flex flex-col gap-6">
-                            {facilitySubTab === 'all' && (
+                        <div className={`${activeTab === 'chain' ? 'lg:col-span-6' : 'lg:col-span-12'} min-w-0 flex flex-col gap-4 md:gap-6`}>
+                            {activeTab === 'chain' && facilitySubTab === 'all' && (
                                 <>
-                                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col min-h-[350px]">
+                                    <div className="card p-4 flex flex-col min-h-[350px]">
                                         <div className="flex justify-between items-center mb-3 border-b pb-2">
-                                            <h3 className="font-bold text-slate-700 text-sm flex items-center gap-2"><Activity size={16} className="text-blue-500"/> 企業價值鏈橫向對照 (捕捉 vs 去化)</h3>
+                                            <h3 className="font-bold text-slate-800 text-base flex items-center gap-2"><Activity size={16} className="text-blue-500"/> 企業價值鏈橫向對照 (捕捉 vs 去化)</h3>
                                             <label className="flex items-center gap-2 text-xs font-bold text-slate-600 cursor-pointer">
                                                 <input type="checkbox" checked={showFuturePotential} onChange={e => setShowFuturePotential(e.target.checked)} className="rounded text-blue-600 focus:ring-blue-500" />
                                                 顯示未來擴充潛力
@@ -1606,10 +1628,10 @@ const CcusDashboard = () => {
                                             </ErrorBoundary>
                                         </div>
                                     </div>
-                                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex-1 flex flex-col min-h-[300px]">
-                                        <h3 className="font-bold text-slate-700 text-sm mb-3 border-b pb-2 flex items-center gap-2"><List size={16} className="text-slate-500"/> CCUS 價值鏈總覽表</h3>
+                                    <div className="card p-4 flex-1 flex flex-col min-h-[300px]">
+                                        <h3 className="font-bold text-slate-800 text-base mb-3 border-b pb-2 flex items-center gap-2"><List size={16} className="text-slate-500"/> CCUS 價值鏈總覽表</h3>
                                         <div className="flex-1 overflow-auto custom-scrollbar">
-                                            <table className="w-full text-xs text-left">
+                                            <table className="w-full text-sm text-left whitespace-nowrap">
                                                 <thead className="bg-slate-100 sticky top-0 shadow-sm">
                                                     <tr><th className="p-2">公司名稱</th><th className="p-2 text-right text-blue-600">淨捕捉量</th><th className="p-2 text-right text-blue-400">未來潛力</th><th className="p-2 text-right text-emerald-600">再利用需求</th><th className="p-2 text-right text-amber-600">可封存量</th></tr>
                                                 </thead>
@@ -1630,10 +1652,10 @@ const CcusDashboard = () => {
                                 </>
                             )}
 
-                            {facilitySubTab === 'capture' && (
+                            {((activeTab === 'chain' && facilitySubTab === 'capture') || activeTab === 'capture') && (
                                 <>
-                                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col min-h-[350px]">
-                                        <h3 className="font-bold text-slate-700 text-sm mb-3 border-b pb-2 flex items-center gap-2"><Activity size={16} className="text-blue-500"/> 技術解析：總捕捉量 vs 設備耗能</h3>
+                                    <div className="card p-4 flex flex-col min-h-[350px]">
+                                        <h3 className="font-bold text-slate-800 text-base mb-3 border-b pb-2 flex items-center gap-2"><Activity size={16} className="text-blue-500"/> 技術解析：總捕捉量 vs 設備耗能</h3>
                                         <div className="flex-1 min-h-0 w-full relative">
                                             <ErrorBoundary>
                                                 <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
@@ -1650,10 +1672,10 @@ const CcusDashboard = () => {
                                             </ErrorBoundary>
                                         </div>
                                     </div>
-                                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex-1 flex flex-col min-h-[300px]">
-                                        <h3 className="font-bold text-slate-700 text-sm mb-3 border-b pb-2 flex items-center gap-2"><List size={16} className="text-blue-500"/> 現有捕捉設施明細</h3>
+                                    <div className="card p-4 flex-1 flex flex-col min-h-[300px]">
+                                        <h3 className="font-bold text-slate-800 text-base mb-3 border-b pb-2 flex items-center gap-2"><List size={16} className="text-blue-500"/> 現有捕捉設施明細</h3>
                                         <div className="flex-1 overflow-auto custom-scrollbar">
-                                            <table className="w-full text-xs text-left whitespace-nowrap">
+                                            <table className="w-full text-sm text-left whitespace-nowrap">
                                                 <thead className="bg-blue-50 sticky top-0 shadow-sm">
                                                     <tr><th className="p-2">公司廠區</th><th className="p-2">捕捉技術</th><th className="p-2">TRL</th><th className="p-2 text-right">總捕捉量</th><th className="p-2 text-right text-rose-500">耗能扣除</th><th className="p-2 text-right font-bold text-emerald-600">淨捕捉量</th></tr>
                                                 </thead>
@@ -1675,10 +1697,10 @@ const CcusDashboard = () => {
                                 </>
                             )}
 
-                            {facilitySubTab === 'utilization' && (
+                            {((activeTab === 'chain' && facilitySubTab === 'utilization') || activeTab === 'capture') && (
                                 <>
-                                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col min-h-0 h-full">
-                                        <h3 className="font-bold text-slate-700 text-sm mb-4 border-b pb-2 flex items-center gap-2"><FlaskConical size={16} className="text-emerald-500"/> 再利用製程與需求清單</h3>
+                                    <div className="card p-4 flex flex-col min-h-0 h-full">
+                                        <h3 className="font-bold text-slate-800 text-base mb-4 border-b pb-2 flex items-center gap-2"><FlaskConical size={16} className="text-emerald-500"/> 再利用製程與需求清單</h3>
                                         <div className="flex-1 overflow-auto custom-scrollbar pr-2 space-y-3">
                                             {fUtil.map((item, idx) => {
                                                 const trlNum = parseInt(String(item.TRL).split('-')[0]) || 0;
@@ -1713,11 +1735,11 @@ const CcusDashboard = () => {
                                 </>
                             )}
 
-                            {facilitySubTab === 'storage' && (
+                            {((activeTab === 'chain' && facilitySubTab === 'storage') || activeTab === 'storage') && (
                                 <>
-                                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col min-h-[350px]">
+                                    <div className="card p-4 flex flex-col min-h-[350px]">
                                         <div className="flex justify-between items-center mb-3 border-b pb-2">
-                                            <h3 className="font-bold text-slate-700 text-sm flex items-center gap-2"><Box size={16} className="text-amber-500"/> 封存成本與距離矩陣</h3>
+                                            <h3 className="font-bold text-slate-800 text-base flex items-center gap-2"><Box size={16} className="text-amber-500"/> 封存成本與距離矩陣</h3>
                                             <select value={transportMode} onChange={(e) => setTransportMode(e.target.value)} className="text-xs border rounded p-1 bg-slate-50 outline-none">
                                                 <option value="ALL">全部方式</option><option value="管線">管線</option><option value="陸運">陸運</option><option value="海運">海運</option>
                                             </select>
@@ -1751,10 +1773,10 @@ const CcusDashboard = () => {
                                             </ErrorBoundary>
                                         </div>
                                     </div>
-                                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex-1 flex flex-col min-h-[300px]">
-                                        <h3 className="font-bold text-slate-700 text-sm mb-3 border-b pb-2 flex items-center gap-2"><List size={16} className="text-amber-500"/> 封存專案明細</h3>
+                                    <div className="card p-4 flex-1 flex flex-col min-h-[300px]">
+                                        <h3 className="font-bold text-slate-800 text-base mb-3 border-b pb-2 flex items-center gap-2"><List size={16} className="text-amber-500"/> 封存專案明細</h3>
                                         <div className="flex-1 overflow-auto custom-scrollbar">
-                                            <table className="w-full text-xs text-left">
+                                            <table className="w-full text-sm text-left whitespace-nowrap">
                                                 <thead className="bg-amber-50 sticky top-0 shadow-sm">
                                                     <tr><th className="p-2">碳源 ➔ 封存場</th><th className="p-2 text-center">方式</th><th className="p-2 text-right">距離</th><th className="p-2 text-right">封存量</th><th className="p-2 text-right">成本(USD)</th></tr>
                                                 </thead>

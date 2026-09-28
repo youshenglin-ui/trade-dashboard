@@ -42,7 +42,8 @@
    `brand` 與 `index.css` 的 `.card` / `.seg` / `.tab-btn`）。版面外框在 `src/components/layout/AppChrome.jsx`：
    電腦版左側功能列、手機版上方標題列 + 底部導覽列（貿易／氫能／CCUS／碳費／更多）。模組清單在
    `src/config/modules.js`。貿易模組已改為分段篩選、分頁與手機可左右滑動圖表（`ScrollableChart`）；
-   氫能、CCUS、碳費目前只調整外框與標題列，內部版面仍待依設計稿逐一改寫。地圖拖曳已改用 pointer
+   CCUS 已拆成五個分頁（案場與管線規劃／價值鏈總覽／捕捉與再利用／封存與成本／排放源清單，定義在
+   `CcusDashboard.jsx` 的 `CCUS_TABS`），沿用原本的地圖與表格元件；氫能、碳費內部版面仍待改寫。地圖拖曳已改用 pointer
    事件，手機可單指平移。
 
 ## 碳費自主減量計畫模組（2026-09 新增）
