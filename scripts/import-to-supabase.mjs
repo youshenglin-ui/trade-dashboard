@@ -144,6 +144,8 @@ async function importEnergy(client, key, category) {
   const rows = parseCSV(text);
   let imported = 0;
 
+  // 重跑時整批取代該分類（原本是追加，重跑會讓同一列重複出現）
+  await client.query('delete from energy_facility_records where category = $1', [category]);
   for (const r of rows) {
     const company = r.Company || r.company || r.Source_Company || r.Target_Company || r['公司'] || null;
     const plant = r.Plant || r.plant || r.Storage_Site || r.Target_Plant || r['廠區'] || null;

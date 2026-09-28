@@ -49,8 +49,15 @@ const App = () => {
     const mod = params.get('module');
     const standalone = params.get('standalone');
     
-    if (mod && ['trade', 'hydrogen', 'ccus'].includes(mod)) {
+    if (mod && ['trade', 'hydrogen', 'ccus', 'carbonfee'].includes(mod)) {
       setActiveModule(mod);
+    }
+    // 其他模組連到貿易資料用：?module=trade&hs=281121（例如 CCUS 再利用產品的「貿易資訊」）
+    const hs = params.get('hs');
+    if (hs && /^\d{2,11}$/.test(hs)) {
+      setActiveModule('trade');
+      setSearchQuery(hs);
+      setInputValue(params.get('name') ? `${hs} ${params.get('name')}` : hs);
     }
     if (standalone === 'true') {
       setIsStandalone(true);
@@ -307,7 +314,7 @@ const App = () => {
         {activeModule === 'hydrogen' ? (
              <HydrogenDashboard />
         ) : activeModule === 'ccus' ? (
-             <CcusDashboard />
+             <CcusDashboard onOpenTrade={(code, name) => selectProduct(code, name)} />
         ) : activeModule === 'carbonfee' ? (
              <CarbonFeeDashboard />
         ) : (

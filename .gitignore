@@ -25,3 +25,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# 問卷整併原始檔含聯絡窗口個資，不進版控（見 scripts/import-energy-survey.mjs）
+data/energy/*.xlsx

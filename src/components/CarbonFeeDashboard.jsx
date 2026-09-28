@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { ErrorBoundary } from './SharedComponents';
 import { fetchCarbonfeeData } from '../lib/fetchCarbonfee';
+import CarbonFeeMap from './CarbonFeeMap';
 import {
   CATEGORY_COLOR, MEASURE_CATEGORIES, OTHER_COLOR, SCALE_BUCKETS, SEQ_BLUE, SERIES_COLORS, TIER_COLOR, TIER_LABEL,
   fmtPct, fmtTon, fmtWan, reductionAmount, reductionRate, scaleBucket,
@@ -593,6 +594,13 @@ export default function CarbonFeeDashboard() {
           {cityMetric === 'base' && <p className="text-[10px] text-slate-400 mt-1 text-right">單位：萬公噸CO₂e</p>}
         </Card>
       </div>
+
+      {/* 區域分布地圖（依減量措施類別疊圖） */}
+      <Card title="區域分布地圖：各地參與事業與採取的減量手段" subtitle="勾選上方措施類別疊圖比較；地圖跟著上方篩選條件變動・點擊點位看事業與措施">
+        <ErrorBoundary>
+          <CarbonFeeMap plans={plans} onSelectPlan={setSelectedId} />
+        </ErrorBoundary>
+      </Card>
 
       {/* 散佈圖 / 規模 */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
