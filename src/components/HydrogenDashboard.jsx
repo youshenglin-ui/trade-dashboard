@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { 
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, 
   PieChart, Pie, Cell, ComposedChart, ScatterChart, Scatter, ZAxis, LabelList, Label, ReferenceLine
@@ -15,6 +15,8 @@ import {
 import { MOCK_SUPPLY_MATRIX, MOCK_DEMAND_MATRIX, COLORS_PROCESS, COLORS_USAGE } from '../utils/constants';
 import { H2_DATA_SOURCES } from '../config/dataSources';
 import { ErrorBoundary } from './SharedComponents';
+import MapLibreBase from './map/MapLibreBase';
+import { TAIWAN_BOUNDS, REGION_BOUNDS, LABEL_FONT, fc, pt, line, validLL } from './map/mapUtils';
 
 const REGION_COLORS = { '北區': '#e0f2fe', '中區': '#d1fae5', '南區': '#fffbeb', '東區': '#f5f3ff', '其他': '#f1f5f9' };
 const SOLID_REGION_COLORS = { '北區': '#2563eb', '中區': '#059669', '南區': '#ea580c', '東區': '#7c3aed', '其他': '#475569' };
@@ -268,66 +270,63 @@ const renderTrendLegend = (props) => {
 // ==========================================
 // 地理地圖模組
 // ==========================================
+// 縣市 → 北中南東分區底色（MapLibre 顏色運算式）
+const H2_COUNTY_FILL = ['match', ['get', 'COUNTYNAME'],
+    ['基隆市', '台北市', '臺北市', '新北市', '桃園縣', '桃園市', '新竹縣', '新竹市', '宜蘭縣'], REGION_COLORS['北區'],
+    ['苗栗縣', '台中市', '臺中市', '彰化縣', '南投縣', '雲林縣'], REGION_COLORS['中區'],
+    ['嘉義市', '嘉義縣', '台南市', '臺南市', '高雄市', '屏東縣'], REGION_COLORS['南區'],
+    ['花蓮縣', '台東縣', '臺東縣'], REGION_COLORS['東區'],
+    REGION_COLORS['其他']];
+const H2_SOURCES = ['zones', 'flows', 'flowDots', 'flowLabels', 'nodes'];
+const H2_INTERACTIVE = ['h2-node', 'h2-zone'];
+
+const addH2Layers = (map) => {
+    H2_SOURCES.forEach(k => { if (!map.getSource(`h2-${k}`)) map.addSource(`h2-${k}`, { type: 'geojson', data: fc([]) }); });
+    const L = (layer) => { if (!map.getLayer(layer.id)) map.addLayer(layer); };
+    const halo = { 'text-halo-color': '#ffffff', 'text-halo-width': 1.8 };
+    const isOne = (k) => ['==', ['get', k], 1];
+    // 工業區範圍圈：半徑隨縮放等比放大（與原本 SVG 行為一致）
+    const zoneR = ['interpolate', ['exponential', 2], ['zoom'], 5, ['*', ['get', 'rad'], 0.25], 12, ['*', ['get', 'rad'], 32]];
+    L({ id: 'h2-zone', type: 'circle', source: 'h2-zones', paint: { 'circle-radius': zoneR, 'circle-color': ['case', isOne('sel'), '#bfdbfe', '#cbd5e1'], 'circle-opacity': ['case', isOne('sel'), 0.6, 0.3], 'circle-stroke-color': ['case', isOne('sel'), '#3b82f6', '#94a3b8'], 'circle-stroke-width': ['case', isOne('sel'), 2.5, 1.2] } });
+    L({ id: 'h2-flow-pipe', type: 'line', source: 'h2-flows', filter: isOne('pipe'), layout: { 'line-cap': 'round' }, paint: { 'line-color': '#3b82f6', 'line-width': 4, 'line-opacity': ['get', 'op'] } });
+    L({ id: 'h2-flow-truck', type: 'line', source: 'h2-flows', filter: ['!=', ['get', 'pipe'], 1], paint: { 'line-color': '#f59e0b', 'line-width': 3.5, 'line-opacity': ['get', 'op'], 'line-dasharray': [2.5, 2] } });
+    L({ id: 'h2-flow-dot', type: 'circle', source: 'h2-flowDots', paint: { 'circle-radius': 4, 'circle-color': ['case', isOne('pipe'), '#3b82f6', '#f59e0b'], 'circle-opacity': ['get', 'op'] } });
+    L({ id: 'h2-node', type: 'circle', source: 'h2-nodes', layout: { 'circle-sort-key': ['-', 0, ['get', 'r']] }, paint: { 'circle-radius': ['get', 'r'], 'circle-color': ['case', isOne('hl'), ['case', isOne('sup'), '#1d4ed8', '#d97706'], ['case', isOne('sup'), '#3b82f6', '#f59e0b']], 'circle-opacity': ['case', isOne('hl'), 1, 0.85], 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 1.5 } });
+    L({ id: 'h2-flow-label', type: 'symbol', source: 'h2-flowLabels', layout: { 'text-field': ['get', 'label'], 'text-font': LABEL_FONT, 'text-size': 10, 'text-offset': [0, -0.8] }, paint: { 'text-color': ['case', isOne('pipe'), '#1e40af', '#b45309'], ...halo } });
+    L({ id: 'h2-zone-label', type: 'symbol', source: 'h2-zones', layout: { 'text-field': ['get', 'name'], 'text-font': LABEL_FONT, 'text-size': 11, 'text-anchor': 'bottom', 'text-offset': [0, -0.6], 'text-optional': true }, paint: { 'text-color': ['case', isOne('sel'), '#1e3a8a', '#64748b'], ...halo } });
+    // 廠區名稱：淨產出者預設標在左側、淨消耗者標在右側；擠不下時 MapLibre 會換邊或隱藏
+    const nodeLabel = (id, sup, anchors) => L({
+        id, type: 'symbol', source: 'h2-nodes', filter: sup ? isOne('sup') : ['!=', ['get', 'sup'], 1],
+        layout: {
+            'text-field': ['format', ['get', 'company'], {}, '\n', {}, ['get', 'plant'], { 'font-scale': 0.88, 'text-color': '#64748b' }],
+            'text-font': LABEL_FONT, 'text-size': 11, 'text-justify': 'auto',
+            'text-variable-anchor': anchors, 'text-radial-offset': ['/', ['+', ['get', 'r'], 5], 11], 'symbol-sort-key': ['-', 0, ['get', 'r']],
+        },
+        paint: { 'text-color': ['case', isOne('hl'), '#0f172a', '#334155'], ...halo },
+    });
+    nodeLabel('h2-node-label-sup', true, ['right', 'left', 'top', 'bottom']);
+    nodeLabel('h2-node-label-dem', false, ['left', 'right', 'top', 'bottom']);
+};
+
+const INDUSTRIAL_ZONES_COORDS = [
+    { name: '雲林-麥寮工業區', lat: 23.78, lon: 120.18, radius: 24 },
+    { name: '高雄-林園工業區', lat: 22.50, lon: 120.38, radius: 18 },
+    { name: '高雄-小港工業區', lat: 22.54, lon: 120.34, radius: 18 },
+    { name: '高雄-大發工業區', lat: 22.58, lon: 120.40, radius: 16 },
+    { name: '高雄-仁武工業區', lat: 22.70, lon: 120.34, radius: 18 },
+    { name: '彰化-彰濱工業區', lat: 24.07, lon: 120.42, radius: 20 },
+    { name: '苗栗-頭份工業區', lat: 24.68, lon: 120.91, radius: 16 },
+    { name: '桃園工業區(含桃煉)', lat: 25.03, lon: 121.12, radius: 26 },
+    { name: '台南-南部科學園區', lat: 23.10, lon: 120.27, radius: 16 }
+];
+
 const TaiwanH2Map = ({ supplyData = [], demandData = [] }) => {
     const mapRef = useRef(null);
-    const [zoom, setZoom] = useState(1);
-    const [pan, setPan] = useState({ x: 0, y: 0 });
-    const [isDragging, setIsDragging] = useState(false);
-    const [lastPos, setLastPos] = useState({ x: 0, y: 0 });
-    const [mapPaths, setMapPaths] = useState([]);
+    const stateRef = useRef({});
+    const hoverRef = useRef(null);
+    const [styleRev, setStyleRev] = useState(0);
     const [activeSelection, setActiveSelection] = useState(null);
     const [hoveredNode, setHoveredNode] = useState(null);
-
-    const baseWidth = 800, baseHeight = 900, centerLon = 120.9, centerLat = 23.7, baseScale = 380; 
-    
-    const projectBase = (lon, lat) => {
-        if (!lon || !lat || isNaN(lon) || isNaN(lat)) return [-9999, -9999];
-        return [(lon - centerLon) * baseScale, -(lat - centerLat) * baseScale * 1.1];
-    };
-
-    useEffect(() => {
-        fetch('https://raw.githubusercontent.com/g0v/twgeojson/master/json/twCounty2010.geo.json')
-            .then(res => res.json())
-            .then(data => {
-                const paths = data.features.map(f => {
-                    let d = '';
-                    const pr = (ring) => { 
-                        if(!ring||ring.length===0) return; 
-                        const [x,y] = projectBase(ring[0][0],ring[0][1]); 
-                        if (x === -9999) return; 
-                        d += `M${x},${y} `; 
-                        for(let i=1; i<ring.length; i++) {
-                            const [lx,ly] = projectBase(ring[i][0],ring[i][1]); 
-                            if(lx !== -9999) d+=`L${lx},${ly} `;
-                        } 
-                        d+='Z '; 
-                    };
-                    if(f.geometry.type==='Polygon') f.geometry.coordinates.forEach(pr); else if(f.geometry.type==='MultiPolygon') f.geometry.coordinates.forEach(p=>p.forEach(pr));
-                    
-                    let region = '其他';
-                    const cName = f.properties.COUNTYNAME;
-                    if (cName.match(/(基隆|臺北|新北|桃園|新竹|宜蘭)/)) region = '北區';
-                    if (cName.match(/(苗栗|臺中|彰化|南投|雲林)/)) region = '中區';
-                    if (cName.match(/(嘉義|臺南|高雄|屏東)/)) region = '南區';
-                    if (cName.match(/(花蓮|臺東)/)) region = '東區';
-
-                    return { d, region };
-                });
-                setMapPaths(paths);
-            }).catch(() => {});
-    }, []);
-
-    const handleMouseDown = (e) => { setIsDragging(true); setLastPos({ x: e.clientX, y: e.clientY }); };
-    const handleMouseMove = (e) => {
-        if (!isDragging) return;
-        setPan(prev => ({ x: prev.x + (e.clientX - lastPos.x), y: prev.y + (e.clientY - lastPos.y) }));
-        setLastPos({ x: e.clientX, y: e.clientY });
-    };
-    const handleMouseUp = () => setIsDragging(false);
-    const handleMouseLeave = () => setIsDragging(false);
-    const handleZoomIn = () => setZoom(prev => Math.min(prev * 1.3, 10));
-    const handleZoomOut = () => setZoom(prev => Math.max(prev / 1.3, 0.5));
-    const handleReset = () => { setZoom(1); setPan({ x: 0, y: 0 }); };
 
     const { finalNodes, flows } = useMemo(() => {
         const plantMap = {};
@@ -406,20 +405,7 @@ const TaiwanH2Map = ({ supplyData = [], demandData = [] }) => {
         if (zoneNodes.length > 0) setActiveSelection({ type: 'zone', name: zoneName, nodes: zoneNodes });
     };
 
-    const textScale = Math.pow(zoom, 0.7); 
-    const zoneOpacity = zoom > 1.5 ? 0.7 : (zoom < 1 ? 0.2 : 0.4); 
 
-    const INDUSTRIAL_ZONES_COORDS = [
-        { name: '雲林-麥寮工業區', lat: 23.78, lon: 120.18, radius: 24 },
-        { name: '高雄-林園工業區', lat: 22.50, lon: 120.38, radius: 18 },
-        { name: '高雄-小港工業區', lat: 22.54, lon: 120.34, radius: 18 },
-        { name: '高雄-大發工業區', lat: 22.58, lon: 120.40, radius: 16 },
-        { name: '高雄-仁武工業區', lat: 22.70, lon: 120.34, radius: 18 },
-        { name: '彰化-彰濱工業區', lat: 24.07, lon: 120.42, radius: 20 },
-        { name: '苗栗-頭份工業區', lat: 24.68, lon: 120.91, radius: 16 },
-        { name: '桃園工業區(含桃煉)', lat: 25.03, lon: 121.12, radius: 26 },
-        { name: '台南-南部科學園區', lat: 23.10, lon: 120.27, radius: 16 }
-    ];
 
     const getZoneSummary = () => {
         if (activeSelection?.type !== 'zone') return null;
@@ -430,10 +416,83 @@ const TaiwanH2Map = ({ supplyData = [], demandData = [] }) => {
     };
     const zoneSum = getZoneSummary();
 
+    // ---- 轉成 GeoJSON ----
+    const geo = useMemo(() => {
+        const sel = activeSelection;
+        const selLabels = sel?.type === 'plant' ? new Set([sel.data?.label]) : sel?.type === 'zone' ? new Set(sel.nodes.map(n => n.label)) : null;
+        const zones = INDUSTRIAL_ZONES_COORDS.map(z => pt(z.lon, z.lat, { name: z.name, rad: z.radius, sel: sel?.type === 'zone' && sel.name === z.name ? 1 : 0 }));
+        const flowsF = []; const flowDots = []; const flowLabels = [];
+        flows.forEach(f => {
+            if (!f.source || !f.target || !validLL(f.source.lon, f.source.lat) || !validLL(f.target.lon, f.target.lat)) return;
+            const pipe = String(f.method || '').includes('管線') ? 1 : 0;
+            const related = selLabels && (selLabels.has(f.source.label) || selLabels.has(f.target.label));
+            const op = related ? 1 : (selLabels ? 0.35 : 0.6);
+            const a = [Number(f.source.lon), Number(f.source.lat)]; const b = [Number(f.target.lon), Number(f.target.lat)];
+            flowsF.push(line([a, b], { pipe, op }));
+            flowDots.push(pt(a[0], a[1], { pipe, op }));
+            flowLabels.push(pt((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, { pipe, label: `${Number(f.value || 0).toFixed(1)} 萬噸` }));
+        });
+        const nodes = [];
+        finalNodes.forEach((n, i) => {
+            if (!validLL(n.lon, n.lat)) return;
+            const maxVal = Math.max(n.supply, n.demand, 0.1);
+            const hl = hoveredNode === n.label || (sel?.type === 'plant' && sel.data?.label === n.label) ? 1 : 0;
+            nodes.push(pt(n.lon, n.lat, { i, r: Math.max(6, Math.min(22, Math.sqrt(maxVal) * 1.5)), sup: n.supply >= n.demand ? 1 : 0, hl, company: n.Company || '', plant: n.Plant || '' }));
+        });
+        return { zones, flows: flowsF, flowDots, flowLabels, nodes };
+    }, [finalNodes, flows, activeSelection, hoveredNode]);
+
+    useEffect(() => { stateRef.current = { finalNodes, handlePlantClick, handleZoneClick }; });
+
+    useEffect(() => {
+        const map = mapRef.current;
+        if (!map || !styleRev) return;
+        Object.entries(geo).forEach(([k, feats]) => map.getSource(`h2-${k}`)?.setData(fc(feats)));
+    }, [geo, styleRev]);
+
+    const onStyleReady = useCallback((map) => {
+        addH2Layers(map);
+        const firstInit = !mapRef.current;
+        mapRef.current = map;
+        setStyleRev(r => r + 1);
+        if (!firstInit) return;
+        const canvas = map.getCanvasContainer();
+        const query = (point) => map.queryRenderedFeatures(point, { layers: H2_INTERACTIVE.filter(id => map.getLayer(id)) });
+        map.on('mousemove', (e) => {
+            const f = query(e.point)[0];
+            canvas.style.cursor = f ? 'pointer' : '';
+            const label = f?.layer.id === 'h2-node' ? stateRef.current.finalNodes[f.properties.i]?.label ?? null : null;
+            if (label !== hoverRef.current) { hoverRef.current = label; setHoveredNode(label); }
+        });
+        map.on('mouseout', () => { hoverRef.current = null; setHoveredNode(null); });
+        map.on('click', (e) => {
+            const fs = query(e.point);
+            const node = fs.find(f => f.layer.id === 'h2-node');
+            if (node) { const n = stateRef.current.finalNodes[node.properties.i]; if (n) stateRef.current.handlePlantClick(n); return; }
+            const zone = fs.find(f => f.layer.id === 'h2-zone');
+            if (zone) stateRef.current.handleZoneClick(zone.properties.name);
+        });
+    }, []);
+
+    const fitTo = (bounds) => mapRef.current?.fitBounds(bounds, { padding: 24, duration: 700 });
+    const regionBtn = 'px-3 py-1.5 hover:bg-blue-50 hover:text-blue-600 rounded transition-colors';
+
     return (
         <div className="w-full h-full relative bg-slate-100/80 rounded-xl overflow-hidden border border-slate-200">
+            <MapLibreBase onStyleReady={onStyleReady} countyFill={H2_COUNTY_FILL} />
+
+            {/* 左上：快速導航 */}
+            <div className="absolute top-3 left-3 md:top-4 md:left-4 z-10 max-w-[calc(100%-4.5rem)] overflow-x-auto no-scrollbar">
+                <div className="flex bg-white/95 p-1 rounded-lg shadow-sm border border-slate-200 backdrop-blur text-sm font-bold text-slate-600 whitespace-nowrap">
+                    <button onClick={() => fitTo(TAIWAN_BOUNDS)} className={regionBtn}>全視角</button>
+                    {Object.entries(REGION_BOUNDS).map(([name, b]) => (
+                        <button key={name} onClick={() => fitTo(b)} className={`${regionBtn} border-l border-slate-200`}>{name}</button>
+                    ))}
+                </div>
+            </div>
+
             {activeSelection && (
-                <div className={`absolute top-4 left-4 z-20 bg-white/95 backdrop-blur shadow-2xl rounded-xl border border-slate-200 p-4 transition-all duration-300 ${activeSelection.type === 'zone' ? 'w-[420px]' : 'w-[320px]'}`}>
+                <div className={`absolute top-16 left-3 md:left-4 z-20 bg-white/95 backdrop-blur shadow-2xl rounded-xl border border-slate-200 p-4 transition-all duration-300 max-w-[calc(100%-1.5rem)] max-h-[calc(100%-5rem)] overflow-y-auto ${activeSelection.type === 'zone' ? 'w-[420px]' : 'w-[320px]'}`}>
                     <button onClick={() => setActiveSelection(null)} className="absolute top-3 right-3 text-slate-400 hover:text-rose-500 bg-slate-100 rounded-full p-1"><X size={14}/></button>
                     {activeSelection.type === 'plant' && (
                         <div>
@@ -520,75 +579,12 @@ const TaiwanH2Map = ({ supplyData = [], demandData = [] }) => {
                 </div>
             )}
 
-            <div className="absolute top-4 right-4 z-10 flex flex-col gap-2 bg-white/95 p-1.5 rounded-lg shadow-sm border border-slate-200 backdrop-blur">
-                <button onClick={handleZoomIn} className="p-2 bg-slate-50 hover:bg-slate-200 rounded-md text-slate-600 transition-colors"><ZoomIn size={18}/></button>
-                <button onClick={handleZoomOut} className="p-2 bg-slate-50 hover:bg-slate-200 rounded-md text-slate-600 transition-colors"><ZoomOut size={18}/></button>
-                <button onClick={handleReset} className="p-2 bg-slate-50 hover:bg-slate-200 rounded-md text-slate-600 transition-colors"><Maximize size={18}/></button>
+            <div className="absolute top-3 right-3 md:top-4 md:right-4 z-10 flex flex-col gap-1.5 md:gap-2 bg-white/95 p-1 md:p-1.5 rounded-lg shadow-sm border border-slate-200 backdrop-blur">
+                <button onClick={() => mapRef.current?.zoomIn()} className="hidden md:block p-2 bg-slate-50 hover:bg-slate-200 rounded-md text-slate-600 transition-colors" title="放大" aria-label="放大"><ZoomIn size={18}/></button>
+                <button onClick={() => mapRef.current?.zoomOut()} className="hidden md:block p-2 bg-slate-50 hover:bg-slate-200 rounded-md text-slate-600 transition-colors" title="縮小" aria-label="縮小"><ZoomOut size={18}/></button>
+                <button onClick={() => fitTo(TAIWAN_BOUNDS)} className="p-2 bg-slate-50 hover:bg-slate-200 rounded-md text-slate-600 transition-colors" title="重置畫面" aria-label="重置畫面"><Maximize size={18}/></button>
             </div>
-
-            <svg viewBox={`0 0 ${baseWidth} ${baseHeight}`} className={`w-full h-full select-none ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`} onPointerDown={handleMouseDown} onPointerMove={handleMouseMove} onPointerUp={handleMouseUp} onPointerLeave={handleMouseLeave} style={{ touchAction: 'none' }} ref={mapRef}>
-                <g transform={`translate(${baseWidth/2 + pan.x}, ${baseHeight/2 + pan.y}) scale(${zoom})`}>
-                    {mapPaths.map((p, i) => p.d && <path key={`map-${i}`} d={p.d} fill={REGION_COLORS[p.region] || '#f8fafc'} stroke="#cbd5e1" strokeWidth={1.5 / zoom} className="transition-colors hover:fill-slate-200" />)}
-                    {INDUSTRIAL_ZONES_COORDS.map((zone, idx) => {
-                        const [cx, cy] = projectBase(zone.lon, zone.lat);
-                        if (cx === -9999) return null;
-                        const isSelected = activeSelection?.type === 'zone' && activeSelection?.name === zone.name;
-                        return (
-                            <g key={`zone-${idx}`} className="cursor-pointer group" onClick={() => handleZoneClick(zone.name)}>
-                                <circle cx={cx} cy={cy} r={zone.radius} fill={isSelected ? "#bfdbfe" : "#cbd5e1"} fillOpacity={isSelected ? 0.6 : zoneOpacity * 0.7} stroke={isSelected ? "#3b82f6" : "#94a3b8"} strokeWidth={isSelected ? 2.5 / zoom : 1.5 / zoom} strokeDasharray={isSelected ? "0" : `${4/zoom} ${4/zoom}`} className="transition-all group-hover:stroke-blue-500 group-hover:fill-blue-100" />
-                                <text x={cx} y={cy - zone.radius - (4/zoom)} fontSize={11 / textScale} fill={isSelected ? "#1e3a8a" : "#64748b"} fillOpacity={zoom > 1.2 || isSelected ? 1 : 0.6} textAnchor="middle" fontWeight="bold" style={{textShadow: '0 0 4px white'}} className="pointer-events-none transition-colors group-hover:fill-blue-700">{zone.name}</text>
-                            </g>
-                        );
-                    })}
-                    {flows.map((f, i) => {
-                        if (!f.source || !f.target) return null;
-                        const [x1, y1] = projectBase(f.source.lon, f.source.lat);
-                        const [x2, y2] = projectBase(f.target.lon, f.target.lat);
-                        if (x1 === -9999 || x2 === -9999) return null;
-                        const isPipe = String(f.method || '').includes('管線');
-                        let opacity = 0.35;
-                        if (activeSelection?.type === 'plant' && (activeSelection.data?.label === f.source.label || activeSelection.data?.label === f.target.label)) opacity = 1;
-                        else if (activeSelection?.type === 'zone' && activeSelection.nodes?.some(n => n.label === f.source.label || n.label === f.target.label)) opacity = 0.9;
-                        else opacity = 0.55;
-
-                        const midX = (x1 + x2) / 2;
-                        const midY = (y1 + y2) / 2;
-
-                        return (
-                            <g key={`flow-${i}`} className="transition-opacity" style={{ opacity }}>
-                                <line x1={x1} y1={y1} x2={x2} y2={y2} stroke={isPipe ? "#3b82f6" : "#f59e0b"} strokeWidth={isPipe ? 4/zoom : 3.5/zoom} strokeDasharray={isPipe ? "0" : `${10/zoom} ${8/zoom}`} />
-                                <circle cx={x1} cy={y1} r={4 / zoom} fill={isPipe ? "#3b82f6" : "#f59e0b"} />
-                                <text x={midX} y={midY - (4/zoom)} fontSize={9/zoom} fill={isPipe ? "#1e40af" : "#b45309"} textAnchor="middle" fontWeight="bold" style={{textShadow: '0 0 3px white', pointerEvents: 'none'}}>
-                                    {f.value.toFixed(1)} 萬噸
-                                </text>
-                            </g>
-                        );
-                    })}
-                    {finalNodes.map((n, i) => {
-                        const [cx, cy] = projectBase(n.lon, n.lat);
-                        if (cx === -9999) return null;
-                        const maxVal = Math.max(n.supply, n.demand, 0.1);
-                        const r = Math.max(6, Math.min(22, Math.sqrt(maxVal) * 1.5)) / zoom;
-                        const isSupplyDominant = n.supply >= n.demand;
-                        const fillColor = isSupplyDominant ? "#3b82f6" : "#f59e0b";
-                        const strokeColor = isSupplyDominant ? "#1d4ed8" : "#d97706";
-                        const isSelected = activeSelection?.type === 'plant' && activeSelection.data?.label === n.label;
-                        const isHovered = hoveredNode === n.label;
-                        
-                        return (
-                            <g key={`node-${i}`} className="cursor-pointer transition-all" onClick={() => handlePlantClick(n)} onMouseEnter={() => setHoveredNode(n.label)} onMouseLeave={() => setHoveredNode(null)}>
-                                <circle cx={cx} cy={cy} r={Math.max(r, 24 / zoom)} fill="transparent" /> 
-                                <circle cx={cx} cy={cy} r={r} fill={isSelected || isHovered ? strokeColor : fillColor} fillOpacity={isSelected || isHovered ? 1 : 0.85} stroke="white" strokeWidth={1.5 / zoom} />
-                                <text x={cx + (isSupplyDominant ? -r - (6/zoom) : r + (6/zoom))} y={cy - (2/zoom)} fontSize={11 / textScale} fill={isSelected || isHovered ? "#0f172a" : "#334155"} fontWeight="900" textAnchor={isSupplyDominant ? "end" : "start"} className="pointer-events-none transition-all">
-                                    <tspan x={cx + (isSupplyDominant ? -r - (6/zoom) : r + (6/zoom))} dy={0} paintOrder="stroke" stroke="white" strokeWidth={3.5/textScale} strokeLinejoin="round">{n.Company}</tspan>
-                                    <tspan x={cx + (isSupplyDominant ? -r - (6/zoom) : r + (6/zoom))} dy={14/textScale} paintOrder="stroke" stroke="white" strokeWidth={3.5/textScale} strokeLinejoin="round" fill="#64748b">{n.Plant}</tspan>
-                                </text>
-                            </g>
-                        );
-                    })}
-                </g>
-            </svg>
-            <div className="absolute bottom-4 right-4 bg-white/95 p-3 rounded-lg shadow-sm border border-slate-200 text-[10px] text-slate-700 pointer-events-none backdrop-blur">
+            <div className="absolute bottom-8 right-3 md:right-4 bg-white/95 p-2.5 md:p-3 rounded-lg shadow-sm border border-slate-200 text-[10px] text-slate-700 pointer-events-none backdrop-blur">
                 <div className="space-y-1.5">
                     <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-blue-500 border border-white shadow"></div> 淨產出廠區 (產量≥用量)</div>
                     <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-amber-500 border border-white shadow"></div> 淨消耗廠區 (用量&gt;產量)</div>

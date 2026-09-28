@@ -1,14 +1,16 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, 
   ScatterChart, Scatter, ZAxis, Cell, LabelList, ComposedChart, Line, PieChart, Pie, Label
 } from 'recharts';
 import {
   Leaf, RefreshCw, Target, Activity, MapPin, DollarSign, Box, AlertTriangle,
-  Truck, Ship, GripHorizontal, FlaskConical, Plus, ZoomIn, ZoomOut, Maximize, Factory, List, Rocket, Map, Route, Anchor, Layers, Filter, PieChart as PieChartIcon, DownloadCloud, Copy, Trash2
+  Truck, Ship, GripHorizontal, FlaskConical, Plus, ZoomIn, ZoomOut, Maximize, Factory, List, Rocket, Map, Route, Anchor, Layers, Filter, PieChart as PieChartIcon, DownloadCloud, Copy, Trash2, X
 } from 'lucide-react';
 import { CCUS_DATA_SOURCES } from '../config/dataSources';
 import { cleanNumber } from '../utils/helpers';
+import MapLibreBase from './map/MapLibreBase';
+import { TAIWAN_BOUNDS, REGION_BOUNDS, LABEL_FONT, fc, pt, line, validLL, cubicBezier, quadBezier, addSquareIcon } from './map/mapUtils';
 
 export const simplifyCompanyName = (name) => {
   if (!name) return '';
@@ -213,12 +215,6 @@ class ErrorBoundary extends React.Component {
     }
 }
 
-const MAP_CONSTANTS = { baseWidth: 800, baseHeight: 900, centerLon: 120.9, centerLat: 23.7, baseScale: 400 };
-export const projectBase = (lon, lat) => {
-    if (lon == null || lat == null || isNaN(lon) || isNaN(lat)) return [-9999, -9999]; 
-    return [(lon - MAP_CONSTANTS.centerLon) * MAP_CONSTANTS.baseScale, -(lat - MAP_CONSTANTS.centerLat) * MAP_CONSTANTS.baseScale * 1.1];
-};
-
 const distToSegment = (px, py, x1, y1, x2, y2) => {
     const l2 = (x1 - x2) ** 2 + (y1 - y2) ** 2;
     if (l2 === 0) return Math.hypot(px - x1, py - y1);
@@ -262,245 +258,393 @@ const CaptureTooltip = ({ active, payload }) => {
 };
 
 // ==========================================
-// 台灣地圖核心模組 (支援點擊管線新增節點與右鍵刪除)
+// 台灣 CCUS 地圖（MapLibre GL）
+// 案場／樞紐／管線拓樸（樞紐、聚落、管線節點、海運與陸運控制點皆可拖曳；點主管線新增節點、
+// 點節點開選單、右鍵刪除）＋ 捕捉／再利用／封存設施圖層。標籤交給 MapLibre 自動避讓重疊。
 // ==========================================
-const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], storageData = [], scope1Data = [], mapPaths = [], ccsTopology = null, hubs, setHubs, clusters, setClusters, routeNodes, setRouteNodes, seaControlPoints, setSeaControlPoints, landControlPoints, setLandControlPoints }) => {
-    const mapRef = useRef(null); const containerRef = useRef(null); 
-    const [zoom, setZoom] = useState(1); const [pan, setPan] = useState({ x: 0, y: 0 });
-    const [isDragging, setIsDragging] = useState(false); const [dragState, setDragState] = useState(null); 
-    const [lastPos, setLastPos] = useState({ x: 0, y: 0 }); const [hoveredNode, setHoveredNode] = useState(null);
+const CCUS_INTERACTIVE = ['ccus-hub', 'ccus-node-hit', 'ccus-cluster-hit', 'ccus-sea-ctrl-hit', 'ccus-land-ctrl-hit', 'ccus-storage-site', 'ccus-util', 'ccus-capture', 'ccus-future', 'ccus-source-hit'];
+const CCUS_DRAGGABLE = ['ccus-hub', 'ccus-node-hit', 'ccus-cluster-hit', 'ccus-sea-ctrl-hit', 'ccus-land-ctrl-hit'];
+const CCUS_SOURCES = ['sea', 'seaLabel', 'seaCtrl', 'land', 'landLabel', 'landCtrl', 'branch', 'main', 'mainLabel', 'nodes', 'clusters', 'hubs', 'sources', 'capture', 'future', 'util', 'storageLine', 'storageSrc', 'storageSite'];
+const flowWidth = (route) => Math.max(2, Math.log10(Math.max(10000, Number(route.weight ?? route.flow) || 0)));
+
+const getStorageCoords = (siteName, hubs) => {
+    const safeSite = siteName || '';
+    const hub = Object.values(hubs || INITIAL_CCS_HUBS).find(h => safeSite.includes(h.name.split(' ')[0]) || h.name.includes(safeSite.split(' ')[0]));
+    if (hub) return { lat: hub.lat, lon: hub.lon };
+    if (safeSite.includes('鐵砧山')) return { lat: 24.45, lon: 120.68 };
+    if (safeSite.includes('麥寮')) return { lat: 23.80, lon: 120.10 };
+    if (safeSite.includes('台中')) return { lat: 24.25, lon: 120.45 };
+    if (safeSite.includes('林口') || safeSite.includes('台北')) return { lat: 25.14, lon: 121.32 };
+    if (safeSite.includes('高雄')) return { lat: 22.55, lon: 120.32 };
+    if (safeSite.includes('花蓮')) return { lat: 23.98, lon: 121.62 };
+    return { lat: 23.6, lon: 120.9 };
+};
+
+const addCcusLayers = (map) => {
+    addSquareIcon(map, 'hub-sea', '#0ea5e9'); addSquareIcon(map, 'hub-land', '#b45309');
+    CCUS_SOURCES.forEach(k => { if (!map.getSource(`ccus-${k}`)) map.addSource(`ccus-${k}`, { type: 'geojson', data: fc([]) }); });
+    const L = (layer) => { if (!map.getLayer(layer.id)) map.addLayer(layer); };
+    const halo = { 'text-halo-color': '#ffffff', 'text-halo-width': 1.8 };
+    const label = (id, source, color, size, extra = {}) => L({
+        id, type: 'symbol', source,
+        layout: { 'text-field': ['get', 'label'], 'text-font': LABEL_FONT, 'text-size': size, ...extra },
+        paint: { 'text-color': color, ...halo },
+    });
+    const hit = (id, source, r = 14) => L({ id, type: 'circle', source, paint: { 'circle-radius': r, 'circle-color': '#000', 'circle-opacity': 0 } });
+    const isOne = (k) => ['==', ['get', k], 1];
+
+    // 線
+    L({ id: 'ccus-branch', type: 'line', source: 'ccus-branch', paint: { 'line-color': ['case', isOne('p'), '#94a3b8', '#cbd5e1'], 'line-width': ['case', isOne('p'), 1.5, 1], 'line-opacity': ['case', isOne('p'), 0.75, 0.55] } });
+    L({ id: 'ccus-storage-pipe', type: 'line', source: 'ccus-storageLine', filter: isOne('pipe'), paint: { 'line-color': '#3b82f6', 'line-width': 3, 'line-opacity': 0.7 } });
+    L({ id: 'ccus-storage-ship', type: 'line', source: 'ccus-storageLine', filter: ['!=', ['get', 'pipe'], 1], paint: { 'line-color': '#f59e0b', 'line-width': 3, 'line-opacity': 0.7, 'line-dasharray': [2, 2] } });
+    L({ id: 'ccus-sea', type: 'line', source: 'ccus-sea', paint: { 'line-color': '#0284c7', 'line-width': 2.5, 'line-opacity': 0.75, 'line-dasharray': [2, 2] } });
+    L({ id: 'ccus-land', type: 'line', source: 'ccus-land', paint: { 'line-color': '#f59e0b', 'line-width': 2, 'line-opacity': 0.85, 'line-dasharray': [2, 2] } });
+    L({ id: 'ccus-main', type: 'line', source: 'ccus-main', filter: ['!=', ['get', 'unreal'], 1], layout: { 'line-join': 'round', 'line-cap': 'round' }, paint: { 'line-color': '#3b82f6', 'line-width': ['get', 'w'], 'line-opacity': 0.9 } });
+    L({ id: 'ccus-main-warn', type: 'line', source: 'ccus-main', filter: isOne('unreal'), layout: { 'line-join': 'round' }, paint: { 'line-color': '#f97316', 'line-width': ['get', 'w'], 'line-opacity': 0.8, 'line-dasharray': [1.5, 1] } });
+    L({ id: 'ccus-main-hit', type: 'line', source: 'ccus-main', paint: { 'line-color': '#000', 'line-width': 18, 'line-opacity': 0 } });
+
+    // 點
+    L({ id: 'ccus-source-halo', type: 'circle', source: 'ccus-sources', filter: isOne('halo'), paint: { 'circle-radius': ['*', ['get', 'r'], 1.6], 'circle-color': ['get', 'color'], 'circle-opacity': 0.22 } });
+    L({ id: 'ccus-source', type: 'circle', source: 'ccus-sources', layout: { 'circle-sort-key': ['get', 'r'] }, paint: { 'circle-radius': ['get', 'r'], 'circle-color': ['get', 'color'], 'circle-opacity': ['get', 'op'], 'circle-stroke-color': '#ffffff', 'circle-stroke-width': ['get', 'sw'] } });
+    hit('ccus-source-hit', 'ccus-sources', ['max', ['get', 'r'], 9]);
+    L({ id: 'ccus-future', type: 'circle', source: 'ccus-future', layout: { 'circle-sort-key': ['-', 0, ['get', 'r']] }, paint: { 'circle-radius': ['get', 'r'], 'circle-color': '#d97706', 'circle-opacity': 0.7, 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 1.5 } });
+    L({ id: 'ccus-capture', type: 'circle', source: 'ccus-capture', layout: { 'circle-sort-key': ['-', 0, ['get', 'r']] }, paint: { 'circle-radius': ['get', 'r'], 'circle-color': ['get', 'color'], 'circle-opacity': 0.85, 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 1.5 } });
+    L({ id: 'ccus-util', type: 'circle', source: 'ccus-util', layout: { 'circle-sort-key': ['-', 0, ['get', 'r']] }, paint: { 'circle-radius': ['get', 'r'], 'circle-color': '#10b981', 'circle-opacity': 0.9, 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2 } });
+    L({ id: 'ccus-storage-src', type: 'circle', source: 'ccus-storageSrc', paint: { 'circle-radius': 4, 'circle-color': '#64748b' } });
+    L({ id: 'ccus-storage-site', type: 'circle', source: 'ccus-storageSite', paint: { 'circle-radius': 10, 'circle-color': '#ef4444', 'circle-opacity': 0.9, 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2 } });
+
+    // 可拖曳控制點（實心小圓 + 透明大感應區）
+    L({ id: 'ccus-sea-ctrl', type: 'circle', source: 'ccus-seaCtrl', paint: { 'circle-radius': 5, 'circle-color': 'rgba(2,132,199,0.25)', 'circle-stroke-color': '#0284c7', 'circle-stroke-width': 1.5 } });
+    hit('ccus-sea-ctrl-hit', 'ccus-seaCtrl');
+    L({ id: 'ccus-land-ctrl', type: 'circle', source: 'ccus-landCtrl', paint: { 'circle-radius': 5, 'circle-color': 'rgba(245,158,11,0.25)', 'circle-stroke-color': '#f59e0b', 'circle-stroke-width': 1.5 } });
+    hit('ccus-land-ctrl-hit', 'ccus-landCtrl');
+    L({ id: 'ccus-cluster', type: 'circle', source: 'ccus-clusters', paint: { 'circle-radius': 5, 'circle-color': '#ffffff', 'circle-stroke-color': '#3b82f6', 'circle-stroke-width': 2.5 } });
+    hit('ccus-cluster-hit', 'ccus-clusters');
+    L({ id: 'ccus-node', type: 'circle', source: 'ccus-nodes', paint: { 'circle-radius': 5, 'circle-color': '#ffffff', 'circle-stroke-color': ['case', isOne('unreal'), '#f97316', '#3b82f6'], 'circle-stroke-width': 2.5 } });
+    hit('ccus-node-hit', 'ccus-nodes');
+
+    // 標籤（越後面加入的圖層越優先擺放；互相重疊時由 MapLibre 自動隱藏次要者）
+    label('ccus-land-label', 'ccus-landLabel', '#b45309', 10, { 'text-offset': [0, -0.9] });
+    label('ccus-sea-label', 'ccus-seaLabel', '#0369a1', 11);
+    label('ccus-main-label', 'ccus-mainLabel', ['case', isOne('unreal'), '#c2410c', '#1e40af'], 11, { 'text-offset': [0, -1] });
+    const sideLabel = { 'text-variable-anchor': ['left', 'right', 'top', 'bottom'], 'text-radial-offset': ['/', ['+', ['get', 'r'], 4], 12], 'symbol-sort-key': ['get', 'sort'] };
+    label('ccus-capture-label', 'ccus-capture', '#1e293b', 12, sideLabel);
+    label('ccus-util-label', 'ccus-util', '#064e3b', 12, sideLabel);
+    label('ccus-storage-label', 'ccus-storageSite', '#991b1b', 12, { 'text-variable-anchor': ['left', 'right', 'top'], 'text-radial-offset': 1.2 });
+    L({
+        id: 'ccus-hub', type: 'symbol', source: 'ccus-hubs',
+        layout: {
+            'icon-image': ['case', isOne('land'), 'hub-land', 'hub-sea'], 'icon-allow-overlap': true, 'icon-ignore-placement': true,
+            'text-field': ['get', 'name'], 'text-font': LABEL_FONT, 'text-size': 12, 'text-optional': true,
+            'text-variable-anchor': ['left', 'right', 'top', 'bottom'], 'text-radial-offset': 1.1,
+        },
+        paint: { 'text-color': ['case', isOne('land'), '#78350f', '#0369a1'], ...halo },
+    });
+};
+
+const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], storageData = [], ccsTopology = null, hubs, setHubs, setClusters, routeNodes = {}, setRouteNodes, seaControlPoints = {}, setSeaControlPoints, landControlPoints = {}, setLandControlPoints }) => {
+    const mapRef = useRef(null);
+    const stateRef = useRef({});
+    const dragRef = useRef(null);
+    const hoverKeyRef = useRef(null);
+    const [styleRev, setStyleRev] = useState(0);
+    const [hoveredNode, setHoveredNode] = useState(null);
     const [nodeMenu, setNodeMenu] = useState(null);
+    const [legendOpen, setLegendOpen] = useState(() => typeof window === 'undefined' || window.innerWidth >= 768);
+    const layersKey = activeLayers.join(',');
+    const isPlanning = activeLayers.includes('planning');
 
-    const { baseWidth, baseHeight } = MAP_CONSTANTS;
+    // ---- 轉成 GeoJSON ----
+    const geo = useMemo(() => {
+        const layers = layersKey.split(',');
+        const F = Object.fromEntries(CCUS_SOURCES.map(k => [k, []]));
+        const lk = { sources: [], capture: [], future: [], util: [], storage: [], clusters: [] };
+        const getFallbackCoords = (company, plant) => {
+            const cStr = String(company || ''); const pStr = String(plant || '');
+            const found = captureData.find(x => x.Company === cStr && (x.Plant === pStr || !pStr));
+            if (found && found.Latitude && found.Longitude) return { lat: found.Latitude, lon: found.Longitude };
+            return getApproximateCoordinates(pStr, cStr, '');
+        };
+        const ll = (o) => [Number(o.lon), Number(o.lat)];
 
-    // 智能視圖縮放函數
-    const zoomToRegion = (lat, lon, targetZoom) => {
-        const [px, py] = projectBase(lon, lat);
-        setZoom(targetZoom);
-        setPan({ x: -px * targetZoom, y: -py * targetZoom });
-    };
-
-    const getLonLatFromEvent = (e) => {
-        const svg = mapRef.current;
-        if (!svg) return null;
-        const pt = svg.createSVGPoint();
-        pt.x = e.clientX; pt.y = e.clientY;
-        const g = svg.querySelector('g.map-content-group');
-        if (!g) return null;
-        const globalPoint = pt.matrixTransform(g.getScreenCTM().inverse());
-        const lon = globalPoint.x / MAP_CONSTANTS.baseScale + MAP_CONSTANTS.centerLon;
-        const lat = -(globalPoint.y / (MAP_CONSTANTS.baseScale * 1.1)) + MAP_CONSTANTS.centerLat;
-        return { lon, lat, x: globalPoint.x, y: globalPoint.y };
-    };
-
-    const handleMouseDown = (e) => { 
-        if (nodeMenu) setNodeMenu(null); 
-        setIsDragging(true); setLastPos({ x: e.clientX, y: e.clientY }); 
-    };
-    
-    const handlePathClick = (e, routeId, currentNodes) => {
-        if (!activeLayers.includes('planning') || !setRouteNodes) return;
-        e.stopPropagation();
-        
-        const coords = getLonLatFromEvent(e);
-        if (!coords) return;
-        
-        let minDist = Infinity;
-        let insertIdx = 1;
-        for (let i = 0; i < currentNodes.length - 1; i++) {
-            const [x1, y1] = projectBase(currentNodes[i].lon, currentNodes[i].lat);
-            const [x2, y2] = projectBase(currentNodes[i+1].lon, currentNodes[i+1].lat);
-            const dist = distToSegment(coords.x, coords.y, x1, y1, x2, y2);
-            if (dist < minDist) {
-                minDist = dist;
-                insertIdx = i + 1;
-            }
-        }
-        
-        setRouteNodes(prev => {
-            const newRoutes = { ...prev };
-            const nodes = [...(newRoutes[routeId] || currentNodes)];
-            nodes.splice(insertIdx, 0, { lat: coords.lat, lon: coords.lon });
-            return { ...prev, [routeId]: nodes };
-        });
-    };
-
-    const handleNodeContextMenu = (e, routeId, nodeIndex) => {
-        if (!activeLayers.includes('planning') || !setRouteNodes) return;
-        e.preventDefault(); e.stopPropagation();
-        setRouteNodes(prev => {
-            const currentNodes = prev[routeId];
-            if (!currentNodes || currentNodes.length <= 3) return prev; 
-            const newNodes = [...currentNodes];
-            newNodes.splice(nodeIndex, 1);
-            return { ...prev, [routeId]: newNodes };
-        });
-    };
-
-    const handleNodeMouseDown = (e, id, type, extraId) => {
-        if (!activeLayers.includes('planning')) return;
-        e.stopPropagation();
-        if (e.button === 2) return; 
-
-        if (type === 'hub') {
-            setDragState({ id, type, startX: e.clientX, startY: e.clientY, startLat: hubs[id].lat, startLon: hubs[id].lon });
-        } else if (type === 'cluster') {
-            setDragState({ id, type, startX: e.clientX, startY: e.clientY, startLat: clusters[id].lat, startLon: clusters[id].lon });
-        } else if (type === 'routeNode') {
-            setDragState({ id, routeId: extraId, type, startX: e.clientX, startY: e.clientY, startLat: routeNodes[extraId][id].lat, startLon: routeNodes[extraId][id].lon });
-        } else if (type === 'seaControl') {
-            setDragState({ id, routeId: extraId, type, startX: e.clientX, startY: e.clientY, startLat: seaControlPoints[extraId][id].lat, startLon: seaControlPoints[extraId][id].lon });
-        } else if (type === 'landControl') {
-            setDragState({ id, routeId: extraId, type, startX: e.clientX, startY: e.clientY, startLat: landControlPoints[extraId]?.lat || 0, startLon: landControlPoints[extraId]?.lon || 0 });
-        }
-    };
-
-    const handleNodeClick = (e, id, type, extraId, weight) => {
-        if (!activeLayers.includes('planning')) return;
-        e.stopPropagation();
-        if (type === 'routeNode') {
-            const rect = mapRef.current.getBoundingClientRect();
-            setNodeMenu({
-                routeId: extraId, nodeIdx: id, weight,
-                x: e.clientX - rect.left, y: e.clientY - rect.top
+        if (layers.includes('planning') && ccsTopology) {
+            ccsTopology.seaRoutes.forEach(route => {
+                const c1 = seaControlPoints[route.id]?.c1 || route.c1; const c2 = seaControlPoints[route.id]?.c2 || route.c2;
+                if (!validLL(route.from.lon, route.from.lat) || !validLL(route.to.lon, route.to.lat) || !c1 || !c2) return;
+                const coords = cubicBezier(ll(route.from), ll(c1), ll(c2), ll(route.to));
+                F.sea.push(line(coords));
+                F.seaLabel.push(pt(...coords[16], { label: route.label }));
+                F.seaCtrl.push(pt(c1.lon, c1.lat, { routeId: route.id, cid: 'c1' }), pt(c2.lon, c2.lat, { routeId: route.id, cid: 'c2' }));
+            });
+            ccsTopology.landRoutes.forEach(route => {
+                if (!validLL(route.from.lon, route.from.lat) || !validLL(route.to.lon, route.to.lat)) return;
+                const routeId = `land_${route.from.Company}_${route.to.id}`;
+                const ctrl = landControlPoints[routeId] || { lon: Math.min(Number(route.from.lon), Number(route.to.lon)) - 0.08, lat: (Number(route.from.lat) + Number(route.to.lat)) / 2 };
+                const coords = quadBezier(ll(route.from), ll(ctrl), ll(route.to));
+                F.land.push(line(coords));
+                F.landLabel.push(pt(...coords[12], { label: `陸運 ${Number(route.distance || 0).toFixed(0)}km` }));
+                F.landCtrl.push(pt(ctrl.lon, ctrl.lat, { routeId }));
+            });
+            ccsTopology.branchRoutes.forEach(route => {
+                if (!validLL(route.from.lon, route.from.lat) || !validLL(route.to.lon, route.to.lat)) return;
+                F.branch.push(line([ll(route.from), ll(route.to)], { p: route.isPriority ? 1 : 0 }));
+            });
+            ccsTopology.mainRoutes.forEach(route => {
+                const nodes = routeNodes[route.id] || route.nodes;
+                if (!nodes || nodes.length < 2 || nodes.some(n => !validLL(n.lon, n.lat))) return;
+                const dist = route.recalcDist ? route.recalcDist(nodes) : route.distance;
+                const unreal = dist > 50 ? 1 : 0;
+                F.main.push(line(nodes.map(ll), { routeId: route.id, unreal, w: flowWidth(route) }));
+                const mid = nodes[Math.floor(nodes.length / 2)];
+                F.mainLabel.push(pt(mid.lon, mid.lat, { label: `${Number(dist || 0).toFixed(0)} km`, unreal }));
+                nodes.slice(1, -1).forEach((n, k) => F.nodes.push(pt(n.lon, n.lat, { routeId: route.id, idx: k + 1, unreal, flow: Number(route.weight ?? route.flow) || 0 })));
+            });
+            (ccsTopology.activeClusterNodes || []).forEach((c, i) => {
+                if (!validLL(c.lon, c.lat)) return;
+                lk.clusters[i] = c; F.clusters.push(pt(c.lon, c.lat, { id: c.id, i }));
+            });
+            Object.values(hubs || {}).forEach(h => {
+                if (validLL(h.lon, h.lat)) F.hubs.push(pt(h.lon, h.lat, { id: h.id, name: h.name, land: h.id === 'CENTRAL_HUB_LAND' ? 1 : 0 }));
+            });
+            ccsTopology.validSources.forEach((d, i) => {
+                if (!validLL(d.lon, d.lat)) return;
+                const r = Math.max(3, Math.min(14, 3 + Math.sqrt(Math.max(0, d.Scope1 || 0) / 100000)));
+                const connected = d.distanceToHub >= 0 || d.landDist > 0;
+                lk.sources[i] = d;
+                F.sources.push(pt(d.lon, d.lat, {
+                    i, r, color: d.isPowerPlant ? '#a855f7' : (d.isPriority ? '#e11d48' : '#f97316'),
+                    op: connected ? 0.9 : 0.3, sw: connected ? (d.isPriority ? 1.5 : 1) : 0, halo: d.isPriority && connected ? 1 : 0,
+                }));
             });
         }
-    };
+        if (layers.includes('capture') || layers.includes('future')) {
+            captureData.forEach((d, i) => {
+                const fb = getFallbackCoords(d.Company, d.Plant);
+                const lat = cleanNumber(d.Latitude) || fb.lat; const lon = cleanNumber(d.Longitude) || fb.lon;
+                if (!validLL(lon, lat)) return;
+                if (layers.includes('capture')) {
+                    const r = Math.max(6, Math.min(25, Math.sqrt(Math.max(0, d.Capture_Volume || 0)) * 1.5));
+                    lk.capture[i] = d; F.capture.push(pt(lon, lat, { i, r, color: stringToColor(d.Capture_Tech), label: d.Company, sort: -r }));
+                }
+                if (layers.includes('future')) {
+                    const r = Math.max(6, Math.min(25, Math.sqrt(Math.max(0, d.Future_Emission_Volume || 0)) * 1.5));
+                    lk.future[i] = d; F.future.push(pt(lon, lat, { i, r }));
+                }
+            });
+        }
+        if (layers.includes('util')) {
+            utilData.forEach((d, i) => {
+                const c = getFallbackCoords(d.Target_Company, d.Target_Plant);
+                if (!validLL(c.lon, c.lat)) return;
+                const r = Math.max(8, Math.min(20, Math.sqrt(Math.max(0, d.Expected_Demand || 0)) * 2));
+                lk.util[i] = d; F.util.push(pt(c.lon, c.lat, { i, r, label: d.Target_Company, sort: -r }));
+            });
+        }
+        if (layers.includes('storage')) {
+            storageData.forEach((d, i) => {
+                const src = getFallbackCoords(d.Source_Company, ''); const tgt = getStorageCoords(d.Storage_Site, hubs);
+                if (!validLL(src.lon, src.lat)) return;
+                lk.storage[i] = d;
+                F.storageLine.push(line([ll(src), ll(tgt)], { pipe: String(d.Transport_Method).includes('管線') ? 1 : 0 }));
+                F.storageSrc.push(pt(src.lon, src.lat));
+                F.storageSite.push(pt(tgt.lon, tgt.lat, { i, label: d.Storage_Site }));
+            });
+        }
+        return { F, lk };
+    }, [layersKey, ccsTopology, hubs, routeNodes, seaControlPoints, landControlPoints, captureData, utilData, storageData]);
+
+    // 事件處理器只註冊一次，透過 ref 取得最新資料與 setter
+    useEffect(() => {
+        stateRef.current = { lk: geo.lk, hubs, ccsTopology, routeNodes, isPlanning, setHubs, setClusters, setRouteNodes, setSeaControlPoints, setLandControlPoints };
+    });
+
+    useEffect(() => {
+        const map = mapRef.current;
+        if (!map || !styleRev) return;
+        Object.entries(geo.F).forEach(([k, feats]) => map.getSource(`ccus-${k}`)?.setData(fc(feats)));
+    }, [geo, styleRev]);
+
+    const baseNodes = (routeId) => stateRef.current.ccsTopology?.mainRoutes.find(r => r.id === routeId)?.nodes;
+
+    const onStyleReady = useCallback((map) => {
+        addCcusLayers(map);
+        const firstInit = !mapRef.current;
+        mapRef.current = map;
+        setStyleRev(r => r + 1);
+        if (!firstInit) return;
+
+        const canvas = map.getCanvasContainer();
+        const existing = (ids) => ids.filter(id => map.getLayer(id));
+        const query = (point, ids) => map.queryRenderedFeatures(point, { layers: existing(ids) });
+
+        const hoverFromFeature = (f) => {
+            const s = stateRef.current; const p = f.properties;
+            switch (f.layer.id) {
+                case 'ccus-hub': { const h = s.hubs?.[p.id]; return h && [`hub-${p.id}`, { ...h, nodeType: 'hub', hubType: h.type }]; }
+                case 'ccus-cluster-hit': { const c = s.lk.clusters[p.i]; return c && [`cl-${p.i}`, { ...c, nodeType: 'cluster' }]; }
+                case 'ccus-source-hit': { const d = s.lk.sources[p.i]; return d && [`src-${p.i}`, { ...d, nodeType: 'planning_source' }]; }
+                case 'ccus-capture': { const d = s.lk.capture[p.i]; return d && [`cap-${p.i}`, { ...d, nodeType: 'capture' }]; }
+                case 'ccus-future': { const d = s.lk.future[p.i]; return d && [`fut-${p.i}`, { ...d, nodeType: 'future' }]; }
+                case 'ccus-util': { const d = s.lk.util[p.i]; return d && [`util-${p.i}`, { ...d, nodeType: 'util' }]; }
+                case 'ccus-storage-site': { const d = s.lk.storage[p.i]; return d && [`sto-${p.i}`, { ...d, nodeType: 'storage' }]; }
+                default: return null;
+            }
+        };
+        const setHover = (h) => {
+            const key = h ? h[0] : null;
+            if (key === hoverKeyRef.current) return;
+            hoverKeyRef.current = key; setHoveredNode(h ? h[1] : null);
+        };
+
+        const moveDrag = (lngLat) => {
+            const d = dragRef.current; const s = stateRef.current;
+            d.moved = true;
+            const pos = { lat: lngLat.lat, lon: lngLat.lng };
+            if (d.layer === 'ccus-hub') s.setHubs?.(prev => ({ ...prev, [d.id]: { ...prev[d.id], ...pos } }));
+            else if (d.layer === 'ccus-cluster-hit') s.setClusters?.(prev => ({ ...prev, [d.id]: { ...prev[d.id], ...pos } }));
+            else if (d.layer === 'ccus-node-hit') s.setRouteNodes?.(prev => {
+                const nodes = [...(prev[d.routeId] || baseNodes(d.routeId) || [])];
+                if (!nodes[d.idx]) return prev;
+                nodes[d.idx] = { ...nodes[d.idx], ...pos };
+                return { ...prev, [d.routeId]: nodes };
+            });
+            else if (d.layer === 'ccus-sea-ctrl-hit') s.setSeaControlPoints?.(prev => {
+                const route = s.ccsTopology?.seaRoutes.find(r => r.id === d.routeId);
+                const cur = prev[d.routeId] || { c1: route?.c1, c2: route?.c2 };
+                return { ...prev, [d.routeId]: { ...cur, [d.cid]: pos } };
+            });
+            else if (d.layer === 'ccus-land-ctrl-hit') s.setLandControlPoints?.(prev => ({ ...prev, [d.routeId]: pos }));
+        };
+
+        const startDrag = (e) => {
+            if (!stateRef.current.isPlanning || e.originalEvent?.button === 2) return;
+            const f = query(e.point, CCUS_DRAGGABLE)[0];
+            if (!f) return;
+            e.preventDefault();
+            const p = f.properties;
+            dragRef.current = { layer: f.layer.id, id: p.id, routeId: p.routeId, idx: p.idx, cid: p.cid, moved: false };
+            canvas.style.cursor = 'grabbing';
+            setNodeMenu(null);
+        };
+        const endDrag = () => { if (dragRef.current) { dragRef.current = null; canvas.style.cursor = ''; } };
+
+        map.on('mousedown', startDrag);
+        map.on('touchstart', (e) => { if (e.points?.length === 1) startDrag(e); });
+        map.on('mouseup', endDrag);
+        map.on('touchend', endDrag);
+        map.on('touchmove', (e) => { if (dragRef.current) { e.preventDefault(); moveDrag(e.lngLat); } });
+        map.on('mousemove', (e) => {
+            if (dragRef.current) { moveDrag(e.lngLat); return; }
+            const s = stateRef.current;
+            const f = query(e.point, CCUS_INTERACTIVE)[0];
+            if (f) canvas.style.cursor = s.isPlanning && CCUS_DRAGGABLE.includes(f.layer.id) ? 'grab' : 'pointer';
+            else canvas.style.cursor = s.isPlanning && query(e.point, ['ccus-main-hit']).length ? 'crosshair' : '';
+            setHover(f ? hoverFromFeature(f) : null);
+        });
+        map.on('mouseout', () => { endDrag(); setHover(null); });
+
+        map.on('click', (e) => {
+            const s = stateRef.current;
+            if (s.isPlanning) {
+                const node = query(e.point, ['ccus-node-hit'])[0];
+                if (node) {
+                    setHover(null);
+                    setNodeMenu({ routeId: node.properties.routeId, nodeIdx: node.properties.idx, weight: node.properties.flow, x: e.point.x, y: e.point.y });
+                    return;
+                }
+            }
+            const f = query(e.point, CCUS_INTERACTIVE)[0];
+            const h = f && hoverFromFeature(f);
+            if (h) { setNodeMenu(null); setHover(h); return; }
+            const lineF = s.isPlanning && !f && query(e.point, ['ccus-main-hit'])[0];
+            if (lineF && s.setRouteNodes) {
+                // 點主管線：在最近的線段插入新節點
+                const routeId = lineF.properties.routeId;
+                s.setRouteNodes(prev => {
+                    const nodes = [...(prev[routeId] || baseNodes(routeId) || [])];
+                    if (nodes.length < 2) return prev;
+                    let best = Infinity; let insertIdx = 1;
+                    for (let i = 0; i < nodes.length - 1; i++) {
+                        const a = map.project([nodes[i].lon, nodes[i].lat]); const b = map.project([nodes[i + 1].lon, nodes[i + 1].lat]);
+                        const dd = distToSegment(e.point.x, e.point.y, a.x, a.y, b.x, b.y);
+                        if (dd < best) { best = dd; insertIdx = i + 1; }
+                    }
+                    nodes.splice(insertIdx, 0, { lat: e.lngLat.lat, lon: e.lngLat.lng });
+                    return { ...prev, [routeId]: nodes };
+                });
+                return;
+            }
+            setNodeMenu(null); setHover(null);
+        });
+
+        // 右鍵刪除管線節點（至少保留 3 點）
+        map.on('contextmenu', (e) => {
+            const s = stateRef.current;
+            if (!s.isPlanning || !s.setRouteNodes) return;
+            const node = query(e.point, ['ccus-node-hit'])[0];
+            if (!node) return;
+            e.preventDefault();
+            const { routeId, idx } = node.properties;
+            s.setRouteNodes(prev => {
+                const nodes = [...(prev[routeId] || baseNodes(routeId) || [])];
+                if (nodes.length <= 3) return prev;
+                nodes.splice(idx, 1);
+                return { ...prev, [routeId]: nodes };
+            });
+        });
+    }, []);
 
     const handleDuplicateNode = () => {
         if (!nodeMenu || !setRouteNodes) return;
+        const { routeId, nodeIdx } = nodeMenu;
         setRouteNodes(prev => {
-            const { routeId, nodeIdx } = nodeMenu;
-            const currentNodes = prev[routeId];
-            if (!currentNodes) return prev;
-            
-            const currNode = currentNodes[nodeIdx];
-            const newNode = { lat: currNode.lat - 0.05, lon: currNode.lon + 0.05 };
-            const newNodes = [...currentNodes];
-            newNodes.splice(nodeIdx + 1, 0, newNode);
-            return { ...prev, [routeId]: newNodes };
+            const nodes = [...(prev[routeId] || baseNodes(routeId) || [])];
+            const curr = nodes[nodeIdx];
+            if (!curr) return prev;
+            nodes.splice(nodeIdx + 1, 0, { lat: curr.lat - 0.05, lon: curr.lon + 0.05 });
+            return { ...prev, [routeId]: nodes };
         });
         setNodeMenu(null);
     };
 
     const handleDeleteNode = () => {
         if (!nodeMenu || !setRouteNodes) return;
+        const { routeId, nodeIdx } = nodeMenu;
         setRouteNodes(prev => {
-            const { routeId, nodeIdx } = nodeMenu;
-            const currentNodes = prev[routeId];
-            if (!currentNodes || currentNodes.length <= 3) return prev; 
-            const newNodes = [...currentNodes];
-            newNodes.splice(nodeIdx, 1);
-            return { ...prev, [routeId]: newNodes };
+            const nodes = [...(prev[routeId] || baseNodes(routeId) || [])];
+            if (nodes.length <= 3) return prev;
+            nodes.splice(nodeIdx, 1);
+            return { ...prev, [routeId]: nodes };
         });
         setNodeMenu(null);
     };
 
-    const handleMouseMove = (e) => {
-        if (dragState) {
-            const dx = e.clientX - dragState.startX; const dy = e.clientY - dragState.startY;
-            const dLon = dx / (MAP_CONSTANTS.baseScale * zoom); const dLat = -dy / (MAP_CONSTANTS.baseScale * 1.1 * zoom);
-            if (dragState.type === 'hub' && setHubs) {
-                setHubs(prev => ({...prev, [dragState.id]: { ...prev[dragState.id], lat: dragState.startLat + dLat, lon: dragState.startLon + dLon }}));
-            } else if (dragState.type === 'cluster' && setClusters) {
-                setClusters(prev => ({...prev, [dragState.id]: { ...prev[dragState.id], lat: dragState.startLat + dLat, lon: dragState.startLon + dLon }}));
-            } else if (dragState.type === 'routeNode' && setRouteNodes) {
-                setRouteNodes(prev => {
-                    const newRoutes = { ...prev };
-                    newRoutes[dragState.routeId] = [...newRoutes[dragState.routeId]];
-                    newRoutes[dragState.routeId][dragState.id] = { 
-                        ...newRoutes[dragState.routeId][dragState.id], 
-                        lat: dragState.startLat + dLat, 
-                        lon: dragState.startLon + dLon 
-                    };
-                    return newRoutes;
-                });
-            } else if (dragState.type === 'seaControl' && setSeaControlPoints) {
-                setSeaControlPoints(prev => {
-                    const newPoints = { ...prev };
-                    newPoints[dragState.routeId] = { ...newPoints[dragState.routeId] };
-                    newPoints[dragState.routeId][dragState.id] = {
-                        ...newPoints[dragState.routeId][dragState.id],
-                        lat: dragState.startLat + dLat,
-                        lon: dragState.startLon + dLon
-                    };
-                    return newPoints;
-                });
-            } else if (dragState.type === 'landControl' && setLandControlPoints) {
-                setLandControlPoints(prev => {
-                    const newPoints = { ...prev };
-                    newPoints[dragState.routeId] = {
-                        lat: dragState.startLat + dLat,
-                        lon: dragState.startLon + dLon
-                    };
-                    return newPoints;
-                });
-            }
-        } else if (isDragging) {
-            setPan(prev => ({ x: prev.x + (e.clientX - lastPos.x), y: prev.y + (e.clientY - lastPos.y) }));
-            setLastPos({ x: e.clientX, y: e.clientY });
-        }
-    };
-    
-    const handleMouseUp = () => { setIsDragging(false); setDragState(null); };
-    const handleMouseLeave = () => { setIsDragging(false); setDragState(null); };
+    const fitTo = (bounds) => mapRef.current?.fitBounds(bounds, { padding: 24, duration: 700 });
 
     const exportMapAsImage = () => {
-        const svgElement = document.getElementById('ccus-main-map');
-        if (!svgElement) return;
-
-        const clonedSvg = svgElement.cloneNode(true);
-        if (!clonedSvg.getAttribute('xmlns')) clonedSvg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
-        clonedSvg.setAttribute('width', '800');
-        clonedSvg.setAttribute('height', '900');
-        clonedSvg.style.backgroundColor = '#f8fafc';
-        clonedSvg.style.fontFamily = 'sans-serif';
-
-        const serializer = new XMLSerializer(); 
-        const svgString = serializer.serializeToString(clonedSvg);
-        
-        const canvas = document.createElement('canvas'); 
-        const ctx = canvas.getContext('2d');
-        const scale = 2; 
-        canvas.width = 800 * scale; 
-        canvas.height = 900 * scale;
-        ctx.scale(scale, scale);
-        
-        const img = new Image(); 
-        img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgString);
-        
-        img.onload = () => {
-            ctx.drawImage(img, 0, 0, 800, 900); 
-            const a = document.createElement('a'); 
-            a.download = 'CCUS_Pipeline_Map_HighRes.png'; 
-            a.href = canvas.toDataURL('image/png'); 
-            a.click();
-        }; 
+        const map = mapRef.current;
+        if (!map) return;
+        const a = document.createElement('a');
+        a.download = 'CCUS_Pipeline_Map.png';
+        a.href = map.getCanvas().toDataURL('image/png');
+        a.click();
     };
 
-    const textScale = Math.pow(zoom, 0.7);
-
-    const getFallbackCoords = (company, plant) => {
-        const cStr = String(company || ''); const pStr = String(plant || '');
-        const found = captureData.find(x => x.Company === cStr && (x.Plant === pStr || !pStr));
-        if (found && found.Latitude && found.Longitude) return { lat: found.Latitude, lon: found.Longitude };
-        return getApproximateCoordinates(pStr, cStr, '');
-    };
+    const regionBtn = 'px-3 py-1.5 hover:bg-blue-50 hover:text-blue-600 rounded transition-colors';
 
     return (
-        <div className="w-full h-full relative bg-slate-50/80 rounded-lg overflow-hidden border border-slate-200 min-h-[400px]" ref={containerRef} onContextMenu={(e)=>e.preventDefault()}>
-            
-            {/* 左側地圖工具列：快速導航與視圖切換 */}
-            <div className="absolute top-3 left-3 md:top-4 md:left-4 z-20 flex flex-col gap-2 pointer-events-auto max-w-[calc(100%-4.5rem)] overflow-x-auto no-scrollbar">
+        <div className="w-full h-full relative bg-slate-50/80 rounded-lg overflow-hidden border border-slate-200 min-h-[400px]" onContextMenu={(e) => e.preventDefault()}>
+            <MapLibreBase onStyleReady={onStyleReady} />
+
+            {/* 左上：快速導航 */}
+            <div className="absolute top-3 left-3 md:top-4 md:left-4 z-20 pointer-events-auto max-w-[calc(100%-4.5rem)] overflow-x-auto no-scrollbar">
                 <div className="flex bg-white/95 p-1 rounded-lg shadow-sm border border-slate-200 backdrop-blur text-sm font-bold text-slate-600 whitespace-nowrap">
-                    <button onClick={() => {setZoom(1); setPan({x:0, y:0});}} className="px-3 py-1.5 hover:bg-blue-50 hover:text-blue-600 rounded transition-colors">全視角</button>
-                    <button onClick={() => zoomToRegion(25.03, 121.30, 2.5)} className="px-3 py-1.5 hover:bg-blue-50 hover:text-blue-600 rounded transition-colors border-l border-slate-200">北區</button>
-                    <button onClick={() => zoomToRegion(24.05, 120.45, 3)} className="px-3 py-1.5 hover:bg-blue-50 hover:text-blue-600 rounded transition-colors border-l border-slate-200">中區</button>
-                    <button onClick={() => zoomToRegion(22.62, 120.31, 3.5)} className="px-3 py-1.5 hover:bg-blue-50 hover:text-blue-600 rounded transition-colors border-l border-slate-200">南區</button>
-                    <button onClick={() => zoomToRegion(23.85, 121.45, 2.2)} className="px-3 py-1.5 hover:bg-blue-50 hover:text-blue-600 rounded transition-colors border-l border-slate-200">東區</button>
+                    <button onClick={() => fitTo(TAIWAN_BOUNDS)} className={regionBtn}>全視角</button>
+                    {Object.entries(REGION_BOUNDS).map(([name, b]) => (
+                        <button key={name} onClick={() => fitTo(b)} className={`${regionBtn} border-l border-slate-200`}>{name}</button>
+                    ))}
                 </div>
             </div>
-
             <div className="absolute top-16 left-4 z-20 bg-white/95 backdrop-blur shadow-2xl rounded-xl border border-slate-200 p-3 transition-all duration-300 w-64 pointer-events-none" style={{ opacity: hoveredNode && !nodeMenu ? 1 : 0, transform: hoveredNode && !nodeMenu ? 'translateY(0)' : 'translateY(-10px)' }}>
                 {hoveredNode && hoveredNode.nodeType === 'hub' && (
                     <div>
@@ -622,339 +766,59 @@ const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], sto
                 </div>
             )}
 
-            <div className="absolute top-4 right-4 z-10 flex flex-col gap-2 bg-white/95 p-1.5 rounded-lg shadow-sm border border-slate-200 backdrop-blur">
-                <button onClick={() => setZoom(prev => Math.min(prev * 1.3, 10))} className="p-2 bg-slate-50 hover:bg-slate-200 rounded-md text-slate-600 transition-colors" title="放大"><ZoomIn size={18}/></button>
-                <button onClick={() => setZoom(prev => Math.max(prev / 1.3, 0.5))} className="p-2 bg-slate-50 hover:bg-slate-200 rounded-md text-slate-600 transition-colors" title="縮小"><ZoomOut size={18}/></button>
-                <button onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }} className="p-2 bg-slate-50 hover:bg-slate-200 rounded-md text-slate-600 transition-colors" title="重置畫面"><Maximize size={18}/></button>
-                <div className="w-full h-px bg-slate-200 my-1"></div>
-                <button onClick={exportMapAsImage} className="p-2 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-md transition-colors font-bold flex items-center justify-center" title="輸出高品質圖片"><DownloadCloud size={18}/></button>
+            {/* 右上：縮放與輸出 */}
+            <div className="absolute top-3 right-3 md:top-4 md:right-4 z-10 flex flex-col gap-1.5 md:gap-2 bg-white/95 p-1 md:p-1.5 rounded-lg shadow-sm border border-slate-200 backdrop-blur">
+                <button onClick={() => mapRef.current?.zoomIn()} className="hidden md:block p-2 bg-slate-50 hover:bg-slate-200 rounded-md text-slate-600 transition-colors" title="放大" aria-label="放大"><ZoomIn size={18}/></button>
+                <button onClick={() => mapRef.current?.zoomOut()} className="hidden md:block p-2 bg-slate-50 hover:bg-slate-200 rounded-md text-slate-600 transition-colors" title="縮小" aria-label="縮小"><ZoomOut size={18}/></button>
+                <button onClick={() => fitTo(TAIWAN_BOUNDS)} className="p-2 bg-slate-50 hover:bg-slate-200 rounded-md text-slate-600 transition-colors" title="重置畫面" aria-label="重置畫面"><Maximize size={18}/></button>
+                <div className="w-full h-px bg-slate-200 md:my-1"></div>
+                <button onClick={exportMapAsImage} className="p-2 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-md transition-colors font-bold flex items-center justify-center" title="輸出地圖圖片" aria-label="輸出地圖圖片"><DownloadCloud size={18}/></button>
             </div>
 
-            <svg id="ccus-main-map" viewBox={`0 0 ${baseWidth} ${baseHeight}`} className={`w-full h-full select-none ${isDragging ? 'cursor-grabbing' : 'cursor-default'} ${dragState ? 'cursor-move' : ''}`} onPointerDown={handleMouseDown} onPointerMove={handleMouseMove} onPointerUp={handleMouseUp} onPointerLeave={handleMouseLeave} style={{ touchAction: 'none' }} ref={mapRef}>
-                <g className="map-content-group" transform={`translate(${baseWidth/2 + pan.x}, ${baseHeight/2 + pan.y}) scale(${zoom})`}>
-                    {mapPaths.map((p, i) => p.d && <path key={`map-${i}`} d={p.d} fill="#f8fafc" stroke="#cbd5e1" strokeWidth={1.5 / zoom} />)}
-
-                    {activeLayers.includes('planning') && ccsTopology && (
-                        <>
-                            {/* 海運航線 */}
-                            {ccsTopology.seaRoutes.map((route, i) => {
-                                const [x1, y1] = projectBase(route.from.lon, route.from.lat); const [x2, y2] = projectBase(route.to.lon, route.to.lat);
-                                const currentC1 = seaControlPoints[route.id]?.c1 || route.c1;
-                                const currentC2 = seaControlPoints[route.id]?.c2 || route.c2;
-                                const [cx1, cy1] = projectBase(currentC1.lon, currentC1.lat); 
-                                const [cx2, cy2] = projectBase(currentC2.lon, currentC2.lat);
-                                if (x1 === -9999 || x2 === -9999 || cx1 === -9999) return null;
-                                
-                                const midX = 0.125*x1 + 0.375*cx1 + 0.375*cx2 + 0.125*x2; const midY = 0.125*y1 + 0.375*cy1 + 0.375*cy2 + 0.125*y2;
-                                
-                                const isC1Dragged = dragState && dragState.id === 'c1' && dragState.routeId === route.id;
-                                const isC2Dragged = dragState && dragState.id === 'c2' && dragState.routeId === route.id;
-
-                                return (
-                                    <g key={`sea-route-${i}`}>
-                                        <path d={`M ${x1} ${y1} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${x2} ${y2}`} stroke="#0284c7" strokeWidth={Math.max(2, Math.log10(Math.max(10000, Number(route.weight ?? route.flow) || 0))/zoom)} strokeDasharray={`${6/zoom} ${6/zoom}`} fill="none" opacity={0.6}/>
-                                        <text x={midX} y={midY} fontSize={11/zoom} fill="#0369a1" textAnchor="middle" fontWeight="bold" style={{textShadow: '0 0 3px white', pointerEvents: 'none'}}>{route.label}</text>
-                                        
-                                        <circle cx={cx1} cy={cy1} r={16/zoom} fill="transparent" className={isC1Dragged ? "cursor-grabbing" : "cursor-grab hover:scale-125"} onPointerDown={(e) => handleNodeMouseDown(e, 'c1', 'seaControl', route.id)}/>
-                                        <circle cx={cx1} cy={cy1} r={4/zoom} fill="rgba(2,132,199,0.2)" stroke="#0284c7" strokeWidth={isC1Dragged ? 2/zoom : 1/zoom} strokeDasharray={`${2/zoom} ${2/zoom}`} pointerEvents="none"/>
-                                        
-                                        <circle cx={cx2} cy={cy2} r={16/zoom} fill="transparent" className={isC2Dragged ? "cursor-grabbing" : "cursor-grab hover:scale-125"} onPointerDown={(e) => handleNodeMouseDown(e, 'c2', 'seaControl', route.id)}/>
-                                        <circle cx={cx2} cy={cy2} r={4/zoom} fill="rgba(2,132,199,0.2)" stroke="#0284c7" strokeWidth={isC2Dragged ? 2/zoom : 1/zoom} strokeDasharray={`${2/zoom} ${2/zoom}`} pointerEvents="none"/>
-                                    </g>
-                                );
-                            })}
-                            
-                            {/* 陸運路線 (針對孤立廠區的琥珀色虛線) - 新增陸運控制點(可拖曳) */}
-                            {ccsTopology.landRoutes.map((route, i) => {
-                                const [x1, y1] = projectBase(route.from.lon, route.from.lat); const [x2, y2] = projectBase(route.to.lon, route.to.lat);
-                                if (x1 === -9999 || x2 === -9999) return null;
-                                
-                                const routeId = `land_${route.from.Company}_${route.to.id}`;
-                                const customControl = landControlPoints[routeId];
-                                
-                                let cx, cy;
-                                if (customControl) {
-                                    [cx, cy] = projectBase(customControl.lon, customControl.lat);
-                                } else {
-                                    cx = Math.min(x1, x2) - 40/zoom; // 預設向海側(西側)偏移更多
-                                    cy = (y1 + y2) / 2;
-                                }
-
-                                const midX = 0.25*x1 + 0.5*cx + 0.25*x2; const midY = 0.25*y1 + 0.5*cy + 0.25*y2;
-                                const isDragged = dragState && dragState.routeId === routeId && dragState.type === 'landControl';
-
-                                return (
-                                    <g key={`land-route-${i}`}>
-                                        <path d={`M ${x1} ${y1} Q ${cx} ${cy}, ${x2} ${y2}`} stroke="#f59e0b" strokeWidth={2/zoom} strokeDasharray={`${4/zoom} ${4/zoom}`} fill="none" opacity={0.7} />
-                                        <text x={midX} y={midY - (4/zoom)} fontSize={9/zoom} fill="#b45309" textAnchor="middle" fontWeight="bold" style={{textShadow: '0 0 3px white', pointerEvents: 'none'}}>陸運 {Number(route.distance||0).toFixed(0)}km</text>
-                                        
-                                        <circle cx={cx} cy={cy} r={16/zoom} fill="transparent" className={isDragged ? "cursor-grabbing" : "cursor-grab hover:scale-125"} onPointerDown={(e) => handleNodeMouseDown(e, 'land_ctrl', 'landControl', routeId)}/>
-                                        <circle cx={cx} cy={cy} r={4/zoom} fill="rgba(245,158,11,0.2)" stroke="#f59e0b" strokeWidth={isDragged ? 2/zoom : 1/zoom} strokeDasharray={`${2/zoom} ${2/zoom}`} pointerEvents="none"/>
-                                    </g>
-                                );
-                            })}
-                            
-                            {/* 廠區支線 (最短直線) */}
-                            {ccsTopology.branchRoutes.map((route, i) => {
-                                const [x1, y1] = projectBase(route.from.lon, route.from.lat); const [x2, y2] = projectBase(route.to.lon, route.to.lat);
-                                if (x1 === -9999 || x2 === -9999) return null;
-                                const strokeColor = route.isPriority ? "#94a3b8" : "#cbd5e1"; const strokeW = (route.isPriority ? 1.5 : 1) / zoom;
-                                const opac = route.isPriority ? 0.6 : 0.4;
-                                return (<path key={`branch-${i}`} d={`M ${x1} ${y1} L ${x2} ${y2}`} stroke={strokeColor} strokeWidth={strokeW} fill="none" opacity={opac} />);
-                            })}
-                            
-                            {/* 多節點主管線路徑 (不含節點圓點) */}
-                            {ccsTopology.mainRoutes.map((route, i) => {
-                                const currentNodes = routeNodes[route.id] || route.nodes;
-                                const pathNodes = currentNodes.map(n => projectBase(n.lon, n.lat));
-                                if (pathNodes.some(n => n[0] === -9999)) return null;
-                                
-                                let pathD = `M ${pathNodes[0][0]} ${pathNodes[0][1]} `;
-                                for (let j = 1; j < pathNodes.length; j++) pathD += `L ${pathNodes[j][0]} ${pathNodes[j][1]} `;
-                                
-                                const dist = route.recalcDist ? route.recalcDist(currentNodes) : route.distance;
-                                const isUnrealistic = dist > 50;
-                                const strokeColor = isUnrealistic ? "#f97316" : "#3b82f6"; const textColor = isUnrealistic ? "#c2410c" : "#1e40af";
-                                const midIdx = Math.floor(pathNodes.length / 2); const midX = pathNodes[midIdx][0]; const midY = pathNodes[midIdx][1];
-                                
-                                return (
-                                    <g key={`main-route-path-${i}`}>
-                                        <path d={pathD} stroke={strokeColor} strokeWidth={Math.max(2, Math.log10(Math.max(10000, Number(route.weight ?? route.flow) || 0)))/zoom} strokeDasharray={isUnrealistic ? `${6/zoom} ${4/zoom}` : "none"} fill="none" strokeLinejoin="round" opacity={isUnrealistic ? 0.7 : 0.85}/>
-                                        <path d={pathD} stroke="transparent" strokeWidth={20/zoom} fill="none" className="cursor-crosshair" onClick={(e) => handlePathClick(e, route.id, currentNodes)} />
-                                        <text x={midX} y={midY - (8/zoom)} fontSize={10/zoom} fill={textColor} textAnchor="middle" fontWeight="bold" style={{textShadow: '0 0 3px white', pointerEvents: 'none'}}>{Number(dist||0).toFixed(0)} km</text>
-                                    </g>
-                                );
-                            })}
-                            
-                            {/* 將所有可互動元素集中在最後繪製，確保位於最上層，並放大隱形感應區 */}
-                            {/* 中繼聚落點 (可拖曳) */}
-                            {clusters && Object.values(clusters).map((cluster, i) => {
-                                if (cluster.emissions <= 0) return null;
-                                const [cx, cy] = projectBase(cluster.lon, cluster.lat);
-                                if (cx === -9999) return null;
-                                const isDragged = dragState && dragState.id === cluster.id;
-                                return (
-                                    <g key={`cluster-${i}`} className={isDragged ? "cursor-grabbing" : "cursor-grab hover:scale-125 transition-transform"} onMouseEnter={() => setHoveredNode({...cluster, nodeType: 'cluster'})} onMouseLeave={() => setHoveredNode(null)} onPointerDown={(e) => handleNodeMouseDown(e, cluster.id, 'cluster')}>
-                                        <circle cx={cx} cy={cy} r={16/zoom} fill="transparent" />
-                                        <circle cx={cx} cy={cy} r={isDragged ? 5/zoom : 4/zoom} fill="#fff" stroke={isDragged ? "#fcd34d" : "#3b82f6"} strokeWidth={isDragged ? 2.5/zoom : 2/zoom} style={{ filter: 'drop-shadow(0px 2px 3px rgba(0,0,0,0.4))' }} pointerEvents="none"/>
-                                    </g>
-                                );
-                            })}
-                            
-                            {/* 主管線節點 (隱形大感應區、點擊出選單) */}
-                            {ccsTopology.mainRoutes.map(route => {
-                                const currentNodes = routeNodes[route.id] || route.nodes;
-                                const dist = route.recalcDist ? route.recalcDist(currentNodes) : route.distance;
-                                const strokeColor = dist > 50 ? "#f97316" : "#3b82f6";
-                                
-                                return currentNodes.slice(1, -1).map((n, idx) => {
-                                    const [cx, cy] = projectBase(n.lon, n.lat);
-                                    const actualIdx = idx + 1;
-                                    const isDragged = dragState && dragState.id === actualIdx && dragState.routeId === route.id;
-                                    return (
-                                        <g key={`node-${route.id}-${idx}`} 
-                                           className={isDragged ? "cursor-grabbing" : "cursor-pointer hover:scale-125 transition-transform"} 
-                                           onPointerDown={(e) => handleNodeMouseDown(e, actualIdx, 'routeNode', route.id)} 
-                                           onContextMenu={(e) => handleNodeContextMenu(e, route.id, actualIdx)}
-                                           onClick={(e) => handleNodeClick(e, actualIdx, 'routeNode', route.id, route.weight ?? route.flow)}
-                                        >
-                                            <circle cx={cx} cy={cy} r={16/zoom} fill="transparent" />
-                                            <circle cx={cx} cy={cy} r={isDragged ? 5/zoom : 4/zoom} fill="#fff" stroke={isDragged ? "#fcd34d" : strokeColor} strokeWidth={isDragged ? 2.5/zoom : 2/zoom} style={{ filter: 'drop-shadow(0px 2px 3px rgba(0,0,0,0.4))' }} pointerEvents="none"/>
-                                        </g>
-                                    );
-                                });
-                            })}
-                            
-                            {/* 樞紐站 (隱形大感應區) */}
-                            {hubs && Object.values(hubs).map((hub, i) => {
-                                const [cx, cy] = projectBase(hub.lon, hub.lat);
-                                if (cx === -9999) return null;
-                                const isLandHub = hub.id === 'CENTRAL_HUB_LAND'; const isDragged = dragState && dragState.id === hub.id;
-                                return (
-                                    <g key={`hub-${i}`} className={isDragged ? "cursor-grabbing" : "cursor-grab hover:scale-110 transition-transform"} onMouseEnter={() => setHoveredNode({...hub, nodeType: 'hub', hubType: hub.type})} onMouseLeave={() => setHoveredNode(null)} onPointerDown={(e) => handleNodeMouseDown(e, hub.id, 'hub')}>
-                                        <rect x={cx - 16/zoom} y={cy - 16/zoom} width={32/zoom} height={32/zoom} fill="transparent" />
-                                        <rect x={cx - 10/zoom} y={cy - 10/zoom} width={20/zoom} height={20/zoom} fill={isLandHub ? "#b45309" : "#0ea5e9"} stroke={isDragged ? "#fbbf24" : "white"} strokeWidth={isDragged ? 3/zoom : 2/zoom} style={{ filter: 'drop-shadow(0px 3px 4px rgba(0,0,0,0.4))' }} pointerEvents="none" />
-                                        <text x={cx + 14/zoom} y={cy + 4/zoom} fontSize={12/textScale} fill={isLandHub ? "#78350f" : "#0369a1"} fontWeight="900" paintOrder="stroke" stroke="white" strokeWidth={3/textScale} className="pointer-events-none">{hub.name}</text>
-                                    </g>
-                                );
-                            })}
-                            
-                            {/* 廠區排放點源 (按比例縮放與電廠獨立顯色) */}
-                            {ccsTopology.validSources.map((d, i) => {
-                                const [cx, cy] = projectBase(d.lon, d.lat);
-                                if (cx === -9999) return null;
-                                const r = Math.max(3, Math.min(14, (3 + Math.sqrt(Math.max(0, d.Scope1 || 0) / 100000)))) / zoom;
-                                const isHovered = hoveredNode?.Company === d.Company && hoveredNode?.Plant === d.Plant;
-                                const isConnected = d.distanceToHub >= 0 || d.landDist > 0;
-                                const fillCol = d.isPowerPlant ? "#a855f7" : (d.isPriority ? "#e11d48" : "#f97316"); 
-                                const opac = isHovered ? 1 : (isConnected ? 0.9 : 0.3);
-                                return (
-                                    <g key={`s1-${i}`} className="cursor-pointer transition-all" onMouseEnter={() => setHoveredNode({...d, nodeType: 'planning_source'})} onMouseLeave={() => setHoveredNode(null)}>
-                                        <circle cx={cx} cy={cy} r={Math.max(r, 16/zoom)} fill="transparent" />
-                                        {d.isPriority && isConnected && <circle cx={cx} cy={cy} r={r * 1.6} fill={fillCol} opacity={0.25} pointerEvents="none"/>}
-                                        <circle cx={cx} cy={cy} r={r} fill={fillCol} fillOpacity={opac} stroke={isConnected ? "white" : "transparent"} strokeWidth={(d.isPriority ? 1.5 : 1) / zoom} style={d.isPriority && isConnected ? { filter: 'drop-shadow(0px 2px 3px rgba(0,0,0,0.4))' } : {}} pointerEvents="none"/>
-                                    </g>
-                                );
-                            })}
-                        </>
-                    )}
-
-                    {activeLayers.includes('capture') && captureData.map((d, i) => {
-                        const lat = cleanNumber(d.Latitude) || getFallbackCoords(d.Company, d.Plant).lat;
-                        const lon = cleanNumber(d.Longitude) || getFallbackCoords(d.Company, d.Plant).lon;
-                        const [cx, cy] = projectBase(lon, lat); if (cx === -9999) return null;
-                        const r = Math.max(6, Math.min(25, Math.sqrt(Math.max(0, d.Capture_Volume || 0)) * 1.5)) / zoom; 
-                        const isHovered = hoveredNode?.Company === d.Company;
-                        return (
-                            <g key={`cap-${i}`} className="cursor-pointer transition-all" onMouseEnter={() => setHoveredNode({...d, nodeType:'capture'})} onMouseLeave={() => setHoveredNode(null)}>
-                                <circle cx={cx} cy={cy} r={Math.max(r, 20/zoom)} fill="transparent" />
-                                <circle cx={cx} cy={cy} r={r} fill={stringToColor(d.Capture_Tech)} fillOpacity={isHovered ? 1 : 0.85} stroke="white" strokeWidth={1.5 / zoom} style={{ filter: 'drop-shadow(0px 2px 3px rgba(0,0,0,0.3))' }} pointerEvents="none"/>
-                                <text x={cx + r + (4/zoom)} y={cy + (3/zoom)} fontSize={11 / textScale} fill="#1e293b" fontWeight="900" paintOrder="stroke" stroke="white" strokeWidth={3/textScale} strokeLinejoin="round" className="pointer-events-none">{d.Company}</text>
-                            </g>
-                        );
-                    })}
-
-                    {activeLayers.includes('future') && captureData.map((d, i) => {
-                        const lat = cleanNumber(d.Latitude) || getFallbackCoords(d.Company, d.Plant).lat;
-                        const lon = cleanNumber(d.Longitude) || getFallbackCoords(d.Company, d.Plant).lon;
-                        const [cx, cy] = projectBase(lon, lat); if (cx === -9999) return null;
-                        const r = Math.max(6, Math.min(25, Math.sqrt(Math.max(0, d.Future_Emission_Volume || 0)) * 1.5)) / zoom; 
-                        const isHovered = hoveredNode?.Company === d.Company;
-                        return (
-                            <g key={`fut-${i}`} className="cursor-pointer transition-all" onMouseEnter={() => setHoveredNode({...d, nodeType:'future'})} onMouseLeave={() => setHoveredNode(null)}>
-                                <circle cx={cx} cy={cy} r={Math.max(r, 20/zoom)} fill="transparent" />
-                                <circle cx={cx} cy={cy} r={r} fill="#d97706" fillOpacity={isHovered ? 1 : 0.75} stroke="white" strokeWidth={1.5 / zoom} strokeDasharray={`${3/zoom} ${3/zoom}`} pointerEvents="none"/>
-                            </g>
-                        );
-                    })}
-
-                    {activeLayers.includes('util') && utilData.map((d, i) => {
-                        const coords = getFallbackCoords(d.Target_Company, d.Target_Plant);
-                        const [cx, cy] = projectBase(coords.lon, coords.lat); if (cx === -9999) return null;
-                        const r = Math.max(8, Math.min(20, Math.sqrt(Math.max(0, d.Expected_Demand || 0)) * 2)) / zoom;
-                        const isHovered = hoveredNode?.Target_Company === d.Target_Company;
-                        return (
-                            <g key={`util-${i}`} className="cursor-pointer transition-all" onMouseEnter={() => setHoveredNode({...d, nodeType:'util'})} onMouseLeave={() => setHoveredNode(null)}>
-                                <circle cx={cx} cy={cy} r={Math.max(r, 20/zoom)} fill="transparent" />
-                                <circle cx={cx} cy={cy} r={r} fill="#10b981" fillOpacity={isHovered ? 1 : 0.9} stroke="white" strokeWidth={2 / zoom} style={{ filter: 'drop-shadow(0px 2px 3px rgba(0,0,0,0.3))' }} pointerEvents="none"/>
-                                <text x={cx + r + (4/zoom)} y={cy + (3/zoom)} fontSize={11 / textScale} fill="#064e3b" fontWeight="900" paintOrder="stroke" stroke="white" strokeWidth={3/textScale} strokeLinejoin="round" className="pointer-events-none">{d.Target_Company}</text>
-                            </g>
-                        );
-                    })}
-
-                    {activeLayers.includes('storage') && storageData.map((d, i) => {
-                        const srcCoords = getFallbackCoords(d.Source_Company, '');
-                        const [x1, y1] = projectBase(srcCoords.lon, srcCoords.lat); if (x1 === -9999) return null;
-                        
-                        const getStorageCoords = (siteName) => {
-                             const safeSite = siteName || '';
-                             const hub = Object.values(hubs || INITIAL_CCS_HUBS).find(h => safeSite.includes(h.name.split(' ')[0]) || h.name.includes(safeSite.split(' ')[0]));
-                             if (hub) return { lat: hub.lat, lon: hub.lon };
-                             if (safeSite.includes('鐵砧山')) return { lat: 24.45, lon: 120.68 };
-                             if (safeSite.includes('麥寮')) return { lat: 23.80, lon: 120.10 };
-                             if (safeSite.includes('台中')) return { lat: 24.25, lon: 120.45 };
-                             if (safeSite.includes('林口') || safeSite.includes('台北')) return { lat: 25.14, lon: 121.32 };
-                             if (safeSite.includes('高雄')) return { lat: 22.55, lon: 120.32 };
-                             if (safeSite.includes('花蓮')) return { lat: 23.98, lon: 121.62 };
-                             return { lat: 23.6, lon: 120.9 };
-                        };
-                        const tgt = getStorageCoords(d.Storage_Site);
-                        const [x2, y2] = projectBase(tgt.lon, tgt.lat); 
-
-                        const isPipe = String(d.Transport_Method).includes('管線');
-                        const isHovered = hoveredNode?.Storage_Site === d.Storage_Site;
-                        return (
-                            <g key={`sto-${i}`} className="cursor-pointer transition-all" onMouseEnter={() => setHoveredNode({...d, nodeType:'storage'})} onMouseLeave={() => setHoveredNode(null)}>
-                                <line x1={x1} y1={y1} x2={x2} y2={y2} stroke={isPipe ? "#3b82f6" : "#f59e0b"} strokeWidth={3 / zoom} strokeDasharray={isPipe ? "0" : `${6/zoom} ${6/zoom}`} opacity={isHovered ? 1 : 0.6}/>
-                                <circle cx={x1} cy={y1} r={16 / zoom} fill="transparent" />
-                                <circle cx={x1} cy={y1} r={4 / zoom} fill="#64748b" pointerEvents="none"/>
-                                <circle cx={x2} cy={y2} r={10 / zoom} fill="#ef4444" fillOpacity={isHovered ? 1 : 0.9} stroke="white" strokeWidth={2 / zoom} style={{ filter: 'drop-shadow(0px 2px 3px rgba(0,0,0,0.3))' }} pointerEvents="none"/>
-                                <text x={x2 + (12/zoom)} y={y2 + (4/zoom)} fontSize={12 / textScale} fill="#991b1b" fontWeight="900" paintOrder="stroke" stroke="white" strokeWidth={3/textScale} strokeLinejoin="round" className="pointer-events-none">{d.Storage_Site}</text>
-                            </g>
-                        );
-                    })}
-                </g>
-
-                {/* 寫入原生的 SVG 圖例 */}
-                {activeLayers.includes('planning') && (
-                    <g transform={`translate(20, ${baseHeight - 310})`}>
-                        <rect x="0" y="0" width="280" height="260" fill="rgba(255,255,255,0.95)" rx="8" stroke="#e2e8f0" strokeWidth="1" />
-                        
-                        <rect x="12" y="15" width="10" height="10" fill="#0ea5e9" stroke="white" strokeWidth="1" />
-                        <text x="30" y="24" fontSize="11" fill="#334155" fontWeight="bold">海洋接收站 / 本土封存樞紐 (可拖曳)</text>
-                        
-                        <rect x="12" y="35" width="10" height="10" fill="#b45309" stroke="white" strokeWidth="1" />
-                        <text x="30" y="44" fontSize="11" fill="#334155" fontWeight="bold">陸地封存場域 (可拖曳)</text>
-                        
-                        <line x1="12" y1="55" x2="268" y2="55" stroke="#e2e8f0" strokeWidth="1" />
-                        
-                        <circle cx="17" cy="70" r="5" fill="#a855f7" stroke="white" strokeWidth="1" />
-                        <text x="30" y="74" fontSize="11" fill="#334155" fontWeight="bold">大型發電廠 (按比例顯示碳排)</text>
-
-                        <circle cx="17" cy="90" r="5" fill="#e11d48" stroke="white" strokeWidth="1" />
-                        <text x="30" y="94" fontSize="11" fill="#334155" fontWeight="bold">一般優先碳源 (≥ 2.5萬噸)</text>
-                        
-                        <circle cx="17" cy="110" r="3" fill="#f97316" opacity="0.8" />
-                        <text x="30" y="114" fontSize="11" fill="#334155" fontWeight="bold">次要碳源 (&lt; 2.5萬噸)</text>
-
-                        <line x1="12" y1="125" x2="268" y2="125" stroke="#e2e8f0" strokeWidth="1" />
-                        
-                        <circle cx="17" cy="140" r="4" fill="#fff" stroke="#3b82f6" strokeWidth="2" />
-                        <text x="30" y="144" fontSize="11" fill="#334155" fontWeight="bold">統一管線節點 (可拖曳)</text>
-                        <text x="30" y="156" fontSize="9" fill="#64748b">操作: 點藍線新增 / 左點菜單 / 右鍵刪除</text>
-
-                        <line x1="12" y1="175" x2="35" y2="175" stroke="#3b82f6" strokeWidth="3" />
-                        <text x="40" y="179" fontSize="11" fill="#334155" fontWeight="bold">自訂主幹管線 (&gt;50km以橘色警告)</text>
-                        
-                        <path d="M 12 195 L 35 195" stroke="#94a3b8" strokeWidth="2" fill="none" />
-                        <text x="40" y="199" fontSize="11" fill="#334155" fontWeight="bold">直線就近上管 (優先≤50km,次要≤20km)</text>
-                        
-                        <path d="M 12 215 Q 23.5 215, 35 210" stroke="#f59e0b" strokeWidth="1.5" strokeDasharray="4 4" fill="none" />
-                        <text x="40" y="219" fontSize="11" fill="#334155" fontWeight="bold">孤立廠區之陸運接駁路線 (可拖曳)</text>
-                        
-                        <line x1="12" y1="235" x2="35" y2="235" stroke="#0284c7" strokeWidth="2" strokeDasharray="6 6" opacity="0.6" />
-                        <circle cx="23" cy="235" r="3" fill="transparent" stroke="#0284c7" strokeWidth="1" />
-                        <text x="40" y="239" fontSize="11" fill="#334155" fontWeight="bold">樞紐海運外繞 (空心點可拖曳)</text>
-                    </g>
+            {/* 左下：圖例（手機預設收合） */}
+            <div className="absolute left-3 bottom-8 md:left-4 z-10 max-w-[calc(100%-1.5rem)]">
+                {legendOpen ? (
+                    <div className="bg-white/95 backdrop-blur rounded-xl border border-slate-200 shadow-sm p-3 text-[11px] text-slate-700 font-bold w-[272px] max-w-full space-y-1.5">
+                        <div className="flex items-center justify-between -mt-0.5 mb-1">
+                            <span className="text-xs text-slate-500 tracking-wider">圖例</span>
+                            <button onClick={() => setLegendOpen(false)} className="w-7 h-7 -mr-1 rounded-md hover:bg-slate-100 text-slate-400 flex items-center justify-center" aria-label="收合圖例"><X size={14}/></button>
+                        </div>
+                        {isPlanning ? (
+                            <>
+                                <LegendRow sym={<span className="w-3 h-3 bg-[#0ea5e9] border border-white shadow-sm" />}>海洋接收站／本土封存樞紐（可拖曳）</LegendRow>
+                                <LegendRow sym={<span className="w-3 h-3 bg-[#b45309] border border-white shadow-sm" />}>陸地封存場域（可拖曳）</LegendRow>
+                                <div className="h-px bg-slate-200 !my-2" />
+                                <LegendRow sym={<span className="w-3 h-3 rounded-full bg-[#a855f7]" />}>大型發電廠（依碳排大小）</LegendRow>
+                                <LegendRow sym={<span className="w-3 h-3 rounded-full bg-[#e11d48]" />}>一般優先碳源（≥ 2.5萬噸）</LegendRow>
+                                <LegendRow sym={<span className="w-2 h-2 rounded-full bg-[#f97316]" />}>次要碳源（&lt; 2.5萬噸）</LegendRow>
+                                <div className="h-px bg-slate-200 !my-2" />
+                                <LegendRow sym={<span className="w-2.5 h-2.5 rounded-full bg-white border-2 border-[#3b82f6]" />}>管線節點（可拖曳）</LegendRow>
+                                <div className="pl-6 -mt-1 text-[10px] font-medium text-slate-500">點藍線新增節點・點節點開選單・右鍵刪除</div>
+                                <LegendRow sym={<span className="w-5 h-[3px] bg-[#3b82f6]" />}>主幹管線（&gt;50km 以橘色虛線警示）</LegendRow>
+                                <LegendRow sym={<span className="w-5 h-[2px] bg-[#94a3b8]" />}>直線就近上管（優先≤50km，次要≤20km）</LegendRow>
+                                <LegendRow sym={<span className="w-5 border-t-2 border-dashed border-[#f59e0b]" />}>孤立廠區陸運接駁（控制點可拖曳）</LegendRow>
+                                <LegendRow sym={<span className="w-5 border-t-2 border-dashed border-[#0284c7]" />}>樞紐海運外繞（控制點可拖曳）</LegendRow>
+                            </>
+                        ) : (
+                            <>
+                                {activeLayers.includes('capture') && <LegendRow sym={<span className="w-3 h-3 rounded-full bg-[#3b82f6]" />}>捕捉端（依捕捉量，顏色為技術別）</LegendRow>}
+                                {activeLayers.includes('future') && <LegendRow sym={<span className="w-3 h-3 rounded-full bg-[#d97706]/70" />}>潛力擴充點源</LegendRow>}
+                                {activeLayers.includes('util') && <LegendRow sym={<span className="w-3 h-3 rounded-full bg-[#10b981]" />}>再利用端（依需求量）</LegendRow>}
+                                {activeLayers.includes('storage') && <LegendRow sym={<span className="w-3 h-3 rounded-full bg-[#ef4444]" />}>封存場域（實線管線／虛線船運）</LegendRow>}
+                            </>
+                        )}
+                    </div>
+                ) : (
+                    <button onClick={() => setLegendOpen(true)} className="h-9 px-3 rounded-lg bg-white/95 border border-slate-200 shadow-sm text-xs font-bold text-slate-600 flex items-center gap-1.5"><Layers size={14}/> 圖例</button>
                 )}
-
-                {!activeLayers.includes('planning') && (
-                    <g transform={`translate(20, ${baseHeight - (20 + activeLayers.length * 25)})`}>
-                        <rect x="0" y="0" width="180" height={15 + activeLayers.length * 25} fill="rgba(255,255,255,0.95)" rx="8" stroke="#e2e8f0" strokeWidth="1" />
-                        {activeLayers.map((layer, idx) => {
-                            const yOffset = 20 + idx * 25;
-                            if (layer === 'capture') return (
-                                <g key={layer} transform={`translate(15, ${yOffset})`}>
-                                    <circle cx="4" cy="-4" r="4" fill="#3b82f6" stroke="white" strokeWidth="1" />
-                                    <text x="15" y="0" fontSize="11" fill="#334155" fontWeight="bold">捕捉端 (依捕捉量)</text>
-                                </g>
-                            );
-                            if (layer === 'future') return (
-                                <g key={layer} transform={`translate(15, ${yOffset})`}>
-                                    <circle cx="4" cy="-4" r="4" fill="transparent" stroke="#d97706" strokeWidth="2" strokeDasharray="3 3" />
-                                    <text x="15" y="0" fontSize="11" fill="#334155" fontWeight="bold">潛力擴充點源</text>
-                                </g>
-                            );
-                            if (layer === 'util') return (
-                                <g key={layer} transform={`translate(15, ${yOffset})`}>
-                                    <circle cx="4" cy="-4" r="4" fill="#10b981" stroke="white" strokeWidth="1" />
-                                    <text x="15" y="0" fontSize="11" fill="#334155" fontWeight="bold">再利用端 (依需求量)</text>
-                                </g>
-                            );
-                            if (layer === 'storage') return (
-                                <g key={layer} transform={`translate(15, ${yOffset})`}>
-                                    <circle cx="4" cy="-4" r="5" fill="#ef4444" stroke="white" strokeWidth="1" />
-                                    <text x="15" y="0" fontSize="11" fill="#334155" fontWeight="bold">封存場域與專案管線</text>
-                                </g>
-                            );
-                            return null;
-                        })}
-                    </g>
-                )}
-            </svg>
+            </div>
         </div>
     );
 };
+
+const LegendRow = ({ sym, children }) => (
+    <div className="flex items-center gap-2 leading-tight"><span className="w-4 flex items-center justify-center flex-shrink-0">{sym}</span><span>{children}</span></div>
+);
 
 const CCUS_TABS = [
     { id: 'planning', label: '案場與管線規劃', icon: Map },
@@ -971,7 +835,6 @@ const CcusDashboard = () => {
     const [utilizationData, setUtilizationData] = useState([]);
     const [storageData, setStorageData] = useState([]);
     const [scope1Data, setScope1Data] = useState([]); 
-    const [mapPaths, setMapPaths] = useState([]); 
     const [loading, setLoading] = useState(true);
     const [selectedYear, setSelectedYear] = useState('ALL');
     const [transportMode, setTransportMode] = useState('ALL');
@@ -993,28 +856,13 @@ const CcusDashboard = () => {
         const fetchAllData = async () => {
             setLoading(true);
             try {
-                const [resCap, resUtil, resStore, resScope1, resGeo] = await Promise.all([
+                const [resCap, resUtil, resStore, resScope1] = await Promise.all([
                     fetch(CCUS_DATA_SOURCES.CAPTURE), fetch(CCUS_DATA_SOURCES.UTILIZATION),
-                    fetch(CCUS_DATA_SOURCES.STORAGE), fetch(CCUS_DATA_SOURCES.SCOPE1_URL).catch(() => null),
-                    fetch('https://raw.githubusercontent.com/g0v/twgeojson/master/json/twCounty2010.geo.json').catch(() => null)
+                    fetch(CCUS_DATA_SOURCES.STORAGE), fetch(CCUS_DATA_SOURCES.SCOPE1_URL).catch(() => null)
                 ]);
 
                 const txtCap = await resCap.text(); const txtUtil = await resUtil.text();
                 const txtStore = await resStore.text(); const txtScope1 = resScope1 ? await resScope1.text() : '';
-
-                if (resGeo) {
-                    const geoData = await resGeo.json();
-                    const paths = geoData.features.map(f => {
-                        let d = '';
-                        const pr = (ring) => { 
-                            if(!ring || ring.length === 0) return; const [x,y] = projectBase(ring[0][0], ring[0][1]); if (x === -9999) return; 
-                            d += `M${x},${y} `; for(let i=1; i<ring.length; i++){ const [lx,ly] = projectBase(ring[i][0], ring[i][1]); if(lx !== -9999) d += `L${lx},${ly} `; } d += 'Z '; 
-                        };
-                        if(f.geometry.type === 'Polygon') f.geometry.coordinates.forEach(pr); else if(f.geometry.type === 'MultiPolygon') f.geometry.coordinates.forEach(p => p.forEach(pr));
-                        return { d };
-                    });
-                    setMapPaths(paths);
-                }
 
                 const rawCap = parseCSV(txtCap); const rawUtil = parseCSV(txtUtil);
                 const rawStore = parseCSV(txtStore); const rawScope1 = parseCSV(txtScope1);
@@ -1353,7 +1201,7 @@ const CcusDashboard = () => {
                             </div>
                             <div className="flex-1 w-full h-full relative min-h-0">
                                 <ErrorBoundary>
-                                    <TaiwanCcusMap activeLayers={['planning']} scope1Data={scope1Data} mapPaths={mapPaths} ccsTopology={ccsTopology} hubs={hubs} setHubs={setHubs} clusters={clusters} setClusters={setClusters} routeNodes={routeNodes} setRouteNodes={setRouteNodes} seaControlPoints={seaControlPoints} setSeaControlPoints={setSeaControlPoints} landControlPoints={landControlPoints} setLandControlPoints={setLandControlPoints} />
+                                    <TaiwanCcusMap activeLayers={['planning']} ccsTopology={ccsTopology} hubs={hubs} setHubs={setHubs} setClusters={setClusters} routeNodes={routeNodes} setRouteNodes={setRouteNodes} seaControlPoints={seaControlPoints} setSeaControlPoints={setSeaControlPoints} landControlPoints={landControlPoints} setLandControlPoints={setLandControlPoints} />
                                 </ErrorBoundary>
                             </div>
                         </div>
@@ -1594,7 +1442,7 @@ const CcusDashboard = () => {
                             </div>
                             <div className="flex-1 w-full h-full relative min-h-0">
                                 <ErrorBoundary>
-                                    <TaiwanCcusMap activeLayers={activeLayersMap[facilitySubTab]} captureData={fCapture} utilData={fUtil} storageData={fStorage} mapPaths={mapPaths} hubs={hubs} setHubs={setHubs} />
+                                    <TaiwanCcusMap activeLayers={activeLayersMap[facilitySubTab]} captureData={fCapture} utilData={fUtil} storageData={fStorage} hubs={hubs} setHubs={setHubs} />
                                 </ErrorBoundary>
                             </div>
                         </div>)}
