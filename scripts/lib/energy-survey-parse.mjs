@@ -16,7 +16,9 @@ export function cellValue(v) {
   if (v == null) return null;
   if (typeof v === 'object') {
     if (v instanceof Date) return v.toISOString().slice(0, 10);
-    if ('result' in v) return cellValue(v.result);            // 公式 → 取計算結果
+    // 公式 → 取快取的計算結果；沒有結果代表公式算出空字串（例如 =IF(...,"")），視為空白
+    if ('formula' in v || 'sharedFormula' in v) return 'result' in v ? cellValue(v.result) : null;
+    if ('result' in v) return cellValue(v.result);
     if (Array.isArray(v.richText)) return v.richText.map((t) => t.text).join('');
     if ('text' in v) return v.text;                          // 超連結
     if ('error' in v) return null;
@@ -364,6 +366,9 @@ export async function parseWorkbook(filePath, domain) {
       if (missing.size) warnings.push(`[${domain}/${ws.name}] 找不到欄位：${[...missing].join('、')}`);
       if (!out) continue;
       if (cfg.table === 'survey_answers') out.column_order = Object.keys(out.answers);
+      // 對應回原始 Excel 列（後台可由分析表查回 survey_sheet_rows 的原列）
+      out.source_sheet = ws.name;
+      out.source_row = r.rowNo;
       (tables[cfg.table] ||= []).push(out);
     }
     if (cfg && !tables[cfg.table]?.length) warnings.push(`[${domain}/${ws.name}] 沒有任何列進入 ${cfg.table}`);

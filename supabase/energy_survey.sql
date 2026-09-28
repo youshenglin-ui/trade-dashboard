@@ -382,3 +382,21 @@ end $$;
 
 alter table survey_imports enable row level security;
 alter table survey_sheet_rows enable row level security;
+
+-- ---------- 8. 分析表對應回原始 Excel 列（2026-09 追加） ----------
+-- source_sheet / source_row 對應 survey_sheet_rows 的 sheet / row_no；raw 可由原列補上，因此放寬 not null。
+do $$
+declare t text;
+begin
+  foreach t in array array['energy_plants','h2_production','h2_usage','h2_flows','h2_future_plans',
+    'ccus_emission_sources','ccus_capture_units','ccus_plans','ccus_utilization','survey_answers','survey_assistance_requests']
+  loop
+    execute format('alter table %I add column if not exists source_sheet text', t);
+    execute format('alter table %I add column if not exists source_row int', t);
+  end loop;
+  foreach t in array array['h2_production','h2_usage','h2_flows','h2_future_plans',
+    'ccus_emission_sources','ccus_capture_units','ccus_plans','ccus_utilization']
+  loop
+    execute format('alter table %I alter column raw drop not null', t);
+  end loop;
+end $$;

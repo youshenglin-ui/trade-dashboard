@@ -64,13 +64,26 @@ begin
     result := result || jsonb_build_object(t, n);
   end loop;
 
+  -- 2b. 分析表的 raw 若沒帶（例如為了縮小傳輸量），由完整保存層對應的原始列補上
+  foreach t in array h2_tables || ccus_tables loop
+    execute format(
+      'update %I a set raw = s.cells from survey_sheet_rows s
+        where a.raw is null and s.domain = $1 and s.sheet = a.source_sheet and s.row_no = a.source_row', t)
+    using case when t like 'h2\_%' then 'hydrogen' else 'ccus' end;
+  end loop;
+
   -- 3. 廠區主檔
   if payload ? 'energy_plants' then
     insert into energy_plants (plant_id, short_name, company, tax_id, plant_name, factory_reg_no, address, county, region, zone,
-                               lat, lon, coord_source, coord_note, is_survey_target, responded_years, note, raw, updated_at)
-    select plant_id, short_name, company, tax_id, plant_name, factory_reg_no, address, county, region, zone,
-           lat, lon, coord_source, coord_note, coalesce(is_survey_target, true), coalesce(responded_years, '{}'), note, raw, now()
-    from jsonb_populate_recordset(null::energy_plants, payload->'energy_plants')
+                               lat, lon, coord_source, coord_note, is_survey_target, responded_years, note, raw,
+                               source_sheet, source_row, updated_at)
+    select p.plant_id, p.short_name, p.company, p.tax_id, p.plant_name, p.factory_reg_no, p.address, p.county, p.region, p.zone,
+           p.lat, p.lon, p.coord_source, p.coord_note, coalesce(p.is_survey_target, true), coalesce(p.responded_years, '{}'), p.note,
+           -- 沒帶 raw 時取廠區主檔原列，並去掉聯絡窗口個資欄位
+           coalesce(p.raw, s.cells - array['最新窗口', '職稱', '電話', 'email']),
+           p.source_sheet, p.source_row, now()
+    from jsonb_populate_recordset(null::energy_plants, payload->'energy_plants') p
+    left join survey_sheet_rows s on s.domain = 'hydrogen' and s.sheet = p.source_sheet and s.row_no = p.source_row
     on conflict (plant_id) do update set
       short_name = excluded.short_name, company = coalesce(excluded.company, energy_plants.company),
       tax_id = excluded.tax_id, plant_name = excluded.plant_name, factory_reg_no = excluded.factory_reg_no,
@@ -81,7 +94,7 @@ begin
       coord_note = case when energy_plants.coord_source = 'manual' and excluded.coord_source is distinct from 'manual' then energy_plants.coord_note else excluded.coord_note end,
       coord_source = case when energy_plants.coord_source = 'manual' and excluded.coord_source is distinct from 'manual' then energy_plants.coord_source else excluded.coord_source end,
       is_survey_target = excluded.is_survey_target, responded_years = excluded.responded_years,
-      note = excluded.note, raw = excluded.raw, updated_at = now();
+      note = excluded.note, raw = excluded.raw, source_sheet = excluded.source_sheet, source_row = excluded.source_row, updated_at = now();
     get diagnostics n = row_count;
     result := result || jsonb_build_object('energy_plants', n);
   end if;
