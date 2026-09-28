@@ -44,7 +44,8 @@
    `src/config/modules.js`。貿易模組已改為分段篩選、分頁與手機可左右滑動圖表（`ScrollableChart`）；
    CCUS 已拆成五個分頁（案場與管線規劃／價值鏈總覽／捕捉與再利用／封存與成本／排放源清單，定義在
    `CcusDashboard.jsx` 的 `CCUS_TABS`），沿用原本的地圖與表格元件；氫能也拆成五個分頁（供需總覽／結構分析／碳排強度／區域解析／原始資料，
-   `HydrogenDashboard.jsx` 的 `H2_TABS`）；碳費內部版面仍待改寫。地圖拖曳已改用 pointer
+   `HydrogenDashboard.jsx` 的 `H2_TABS`）；碳費拆成四個分頁（總覽／產業與地區／減量措施／計畫明細，
+   `CarbonFeeDashboard.jsx` 的 `CF_TABS`），手機版計畫明細為卡片、明細改為底部抽屜。地圖拖曳已改用 pointer
    事件，手機可單指平移。
 
 ## 碳費自主減量計畫模組（2026-09 新增）

@@ -29,13 +29,20 @@ const EMPTY_FILTERS = { city: '', industry: '', tier: '', scale: '', q: '' };
 const truncate = (s, n) => (s && s.length > n ? `${s.slice(0, n)}…` : s);
 const rocToAd = (y) => (y ? y + 1911 : y);
 
+const CF_TABS = [
+  { id: 'overview', label: '總覽' },
+  { id: 'rank', label: '產業與地區' },
+  { id: 'measure', label: '減量措施' },
+  { id: 'table', label: '計畫明細' },
+];
+
 // ---------- 小元件 ----------
 const Card = ({ title, subtitle, right, children, className = '' }) => (
-  <div className={`bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex flex-col ${className}`}>
+  <div className={`card p-3 md:p-4 flex flex-col min-w-0 ${className}`}>
     <div className="flex items-start justify-between gap-2 mb-3">
       <div>
-        <h3 className="font-bold text-slate-700 text-sm">{title}</h3>
-        {subtitle && <p className="text-[11px] text-slate-400 mt-0.5">{subtitle}</p>}
+        <h3 className="font-bold text-slate-800 text-base">{title}</h3>
+        {subtitle && <p className="text-xs text-slate-500 mt-0.5">{subtitle}</p>}
       </div>
       {right}
     </div>
@@ -44,25 +51,25 @@ const Card = ({ title, subtitle, right, children, className = '' }) => (
 );
 
 const Kpi = ({ label, value, unit, note, icon: Icon }) => (
-  <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
-    <div className="flex items-center gap-1.5 text-xs text-slate-500 font-medium">
+  <div className="card p-3 md:p-4 min-w-0">
+    <div className="flex items-center gap-1.5 text-xs md:text-sm text-brand-muted font-medium">
       {Icon && <Icon size={14} className="text-slate-400" />}{label}
     </div>
     <div className="mt-2 flex items-baseline gap-1">
-      <span className="text-2xl font-bold text-slate-800 tabular-nums">{value}</span>
+      <span className="num text-xl md:text-[26px] font-extrabold text-brand-ink leading-tight">{value}</span>
       {unit && <span className="text-xs text-slate-500">{unit}</span>}
     </div>
-    {note && <div className="text-[11px] text-slate-400 mt-1">{note}</div>}
+    {note && <div className="text-xs text-brand-muted mt-1 leading-snug">{note}</div>}
   </div>
 );
 
 const Segmented = ({ value, onChange, options }) => (
-  <div className="inline-flex bg-slate-100 rounded-lg p-0.5 text-[11px]">
+  <div className="seg">
     {options.map((o) => (
       <button
         key={o.value}
         onClick={() => onChange(o.value)}
-        className={`px-2 py-1 rounded-md transition-colors ${value === o.value ? 'bg-white text-slate-800 shadow-sm font-bold' : 'text-slate-500 hover:text-slate-700'}`}
+        className={`seg-btn !h-8 !px-3 text-[13px] ${value === o.value ? 'seg-btn-on' : ''}`}
       >{o.label}</button>
     ))}
   </div>
@@ -139,9 +146,9 @@ function PlanDrawer({ plan, onClose }) {
   }, [plan, facility]);
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end" role="dialog" aria-modal="true">
+    <div className="fixed inset-0 z-50 flex flex-col md:flex-row justify-end" role="dialog" aria-modal="true">
       <div className="absolute inset-0 bg-slate-900/40" onClick={onClose} />
-      <aside className="relative w-full max-w-xl h-full bg-white shadow-2xl overflow-y-auto">
+      <aside className="relative w-full md:max-w-xl h-[88vh] md:h-full bg-white shadow-2xl overflow-y-auto rounded-t-3xl md:rounded-none animate-[sheetUp_.25s_ease] md:animate-none">
         <div className="sticky top-0 bg-white border-b border-slate-200 px-5 py-4 flex items-start gap-3 z-10">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 text-xs text-slate-500 font-mono">
@@ -254,6 +261,7 @@ export default function CarbonFeeDashboard() {
   const [sort, setSort] = useState({ key: 'total_base_emission', dir: 'desc' });
   const [page, setPage] = useState(0);
   const [showTrendTable, setShowTrendTable] = useState(false);
+  const [cfTab, setCfTab] = useState('overview'); // 總覽 / 產業與地區 / 減量措施 / 計畫明細
 
   const load = () => {
     setLoading(true);
@@ -444,7 +452,7 @@ export default function CarbonFeeDashboard() {
     const map = new Map();
     plans.forEach((p) => {
       const k = p.company || p.plan_name;
-      const cur = map.get(k) || { name: k, base: 0, plans: 0, amount: 0 };
+      const cur = map.get(k) || { name: k.replace(/股份有限公司|有限公司/g, ''), base: 0, plans: 0, amount: 0 };
       cur.base += p.total_base_emission || 0;
       cur.amount += p.amount || 0;
       cur.plans += 1;
@@ -516,7 +524,7 @@ export default function CarbonFeeDashboard() {
   }
 
   const SortTh = ({ k, children, className = '' }) => (
-    <th className={`px-3 py-2 font-medium cursor-pointer select-none hover:text-slate-800 ${className}`}
+    <th className={`px-3 py-2.5 font-medium cursor-pointer select-none whitespace-nowrap hover:text-slate-800 ${className}`}
       onClick={() => setSort((s) => ({ key: k, dir: s.key === k && s.dir === 'desc' ? 'asc' : 'desc' }))}>
       <span className="inline-flex items-center gap-0.5">{children}{sort.key === k && (sort.dir === 'desc' ? <ArrowDown size={11} /> : <ArrowUp size={11} />)}</span>
     </th>
@@ -530,7 +538,7 @@ export default function CarbonFeeDashboard() {
       <div className="flex flex-wrap items-start gap-3">
         <div className="hidden md:block p-2 rounded-lg text-white bg-brand"><TrendingDown size={24} /></div>
         <div className="flex-1 min-w-0">
-          <h2 className="text-xl md:text-2xl font-bold text-slate-800">碳費自主減量計畫分析</h2>
+          <h2 className="hidden md:block text-2xl font-bold text-slate-800">碳費自主減量計畫分析</h2>
           <p className="text-xs text-slate-500 mt-1">
             資料來源：環境部碳費申報及收費管理平台「自主減量計畫公開資訊」
             <a href={SOURCE_URL} target="_blank" rel="noopener noreferrer" className="ml-1 inline-flex items-center gap-0.5 text-blue-600 hover:underline"><ExternalLink size={11} />官網</a>
@@ -545,7 +553,7 @@ export default function CarbonFeeDashboard() {
         <div className="relative">
           <Search size={14} className="absolute left-2.5 top-2.5 text-slate-400" />
           <input value={filters.q} onChange={(e) => { setFilters((f) => ({ ...f, q: e.target.value })); setPage(0); }}
-            placeholder="搜尋事業名稱 / 管制編號" className="pl-8 pr-3 py-1.5 border border-slate-300 rounded-lg w-56 text-sm outline-none focus:border-blue-400" />
+            placeholder="搜尋事業名稱 / 管制編號" className="pl-8 pr-3 h-10 border border-brand-line rounded-lg w-full sm:w-56 text-sm outline-none focus:border-brand" />
         </div>
         <select value={filters.city} onChange={(e) => { setFilters((f) => ({ ...f, city: e.target.value })); setPage(0); }} className="border border-slate-300 rounded-lg px-2 py-1.5 text-sm bg-white">
           <option value="">全部縣市</option>{cityOptions.map((c) => <option key={c}>{c}</option>)}
@@ -566,7 +574,7 @@ export default function CarbonFeeDashboard() {
       </div>
 
       {/* KPI */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+      <div className="flex lg:grid lg:grid-cols-5 gap-3 overflow-x-auto no-scrollbar snap-x -mx-3 px-3 lg:mx-0 lg:px-0 [&>*]:min-w-[62%] sm:[&>*]:min-w-[40%] lg:[&>*]:min-w-0 [&>*]:flex-shrink-0 lg:[&>*]:flex-shrink [&>*]:snap-start">
         <Kpi icon={Building2} label="核定計畫" value={kpi.count.toLocaleString()} unit="件" note={`含共同申請 ${kpi.joint} 件・參與事業 ${kpi.facilities} 家`} />
         <Kpi icon={Factory} label="基準年排放合計" value={fmtWan(kpi.base)} unit="萬公噸CO₂e" />
         <Kpi label="目標年指定目標合計" value={fmtWan(kpi.target)} unit="萬公噸CO₂e" note="目標年：119年（2030）" />
@@ -574,26 +582,14 @@ export default function CarbonFeeDashboard() {
         <Kpi icon={Users} label="A級（技術標竿）" value={kpi.tierA} unit="件" note={`佔 ${fmtPct(kpi.count ? kpi.tierA / kpi.count : null)}，其餘為 B級（達成效益）`} />
       </div>
 
-      {/* 產業 / 縣市 */}
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-        <Card title="產業別分布" subtitle="依廠計（共同申請各參與廠分別計入）・點長條篩選"
-          right={<Segmented value={industryMetric} onChange={setIndustryMetric} options={[{ value: 'count', label: '廠數' }, { value: 'base', label: '基準年排放' }]} />}>
-          <ErrorBoundary>
-            <RankBar data={industryData} metric={industryMetric} selected={filters.industry} onSelect={(v) => toggle('industry', v)}
-              valueFormatter={industryMetric === 'base' ? fmtWan : undefined} />
-          </ErrorBoundary>
-          {industryMetric === 'base' && <p className="text-[10px] text-slate-400 mt-1 text-right">單位：萬公噸CO₂e</p>}
-        </Card>
-        <Card title="縣市分布" subtitle="依廠址・點長條篩選"
-          right={<Segmented value={cityMetric} onChange={setCityMetric} options={[{ value: 'count', label: '廠數' }, { value: 'base', label: '基準年排放' }]} />}>
-          <ErrorBoundary>
-            <RankBar data={cityData} metric={cityMetric} selected={filters.city} onSelect={(v) => toggle('city', v)} labelWidth={70}
-              valueFormatter={cityMetric === 'base' ? fmtWan : undefined} />
-          </ErrorBoundary>
-          {cityMetric === 'base' && <p className="text-[10px] text-slate-400 mt-1 text-right">單位：萬公噸CO₂e</p>}
-        </Card>
+      {/* 分頁 */}
+      <div role="tablist" aria-label="碳費分頁" className="card flex overflow-x-auto no-scrollbar px-2 md:px-4">
+        {CF_TABS.map(({ id, label }) => (
+          <button key={id} role="tab" aria-selected={cfTab === id} onClick={() => setCfTab(id)} className={`tab-btn ${cfTab === id ? 'tab-btn-on' : ''}`}>{label}</button>
+        ))}
       </div>
 
+      {cfTab === 'overview' && (<>
       {/* 散佈圖 / 規模 */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
         <Card className="xl:col-span-2" title="排放規模 vs 承諾減量率" subtitle="每個點是一件計畫・橫軸為對數刻度・點擊看明細">
@@ -646,6 +642,88 @@ export default function CarbonFeeDashboard() {
         </Card>
       </div>
 
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+        <Card title="核定計畫累積件數" subtitle="依計畫生效日（執行期間起日）">
+          <div className="h-[260px]">
+            <ErrorBoundary>
+              <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
+                <AreaChart data={cumulative} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <CartesianGrid vertical={false} stroke={GRID} strokeDasharray="3 3" />
+                  <XAxis dataKey="month" tick={AXIS_TICK} axisLine={false} tickLine={false} />
+                  <YAxis tick={AXIS_TICK} axisLine={false} tickLine={false} allowDecimals={false} />
+                  <Tooltip content={({ active, payload, label }) => active && payload?.length ? (
+                    <TipBox title={label} rows={[['當月新增', `${payload[0].payload.added} 件`], ['累積', `${payload[0].payload.total} 件`, BAR_BLUE]]} />
+                  ) : null} />
+                  <Area type="stepAfter" dataKey="total" stroke={BAR_BLUE} strokeWidth={2} fill={BAR_BLUE} fillOpacity={0.12} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </ErrorBoundary>
+          </div>
+        </Card>
+        <Card title="資料更新紀錄" subtitle="每次爬蟲與官網比對出的異動">
+          <div className="space-y-3 max-h-[280px] overflow-y-auto pr-1 text-xs">
+            {runsWithChanges.length === 0 && <p className="text-slate-400">尚無紀錄</p>}
+            {runsWithChanges.map((r) => (
+              <div key={r.id} className="border-l-2 border-slate-200 pl-3">
+                <div className="font-bold text-slate-700">{new Date(r.started_at).toLocaleString('zh-TW', { dateStyle: 'medium', timeStyle: 'short' })}</div>
+                {r.initial ? (
+                  <p className="text-slate-500">首次建檔：{r.plan_count} 件計畫、{r.facility_count} 家事業、{r.measure_count} 筆措施</p>
+                ) : (
+                  <>
+                    <p className="text-slate-500">新增 {r.new_count}・下架 {r.removed_count}・內容變更 {r.updated_count}（共 {r.plan_count} 件）</p>
+                    <ul className="mt-1 space-y-0.5">
+                      {r.changes.slice(0, 8).map((c) => (
+                        <li key={c.id} className="text-slate-600 truncate" title={`${c.plan_name} ${c.field || ''}`}>
+                          <span className={`inline-block w-10 text-[10px] font-bold ${c.change_type === 'new' ? 'text-emerald-600' : c.change_type === 'removed' ? 'text-rose-600' : 'text-amber-600'}`}>
+                            {{ new: '新增', removed: '下架', restored: '恢復', updated: '變更' }[c.change_type]}
+                          </span>
+                          <button className="hover:underline" onClick={() => setSelectedId(c.control_no)}>{truncate(c.plan_name, 18)}</button>
+                        </li>
+                      ))}
+                      {r.changes.length > 8 && <li className="text-slate-400">…另 {r.changes.length - 8} 筆</li>}
+                    </ul>
+                  </>
+                )}
+                {r.note && <p className="text-amber-600 mt-0.5">{r.note}</p>}
+              </div>
+            ))}
+          </div>
+        </Card>
+      </div>
+      </>)}
+
+      {cfTab === 'rank' && (<>
+      {/* 產業 / 縣市 */}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+        <Card title="產業別分布" subtitle="依廠計（共同申請各參與廠分別計入）・點長條篩選"
+          right={<Segmented value={industryMetric} onChange={setIndustryMetric} options={[{ value: 'count', label: '廠數' }, { value: 'base', label: '基準年排放' }]} />}>
+          <ErrorBoundary>
+            <RankBar data={industryData} metric={industryMetric} selected={filters.industry} onSelect={(v) => toggle('industry', v)}
+              valueFormatter={industryMetric === 'base' ? fmtWan : undefined} />
+          </ErrorBoundary>
+          {industryMetric === 'base' && <p className="text-[10px] text-slate-400 mt-1 text-right">單位：萬公噸CO₂e</p>}
+        </Card>
+        <Card title="縣市分布" subtitle="依廠址・點長條篩選"
+          right={<Segmented value={cityMetric} onChange={setCityMetric} options={[{ value: 'count', label: '廠數' }, { value: 'base', label: '基準年排放' }]} />}>
+          <ErrorBoundary>
+            <RankBar data={cityData} metric={cityMetric} selected={filters.city} onSelect={(v) => toggle('city', v)} labelWidth={70}
+              valueFormatter={cityMetric === 'base' ? fmtWan : undefined} />
+          </ErrorBoundary>
+          {cityMetric === 'base' && <p className="text-[10px] text-slate-400 mt-1 text-right">單位：萬公噸CO₂e</p>}
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+        <Card title="公司別基準年排放 Top 10" subtitle="同公司多廠/多件計畫合併">
+          <ErrorBoundary>
+            <RankBar data={companyData} metric="base" labelWidth={130} valueFormatter={fmtWan} />
+          </ErrorBoundary>
+          <p className="text-[10px] text-slate-400 mt-1 text-right">單位：萬公噸CO₂e</p>
+        </Card>
+      </div>
+      </>)}
+
+      {cfTab === 'measure' && (<>
       {/* 措施趨勢 / 熱力圖 */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         <Card title="逐年減量措施類型" subtitle="各年度有列出該類措施的計畫比例（一筆措施可屬多類）"
@@ -717,67 +795,33 @@ export default function CarbonFeeDashboard() {
         </Card>
       </div>
 
-      {/* 核定進度 / 公司 / 異動 */}
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-        <Card title="核定計畫累積件數" subtitle="依計畫生效日（執行期間起日）">
-          <div className="h-[260px]">
-            <ErrorBoundary>
-              <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
-                <AreaChart data={cumulative} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                  <CartesianGrid vertical={false} stroke={GRID} strokeDasharray="3 3" />
-                  <XAxis dataKey="month" tick={AXIS_TICK} axisLine={false} tickLine={false} />
-                  <YAxis tick={AXIS_TICK} axisLine={false} tickLine={false} allowDecimals={false} />
-                  <Tooltip content={({ active, payload, label }) => active && payload?.length ? (
-                    <TipBox title={label} rows={[['當月新增', `${payload[0].payload.added} 件`], ['累積', `${payload[0].payload.total} 件`, BAR_BLUE]]} />
-                  ) : null} />
-                  <Area type="stepAfter" dataKey="total" stroke={BAR_BLUE} strokeWidth={2} fill={BAR_BLUE} fillOpacity={0.12} />
-                </AreaChart>
-              </ResponsiveContainer>
-            </ErrorBoundary>
-          </div>
-        </Card>
-        <Card title="公司別基準年排放 Top 10" subtitle="同公司多廠/多件計畫合併">
-          <ErrorBoundary>
-            <RankBar data={companyData} metric="base" labelWidth={130} valueFormatter={fmtWan} />
-          </ErrorBoundary>
-          <p className="text-[10px] text-slate-400 mt-1 text-right">單位：萬公噸CO₂e</p>
-        </Card>
-        <Card title="資料更新紀錄" subtitle="每次爬蟲與官網比對出的異動">
-          <div className="space-y-3 max-h-[280px] overflow-y-auto pr-1 text-xs">
-            {runsWithChanges.length === 0 && <p className="text-slate-400">尚無紀錄</p>}
-            {runsWithChanges.map((r) => (
-              <div key={r.id} className="border-l-2 border-slate-200 pl-3">
-                <div className="font-bold text-slate-700">{new Date(r.started_at).toLocaleString('zh-TW', { dateStyle: 'medium', timeStyle: 'short' })}</div>
-                {r.initial ? (
-                  <p className="text-slate-500">首次建檔：{r.plan_count} 件計畫、{r.facility_count} 家事業、{r.measure_count} 筆措施</p>
-                ) : (
-                  <>
-                    <p className="text-slate-500">新增 {r.new_count}・下架 {r.removed_count}・內容變更 {r.updated_count}（共 {r.plan_count} 件）</p>
-                    <ul className="mt-1 space-y-0.5">
-                      {r.changes.slice(0, 8).map((c) => (
-                        <li key={c.id} className="text-slate-600 truncate" title={`${c.plan_name} ${c.field || ''}`}>
-                          <span className={`inline-block w-10 text-[10px] font-bold ${c.change_type === 'new' ? 'text-emerald-600' : c.change_type === 'removed' ? 'text-rose-600' : 'text-amber-600'}`}>
-                            {{ new: '新增', removed: '下架', restored: '恢復', updated: '變更' }[c.change_type]}
-                          </span>
-                          <button className="hover:underline" onClick={() => setSelectedId(c.control_no)}>{truncate(c.plan_name, 18)}</button>
-                        </li>
-                      ))}
-                      {r.changes.length > 8 && <li className="text-slate-400">…另 {r.changes.length - 8} 筆</li>}
-                    </ul>
-                  </>
-                )}
-                {r.note && <p className="text-amber-600 mt-0.5">{r.note}</p>}
-              </div>
-            ))}
-          </div>
-        </Card>
-      </div>
+      </>)}
 
+      {cfTab === 'table' && (<>
       {/* 明細表 */}
       <Card title={`計畫明細（${plans.length} 件）`}
         subtitle={[filters.city, filters.industry, filters.tier && `${filters.tier}級`, scaleLabel, filters.q && `「${filters.q}」`].filter(Boolean).join('・') || '點欄位標題排序・點列查看逐年措施'}>
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs">
+        {/* 手機版：卡片列表 */}
+        <div className="md:hidden space-y-2.5">
+          <Segmented value={sort.key} onChange={(k) => { setSort({ key: k, dir: 'desc' }); setPage(0); }}
+            options={[{ value: 'total_base_emission', label: '依基準年排放' }, { value: 'rate', label: '依減量率' }, { value: 'measureCount', label: '依措施數' }]} />
+          {pageRows.map((p) => (
+            <button key={p.control_no} onClick={() => setSelectedId(p.control_no)} className="w-full text-left rounded-xl border border-brand-line p-3 active:bg-brand-soft space-y-2">
+              <div className="flex items-start gap-2">
+                <TierBadge tier={p.tier} />
+                <span className="font-bold text-sm leading-snug flex-1">{p.plan_name}</span>
+              </div>
+              <div className="text-xs text-brand-muted">{p.city || '—'} · {truncate(p.industry, 16) || '—'}{p.is_joint ? ` · 共同 ${p.participant_count}` : ''}</div>
+              <div className="grid grid-cols-3 gap-2">
+                <div><div className="text-[11px] text-brand-muted">基準年（萬噸）</div><div className="num font-bold text-sm">{fmtWan(p.total_base_emission)}</div></div>
+                <div><div className="text-[11px] text-brand-muted">目標年（萬噸）</div><div className="num font-bold text-sm">{fmtWan(p.total_target_emission)}</div></div>
+                <div><div className="text-[11px] text-brand-muted">減量率</div><div className="num font-extrabold text-base text-brand">{fmtPct(p.rate)}</div></div>
+              </div>
+            </button>
+          ))}
+        </div>
+        <div className="hidden md:block overflow-x-auto">
+          <table className="w-full text-sm">
             <thead className="bg-slate-50 text-slate-500 text-left">
               <tr>
                 <SortTh k="control_no">管制編號</SortTh>
@@ -814,9 +858,9 @@ export default function CarbonFeeDashboard() {
         <div className="flex items-center justify-between mt-3 text-xs text-slate-500">
           <span>單位：公噸CO₂e</span>
           <div className="flex items-center gap-2">
-            <button disabled={page === 0} onClick={() => setPage((x) => x - 1)} className="px-2 py-1 rounded border border-slate-200 disabled:opacity-40">上一頁</button>
+            <button disabled={page === 0} onClick={() => setPage((x) => x - 1)} className="h-10 px-4 rounded-lg border border-brand-line disabled:opacity-40">上一頁</button>
             <span>{page + 1} / {pageCount}</span>
-            <button disabled={page >= pageCount - 1} onClick={() => setPage((x) => x + 1)} className="px-2 py-1 rounded border border-slate-200 disabled:opacity-40">下一頁</button>
+            <button disabled={page >= pageCount - 1} onClick={() => setPage((x) => x + 1)} className="h-10 px-4 rounded-lg border border-brand-line disabled:opacity-40">下一頁</button>
           </div>
         </div>
       </Card>
@@ -825,6 +869,8 @@ export default function CarbonFeeDashboard() {
         說明：減量率 =（基準年排放 − 目標年指定目標）÷ 基準年排放，以計畫整體（共同申請為各參與事業合計）計算。
         產業別取各廠第一個登記行業；減量方式依官網原文歸入四大類。措施代號由各計畫自編，跨公司不可比較。
       </p>
+
+      </>)}
 
       {selectedPlan && <PlanDrawer key={selectedPlan.control_no} plan={selectedPlan} onClose={() => setSelectedId(null)} />}
     </div>
