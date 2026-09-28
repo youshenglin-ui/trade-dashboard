@@ -1315,11 +1315,11 @@ const CcusDashboard = () => {
                     </select>
                 </div>
                 <div role="tablist" aria-label="CCUS 分頁" className="flex overflow-x-auto no-scrollbar px-2 md:px-4 mt-1 border-t border-brand-line">
-                    {CCUS_TABS.map(({ id, label, icon: TabIcon }) => (
+                    {CCUS_TABS.map(({ id, label, icon }) => { const TabIcon = icon; return (
                         <button key={id} role="tab" aria-selected={activeTab === id} onClick={() => setActiveTab(id)} className={`tab-btn ${activeTab === id ? 'tab-btn-on' : ''}`}>
                             <TabIcon size={17}/> {label}
                         </button>
-                    ))}
+                    ); })}
                 </div>
             </div>
 
