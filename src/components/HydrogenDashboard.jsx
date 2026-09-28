@@ -1116,6 +1116,16 @@ const HydrogenDashboard = () => {
       };
   }, [supplyData, demandData]);
 
+  // 散佈圖實際寬度（用來估算名稱標籤是否重疊）
+  const [scatterW, setScatterW] = useState(560);
+  const scatterRO = useRef(null);
+  const scatterBoxRef = (el) => {
+      if (scatterRO.current) { scatterRO.current.disconnect(); scatterRO.current = null; }
+      if (!el) return;
+      scatterRO.current = new ResizeObserver(([e]) => setScatterW(Math.round(e.contentRect.width)));
+      scatterRO.current.observe(el);
+  };
+
   const efficiencyChartData = useMemo(() => {
       const plantMap = {};
       filteredSupply.forEach(d => {
@@ -1130,8 +1140,27 @@ const HydrogenDashboard = () => {
           if (currentIntensity > 0) plantMap[key].intensity = currentIntensity; 
           plantMap[key].total_emission += (cleanNumber(d.Output_Tons) || 0) * currentIntensity;
       });
-      return Object.values(plantMap).filter(d => d.output > 0 && d.intensity > 0);
-  }, [filteredSupply]);
+      const plants = Object.values(plantMap).filter(d => d.output > 0 && d.intensity > 0);
+      // 名稱標籤避免重疊：以近似繪圖區尺寸（對數 X 軸、Y 軸 0-16）估算標籤位置，
+      // 依總排放量由大到小放置，與已放置標籤相撞者不顯示名稱（滑到點上仍可從 tooltip 看到）
+      const PLOT_W = Math.max(200, scatterW - 140), PLOT_H = 220;
+      const logs = plants.map(d => Math.log10(d.output));
+      const lo = Math.min(...logs), hi = Math.max(...logs);
+      const span = hi - lo || 1;
+      const placed = [];
+      [...plants].sort((a, b) => b.total_emission - a.total_emission).forEach(d => {
+          const cx = ((Math.log10(d.output) - lo) / span) * PLOT_W;
+          const cy = (1 - d.intensity / 16) * PLOT_H - 16;
+          // Recharts 會在空白處換行，取最長一段當寬度、兩行高
+          const parts = String(d.name).split(/\s+/);
+          const w = Math.max(...parts.map(t => t.length)) * 11 + 8, h = parts.length > 1 ? 28 : 14;
+          const box = { x1: cx - w / 2, x2: cx + w / 2, y1: cy - h / 2, y2: cy + h / 2 };
+          const hit = placed.some(b => box.x1 < b.x2 && box.x2 > b.x1 && box.y1 < b.y2 && box.y2 > b.y1);
+          d.label = hit ? '' : d.name;
+          if (!hit) placed.push(box);
+      });
+      return plants;
+  }, [filteredSupply, scatterW]);
 
   if (loading) return <div className="p-10 text-center animate-pulse text-blue-600 flex flex-col items-center"><RefreshCw className="animate-spin mb-2"/> 氫能資料載入中...</div>;
 
@@ -1210,24 +1239,21 @@ const HydrogenDashboard = () => {
                      <h3 className="font-bold text-slate-800 text-base mb-4 border-b pb-2 flex items-center gap-2"><Leaf size={14}/> 碳排強度矩陣 (產量 Log Scale) & 產能對照 ({selectedYear})</h3>
                      <div className="flex-1 min-h-0 flex flex-col lg:flex-row gap-4 w-full relative">
                          
-                         <div className="w-full lg:flex-1 h-[380px] lg:h-full relative border border-slate-100 rounded-lg p-2 bg-slate-50/50 min-h-0">
-                            {/* 左側散點圖提示框 */}
-                            <div className="absolute top-2 right-4 flex flex-col gap-1 text-[10px] text-slate-500 bg-white/80 p-2 rounded z-10 border border-slate-100 shadow-sm">
-                                <div className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-500"></span>主產氫</div>
-                                <div className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-purple-500"></span>副產氫</div>
-                                <div className="mt-1 pt-1 border-t border-slate-200">圓點大小 = 總碳排量</div>
+                         <div className="w-full lg:flex-1 h-[420px] lg:h-full flex flex-col border border-slate-100 rounded-lg p-2 bg-slate-50/50 min-h-0">
+                            {/* 圖例移到圖表上方，不再蓋住資料點 */}
+                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-1 pb-1 text-[11px] text-slate-500">
+                                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-500"></span>主產氫</span>
+                                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-purple-500"></span>副產氫</span>
+                                <span>圓點大小 = 總碳排量</span>
+                                <span className="flex items-center gap-1"><span className="w-3 h-0 border-t border-slate-400 border-dashed"></span>12-13 天然氣重組</span>
+                                <span className="flex items-center gap-1"><span className="w-3 h-0 border-t border-slate-400 border-dashed"></span>11-12 甲醇裂解</span>
+                                <span className="flex items-center gap-1"><span className="w-3 h-0 border-t border-slate-500 border-dashed"></span>6.9 NG+PSA</span>
+                                <span className="text-slate-400">名稱相近時僅標示排放量較大者，其餘移到點上查看</span>
                             </div>
-                            
-                            <div className="absolute top-2 left-16 flex flex-col gap-0.5 text-[9px] text-slate-400 bg-white/80 p-1.5 rounded z-10 border border-slate-100 shadow-sm">
-                                <div className="font-bold text-slate-600 mb-0.5">碳排基準對照 (kg CO₂e)</div>
-                                <div className="flex items-center gap-1"><span className="w-3 h-0 border-t border-slate-400 border-dashed"></span>12-13 天然氣重組</div>
-                                <div className="flex items-center gap-1"><span className="w-3 h-0 border-t border-slate-400 border-dashed"></span>11-12 甲醇裂解</div>
-                                <div className="flex items-center gap-1"><span className="w-3 h-0 border-t border-slate-500 border-dashed"></span>6.9 NG+PSA</div>
-                            </div>
-
+                            <div ref={scatterBoxRef} className="flex-1 min-h-0">
                             <ErrorBoundary>
                                 <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
-                                    <ScatterChart margin={{top:30, right:30, bottom:30, left:20}}>
+                                    <ScatterChart margin={{top:24, right:56, bottom:30, left:20}}>
                                         <CartesianGrid strokeDasharray="3 3"/>
                                         <XAxis type="number" dataKey="output" name="產量" unit="萬噸" scale="log" domain={['auto', 'auto']} tick={{fontSize:10, fill:'#64748b'}}>
                                             <Label value="產量 (萬噸) - 指數級距" offset={-20} position="insideBottom" fontSize={11} fill="#475569" fontWeight="bold"/>
@@ -1260,7 +1286,7 @@ const HydrogenDashboard = () => {
                                             }}
                                         />
                                         <Scatter name="廠區" data={efficiencyChartData}>
-                                            <LabelList dataKey="name" position="top" style={{fontSize:10, fill:'#475569', fontWeight: 'bold'}} />
+                                            <LabelList dataKey="label" position="top" style={{fontSize:10, fill:'#475569', fontWeight: 'bold'}} />
                                             {efficiencyChartData.map((entry, index) => (
                                                 <Cell key={`cell-${index}`} fill={entry.processType === '主產' ? '#3b82f6' : '#a855f7'} fillOpacity={0.7} stroke="white" strokeWidth={1}/>
                                             ))}
@@ -1268,14 +1294,19 @@ const HydrogenDashboard = () => {
                                     </ScatterChart>
                                 </ResponsiveContainer>
                             </ErrorBoundary>
+                            </div>
                          </div>
                          
                          <div className="w-full lg:flex-1 h-[420px] lg:h-full border border-slate-100 rounded-lg p-2 min-h-0 relative overflow-x-auto no-scrollbar lg:overflow-visible"><div className="h-full min-w-[640px] lg:min-w-0">
                             <ErrorBoundary>
                                 <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
-                                     <ComposedChart data={efficiencyChartData} margin={{top:20, right:30, bottom:40, left:0}}>
+                                     <ComposedChart data={efficiencyChartData} margin={{top:20, right:30, bottom:10, left:0}}>
                                          <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                                         <XAxis dataKey="name" angle={-35} textAnchor="end" height={60} tick={{fontSize:10, fill:'#64748b'}} interval={0}/>
+                                         <XAxis dataKey="name" height={104} interval={0}
+                                             tick={({ x, y, payload }) => {
+                                                 const t = String(payload.value).replace(/\s+/g, '');
+                                                 return <text x={x} y={y + 6} transform={`rotate(-90 ${x} ${y + 6})`} dy={4} textAnchor="end" fontSize={10} fill="#64748b">{t.length > 9 ? `${t.slice(0, 9)}…` : t}</text>;
+                                             }}/>
                                          <YAxis yAxisId="left" tick={{fontSize:10, fill:'#64748b'}}/>
                                          <YAxis yAxisId="right" orientation="right" domain={[0, 16]} tick={{fontSize:10, fill:'#64748b'}}/>
                                          <Tooltip contentStyle={{fontSize:'12px', borderRadius:'8px'}}/>
@@ -1283,9 +1314,9 @@ const HydrogenDashboard = () => {
                                          
                                          {/* 右側同時包含製程與國家標準基準線 */}
                                          <ReferenceLine yAxisId="right" y={12.5} stroke="#94a3b8" strokeDasharray="3 3" label={{ position: 'insideTopLeft', value: '天然氣重組 (12-13)', fill: '#64748b', fontSize: 9 }} />
-                                         <ReferenceLine yAxisId="right" y={11.5} stroke="#94a3b8" strokeDasharray="3 3" label={{ position: 'insideBottomLeft', value: '甲醇裂解 (11-12)', fill: '#64748b', fontSize: 9 }} />
+                                         <ReferenceLine yAxisId="right" y={11.5} stroke="#94a3b8" strokeDasharray="3 3" label={{ position: 'insideBottomRight', value: '甲醇裂解 (11-12)', fill: '#64748b', fontSize: 9 }} />
                                          <ReferenceLine yAxisId="right" y={6.9} stroke="#64748b" strokeDasharray="3 3" label={{ position: 'insideTopLeft', value: 'NG+PSA (6.9)', fill: '#475569', fontSize: 9 }} />
-                                         <ReferenceLine yAxisId="right" y={4.0} stroke="#10b981" strokeDasharray="3 3" label={{ position: 'insideTopLeft', value: '美/韓標準 (4.0)', fill: '#059669', fontSize: 9 }} />
+                                         <ReferenceLine yAxisId="right" y={4.0} stroke="#10b981" strokeDasharray="3 3" label={{ position: 'insideTopRight', value: '美/韓標準 (4.0)', fill: '#059669', fontSize: 9 }} />
                                          <ReferenceLine yAxisId="right" y={3.4} stroke="#059669" strokeDasharray="3 3" label={{ position: 'insideBottomLeft', value: '日(3.4)/歐(3.38)', fill: '#047857', fontSize: 9 }} />
 
                                          <Bar yAxisId="left" dataKey="output" name="產量 (萬噸)" fill="#3b82f6" barSize={20} radius={[2,2,0,0]}/>

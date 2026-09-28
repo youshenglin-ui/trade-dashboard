@@ -626,7 +626,13 @@ export default function CarbonFeeDashboard() {
               <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                 <BarChart data={scaleData} margin={{ top: 20, right: 10, left: -10, bottom: 0 }}>
                   <CartesianGrid vertical={false} stroke={GRID} strokeDasharray="3 3" />
-                  <XAxis dataKey="short" tick={{ ...AXIS_TICK, fontSize: 10 }} axisLine={false} tickLine={false} interval={0} />
+                  <XAxis dataKey="short" axisLine={false} tickLine={false} interval={0} height={36}
+                    tick={({ x, y, payload }) => (
+                      <text x={x} y={y + 12} textAnchor="middle" fontSize={11} fill={AXIS_TICK.fill}>
+                        <tspan x={x}>{String(payload.value).replace('萬', '')}</tspan>
+                        <tspan x={x} dy={13} fontSize={10}>萬噸</tspan>
+                      </text>
+                    )} />
                   <YAxis tick={AXIS_TICK} axisLine={false} tickLine={false} allowDecimals={false} />
                   <Tooltip cursor={{ fill: '#f1f5f9' }} content={({ active, payload }) => active && payload?.length ? (
                     <TipBox title={payload[0].payload.name} rows={[['計畫數', `${payload[0].payload.count} 件`], ['基準年排放', fmtTon(payload[0].payload.base)]]} />
