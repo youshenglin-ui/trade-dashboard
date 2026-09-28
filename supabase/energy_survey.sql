@@ -342,7 +342,8 @@ select m.product,
        sum(t.weight_kg) as weight_kg,
        case when sum(t.weight_kg) > 0 then sum(t.value_ntd_thousand) * 1000 / sum(t.weight_kg) end as unit_price_usd_per_kg
 from ccus_product_hs_map m
-join trade_records t on t.hs_code like m.hs_code || '%' and t.source = 'active'
+-- 用區間比對（稅號皆為數字）才吃得到 idx_trade_hs_code；LIKE 前綴在非 C collation 下會全表掃描、anon 逾時
+join trade_records t on t.hs_code between m.hs_code and m.hs_code || '9999999999' and t.source = 'active'
 where m.hs_code is not null
 group by m.product, m.hs_code, m.trade_name, substr(t.period, 1, 4), t.flow_type;
 
