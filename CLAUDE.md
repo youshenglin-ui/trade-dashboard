@@ -36,8 +36,14 @@
    仍讀 `public/data/hydrogen`、`public/data/ccus` 本地 CSV。
    已知效能限制：前端目前是「全量抓取 45 萬列再篩選」，載入約 40-50 秒，比原本讀本地 CSV
    還慢，下一步要把篩選/聚合邏輯搬進資料庫查詢（RPC）才能真正做到快速查詢。
-2. **地圖**：CCUS 戰情室現有的手刻 SVG 地圖（座標寫死、手算縮放）之後要換成 MapLibre GL JS
-   （向量地圖、原生支援縮放時標籤密度自動調整），目前尚未動工。
+2. **地圖**：2026-09-28 起 CCUS 與氫能地圖已改用 MapLibre GL JS。共用底圖 `src/components/map/MapLibreBase.jsx`
+   （動態 import maplibre-gl；底圖 OpenFreeMap positron，樣式 JSON 自己抓並有逾時，失敗就退回「純色底＋縣市界」
+   備援樣式）、常數與 GeoJSON 小工具在 `src/components/map/mapUtils.js`（`REGION_BOUNDS` 北中南東範圍）。
+   縣市界已簡化並放在 `public/data/tw-county.geo.json`，拉丁字 glyph 放在 `public/fonts`——**不要改回依賴外部
+   字型／sprite**：這些請求若卡住，MapLibre 會一直等而整層圖層畫不出來（已踩過）。中文字由瀏覽器本機字型繪製。
+   資料都轉成 GeoJSON 圖層、標籤交給 MapLibre 自動避讓；CCUS 的拖曳（樞紐、聚落、管線節點、海運/陸運控制點）、
+   點管線新增節點、點節點開選單、右鍵刪除都在 `CcusDashboard.jsx` 的 `TaiwanCcusMap` 用 map 事件實作
+   （事件只註冊一次，透過 `stateRef` 取最新資料）。無頭瀏覽器測試需加 `--use-angle=swiftshader` 才有 WebGL。
 3. **響應式設計**：2026-09 起進行中，採「風格 B 淨零跨域」（色票與字型在 `tailwind.config.js` 的
    `brand` 與 `index.css` 的 `.card` / `.seg` / `.tab-btn`）。版面外框在 `src/components/layout/AppChrome.jsx`：
    電腦版左側功能列、手機版上方標題列 + 底部導覽列（貿易／氫能／CCUS／碳費／更多）。模組清單在
