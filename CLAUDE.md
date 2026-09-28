@@ -53,6 +53,8 @@
    `HydrogenDashboard.jsx` 的 `H2_TABS`）；碳費拆成四個分頁（總覽／產業與地區／減量措施／計畫明細，
    `CarbonFeeDashboard.jsx` 的 `CF_TABS`），手機版計畫明細為卡片、明細改為底部抽屜。地圖拖曳已改用 pointer
    事件，手機可單指平移。
+   可安裝到手機主畫面（PWA）：`public/manifest.webmanifest` + `public/icons/`（圖示由 `public/brand/nz-mark.png` 產生），
+   `index.html` 內有 apple-touch-icon 等 meta；目前沒有 service worker（避免舊版快取造成更新不到）。
 
 ## 碳費自主減量計畫模組（2026-09 新增）
 
