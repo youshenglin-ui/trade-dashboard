@@ -15,7 +15,7 @@ import {
   formatValueByUnit, getUnitLabel, formatCurrencyAxis, mapEventToDateKey, 
   exportToCSV, copyToClipboard
 } from '../utils/helpers';
-import { ErrorBoundary, CustomTimeTooltip, renderCustomizedLabel, KPICard, MultiSelectDropdown } from './SharedComponents';
+import { ErrorBoundary, CustomTimeTooltip, renderCustomizedLabel, KPICard, MultiSelectDropdown, Segmented, ScrollableChart } from './SharedComponents';
 
 const TradeDashboard = ({
   useRealData, dataset, setDataset, setDataHealth,
@@ -363,16 +363,13 @@ const TradeDashboard = ({
   // ** 3. Render Helpers **
   const renderOverviewTab = () => (
     <div className="space-y-6">
-        <div className="bg-white p-4 rounded-lg shadow-sm h-96 flex flex-col">
-            <div className="flex justify-between items-center mb-4">
-                <h3 className="font-bold text-slate-700">趨勢圖 A: {trendViewMode === 'summary' ? '金額與單價' : '國家佔比堆疊'}</h3>
-                <div className="flex bg-slate-100 p-1 rounded-md text-xs font-bold">
-                    <button onClick={() => setTrendViewMode('summary')} className={`px-2 py-1 rounded ${trendViewMode === 'summary' ? 'bg-white shadow text-blue-600' : 'text-slate-500'}`}>總量趨勢</button>
-                    <button onClick={() => setTrendViewMode('country_stack')} className={`px-2 py-1 rounded ${trendViewMode === 'country_stack' ? 'bg-white shadow text-blue-600' : 'text-slate-500'}`}>國家堆疊</button>
-                </div>
+        <div className="card p-4  h-96 flex flex-col">
+            <div className="flex flex-wrap justify-between items-center gap-2 mb-3">
+                <h3 className="text-base md:text-lg font-bold">趨勢圖 A：{trendViewMode === 'summary' ? '金額與單價' : '國家佔比堆疊'}</h3>
+                <Segmented value={trendViewMode} onChange={setTrendViewMode} options={[{ value: 'summary', label: '總量趨勢' }, { value: 'country_stack', label: '國家堆疊' }]} />
             </div>
-            
-            <div className="flex-1 min-h-0 relative w-full">
+            <p className="md:hidden text-xs text-brand-muted -mt-1 mb-2">期數多時可左右滑動圖表 · 點圖看當期數值</p>
+            <ScrollableChart points={aggregatedData.length} className="flex-1 min-h-0 relative w-full">
                 <ResponsiveContainer width="100%" height="100%">
                 {trendViewMode === 'summary' ? (
                     <ComposedChart data={aggregatedData}>
@@ -382,10 +379,10 @@ const TradeDashboard = ({
                         <YAxis yAxisId="right" orientation="right" tickFormatter={(val) => val.toFixed(1)} tick={{fontSize: 11}} unit=" $"/>
                         <Tooltip content={<CustomTimeTooltip />} />
                         <Legend />
-                        <Bar yAxisId="left" dataKey="exportValue" name="出口金額" fill="#3b82f6" />
-                        <Bar yAxisId="left" dataKey="importValue" name="進口金額" fill="#10b981" />
-                        <Line yAxisId="right" type="monotone" dataKey="avgExportPrice" name="出口單價" stroke="#f59e0b" strokeWidth={2} dot={false} />
-                        <Line yAxisId="right" type="monotone" dataKey="avgImportPrice" name="進口單價" stroke="#8b5cf6" strokeWidth={2} dot={false} />
+                        <Bar yAxisId="left" dataKey="exportValue" name="出口金額" fill="#2a5ee8" />
+                        <Bar yAxisId="left" dataKey="importValue" name="進口金額" fill="#0fb3d1" />
+                        <Line yAxisId="right" type="monotone" dataKey="avgExportPrice" name="出口單價" stroke="#f2994a" strokeWidth={2} dot={false} />
+                        <Line yAxisId="right" type="monotone" dataKey="avgImportPrice" name="進口單價" stroke="#7b61ff" strokeWidth={2} dot={false} />
                         {GLOBAL_EVENTS.map((event, i) => (
                         <ReferenceLine key={i} x={mapEventToDateKey(event.date, granularity)} yAxisId="left" stroke="red" strokeDasharray="3 3" label={{ position: 'top', value: '!', fill: 'red', fontSize: 10 }} />
                         ))}
@@ -403,15 +400,15 @@ const TradeDashboard = ({
                     </BarChart>
                 )}
                 </ResponsiveContainer>
-            </div>
+            </ScrollableChart>
         </div>
 
-        <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm h-80 flex flex-col">
-            <h3 className="text-sm font-bold text-slate-700 mb-4 flex items-center gap-2">
-                <Database size={16} className="text-emerald-500"/>
-                趨勢圖 B: 進出口量體 (重量比較)
+        <div className="card p-3 md:p-4 h-80 flex flex-col">
+            <h3 className="text-base md:text-lg font-bold mb-3 flex items-center gap-2">
+                <Database size={17} className="text-brand-cyan"/>
+                趨勢圖 B：進出口量體（重量比較）
             </h3>
-            <div className="flex-1 min-h-0 relative w-full">
+            <ScrollableChart points={aggregatedData.length} className="flex-1 min-h-0 relative w-full">
                 <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={aggregatedData} barGap={0}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} />
@@ -419,11 +416,11 @@ const TradeDashboard = ({
                     <YAxis tickFormatter={formatSmartWeight} label={{ value: '重量(KG/MT)', angle: -90, position: 'insideLeft', style: {fontSize: 11, fill: '#64748b'} }} tick={{fontSize: 11}} />
                     <Tooltip content={<CustomTimeTooltip />} />
                     <Legend wrapperStyle={{fontSize: '12px'}}/>
-                    <Bar dataKey="exportWeight" name="出口重量" fill="#8884d8" fillOpacity={0.8} />
-                    <Bar dataKey="importWeight" name="進口重量" fill="#82ca9d" fillOpacity={0.8} />
+                    <Bar dataKey="exportWeight" name="出口重量" fill="#2a5ee8" fillOpacity={0.8} />
+                    <Bar dataKey="importWeight" name="進口重量" fill="#0fb3d1" fillOpacity={0.8} />
                 </BarChart>
                 </ResponsiveContainer>
-            </div>
+            </ScrollableChart>
         </div>
     </div>
   );
@@ -431,28 +428,19 @@ const TradeDashboard = ({
   const renderCountryTab = () => (
       <div className="space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-4">
-            <div className="flex gap-4">
-                <div className="flex bg-slate-200 p-1 rounded-lg">
-                    {['出口', '進口', 'balance'].map(mode => (
-                        <button key={mode} onClick={() => setCountryViewType(mode)} className={`px-3 py-1.5 rounded-md text-sm font-bold transition-all ${countryViewType === mode ? 'bg-white shadow-sm text-blue-600' : 'text-slate-600'}`}>
-                            {mode === 'balance' ? '順逆差' : mode}
-                        </button>
-                    ))}
-                </div>
-                <select value={countryTopN} onChange={(e) => setCountryTopN(e.target.value)} className="border rounded px-2 text-sm"><option value="5">Top 5</option><option value="10">Top 10</option><option value="all">All</option></select>
-                <div className="flex items-center gap-2 text-sm text-slate-600 ml-2">
-                    <label className="flex items-center gap-1 cursor-pointer"><input type="radio" checked={countryMetric === 'value'} onChange={() => setCountryMetric('value')} className="text-blue-600"/> 金額</label>
-                    <label className="flex items-center gap-1 cursor-pointer"><input type="radio" checked={countryMetric === 'weight'} onChange={() => setCountryMetric('weight')} className="text-blue-600"/> 重量</label>
-                </div>
+            <div className="flex flex-wrap gap-2 md:gap-3">
+                <Segmented value={countryViewType} onChange={setCountryViewType} options={[{ value: '出口', label: '出口' }, { value: '進口', label: '進口' }, { value: 'balance', label: '順逆差' }]} />
+                <Segmented value={countryTopN} onChange={setCountryTopN} options={[{ value: '5', label: 'Top 5' }, { value: '10', label: 'Top 10' }, { value: 'all', label: '全部' }]} />
+                <Segmented value={countryMetric} onChange={setCountryMetric} options={[{ value: 'value', label: '金額' }, { value: 'weight', label: '重量' }]} />
             </div>
             <div className="flex gap-2">
-                <button onClick={() => copyToClipboard(pivotCountryData)} className="flex items-center gap-1 px-3 py-1.5 bg-white border border-slate-300 rounded text-sm hover:bg-slate-50 text-slate-700"><Copy size={14}/> 複製</button>
-                <button onClick={() => exportToCSV(pivotCountryData, `Country_Data_${countryViewType}`)} className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white rounded text-sm hover:bg-blue-700"><Download size={14}/> 下載</button>
+                <button onClick={() => copyToClipboard(pivotCountryData)} className="flex items-center gap-1 h-10 px-3.5 bg-white border border-brand-line rounded-lg text-sm hover:bg-slate-50"><Copy size={14}/> 複製</button>
+                <button onClick={() => exportToCSV(pivotCountryData, `Country_Data_${countryViewType}`)} className="flex items-center gap-1 h-10 px-3.5 bg-brand text-white rounded-lg text-sm font-bold hover:bg-brand-dark"><Download size={14}/> 下載</button>
             </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm h-80 flex flex-col">
+            <div className="card p-3 md:p-4 h-80 flex flex-col">
                 <h4 className="font-bold text-center mb-2">{countryViewType === 'balance' ? '貿易總額佔比 (依存度)' : '總量佔比'}</h4>
                 <div className="flex-1 min-h-0 relative w-full">
                     <ResponsiveContainer width="100%" height="100%">
@@ -465,7 +453,7 @@ const TradeDashboard = ({
                     </ResponsiveContainer>
                 </div>
             </div>
-            <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm h-80 flex flex-col">
+            <div className="card p-3 md:p-4 h-80 flex flex-col">
                 <h4 className="font-bold text-center mb-2">{countryViewType === 'balance' ? '順逆差趨勢' : '各國趨勢競賽'}</h4>
                 <div className="flex-1 min-h-0 relative w-full">
                     <ResponsiveContainer width="100%" height="100%">
@@ -485,9 +473,9 @@ const TradeDashboard = ({
         </div>
         
         {/* Country Table */}
-        <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden flex flex-col h-96">
+        <div className="card  overflow-hidden flex flex-col h-96">
             <div className="overflow-auto flex-1">
-                <table className="w-full text-sm text-left">
+                <table className="w-full text-sm text-left whitespace-nowrap">
                     <thead className="text-xs text-slate-500 uppercase bg-slate-50 border-b border-slate-200 sticky top-0">
                         <tr>
                             <th className="px-4 py-3">國家</th>
@@ -530,14 +518,14 @@ const TradeDashboard = ({
                 </div>
             </div>
             <div className="flex gap-2">
-                <button onClick={() => copyToClipboard(pivotMode === 'time' ? aggregatedData : pivotCountryData)} className="flex items-center gap-1 px-3 py-1.5 bg-white border border-slate-300 rounded text-sm hover:bg-slate-50 text-slate-700"><Copy size={14}/> 複製</button>
-                <button onClick={() => exportToCSV(pivotMode === 'time' ? aggregatedData : pivotCountryData, 'Trade_Pivot_Data')} className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white rounded text-sm hover:bg-blue-700"><Download size={14}/> 匯出</button>
+                <button onClick={() => copyToClipboard(pivotMode === 'time' ? aggregatedData : pivotCountryData)} className="flex items-center gap-1 h-10 px-3.5 bg-white border border-brand-line rounded-lg text-sm hover:bg-slate-50"><Copy size={14}/> 複製</button>
+                <button onClick={() => exportToCSV(pivotMode === 'time' ? aggregatedData : pivotCountryData, 'Trade_Pivot_Data')} className="flex items-center gap-1 h-10 px-3.5 bg-brand text-white rounded-lg text-sm font-bold hover:bg-brand-dark"><Download size={14}/> 匯出</button>
             </div>
         </div>
         
         <div className="flex-1 bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden flex flex-col">
             <div className="overflow-auto flex-1">
-                <table className="w-full text-sm text-left relative">
+                <table className="w-full text-sm text-left relative whitespace-nowrap">
                     <thead className="text-xs text-slate-500 uppercase bg-slate-100 border-b border-slate-200 sticky top-0 z-10">
                         <tr>
                             <th className="px-4 py-3 bg-slate-100">{pivotMode === 'time' ? `時間 (${granularity})` : '國家'}</th>
@@ -602,7 +590,7 @@ const TradeDashboard = ({
                     <p className="text-sm text-blue-700">分析前 5 大貿易國在資料庫中其他產品 (稅號) 的交易情況。</p>
                 </div>
                 {crossProductComparison.length > 0 ? (
-                    <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
+                    <div className="card overflow-hidden">
                         <table className="w-full text-xs text-left">
                             <thead className="bg-slate-50 border-b border-slate-200">
                                 <tr><th className="px-3 py-2">關聯產品 (稅號)</th><th className="px-3 py-2 text-right">對應貿易額</th></tr>
@@ -633,7 +621,7 @@ const TradeDashboard = ({
 
   const renderTopicOverview = () => (
       <div className="space-y-6">
-          <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+          <div className="card p-4 ">
               <div className="flex justify-between items-center mb-4">
                   <h4 className="font-bold text-slate-700">分類趨勢總覽</h4>
                   <div className="flex gap-4">
@@ -664,7 +652,7 @@ const TradeDashboard = ({
           </div>
           
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+              <div className="card p-4 ">
                   <h4 className="font-bold text-slate-700 mb-4">細項產品佔比 (Top 10)</h4>
                   <ResponsiveContainer width="100%" height={300}>
                       <PieChart>
@@ -676,9 +664,9 @@ const TradeDashboard = ({
                       </PieChart>
                   </ResponsiveContainer>
               </div>
-              <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 overflow-auto">
+              <div className="card p-4  overflow-auto">
                   <h4 className="font-bold text-slate-700 mb-4">清單產品明細</h4>
-                  <table className="w-full text-sm text-left">
+                  <table className="w-full text-sm text-left whitespace-nowrap">
                       <thead className="bg-slate-50"><tr><th className="p-2">代碼</th><th className="p-2">品名</th><th className="p-2 text-right">金額 ({getUnitLabel(currencyUnit)})</th><th className="p-2 text-right">重量</th></tr></thead>
                       <tbody>
                           {topicBreakdown.map((row, i) => (
@@ -709,54 +697,52 @@ const TradeDashboard = ({
   };
 
   return (
-    <div className="p-6 space-y-6 flex-1 overflow-auto">
-          {/* Header Controls for Trade Dashboard */}
-          <div className="flex flex-wrap items-center gap-3 bg-slate-50 p-2 rounded-lg mb-4">
-             <div className="flex items-center text-xs font-bold text-slate-500 uppercase"><Calendar size={14} className="mr-1"/> 範圍</div>
-             <select value={timeRange} onChange={(e) => setTimeRange(Number(e.target.value))} className="bg-white border rounded px-2 py-1 text-sm"><option value={12}>近 1 年</option><option value={36}>近 3 年</option><option value={60}>近 5 年</option><option value={120}>近 10 年</option></select>
-             <div className="w-px h-4 bg-slate-300 mx-1"></div>
-             <div className="flex items-center text-xs font-bold text-slate-500 uppercase"><MapIcon size={14} className="mr-1"/> 區域</div>
-             <select value={selectedRegion} onChange={(e) => setSelectedRegion(e.target.value)} className="bg-white border rounded px-2 py-1 text-sm font-bold text-blue-700">
+    <div className="px-4 md:px-7 py-4 md:py-5 space-y-4 md:space-y-5 flex-1 min-w-0">
+          {/* 全域篩選列：範圍 / 區域 / 粒度 */}
+          <div className="card px-3 md:px-4 py-3 flex flex-wrap items-center gap-x-5 gap-y-3">
+             <div className="flex items-center gap-2 max-w-full">
+               <span className="text-xs font-bold text-brand-muted flex items-center gap-1 flex-shrink-0"><Calendar size={14}/> 範圍</span>
+               <div className="overflow-x-auto no-scrollbar"><Segmented value={timeRange} onChange={setTimeRange} options={[{ value: 12, label: '近 1 年' }, { value: 36, label: '近 3 年' }, { value: 60, label: '近 5 年' }, { value: 120, label: '近 10 年' }]} /></div>
+             </div>
+             <div className="flex items-center gap-2">
+               <span className="text-xs font-bold text-brand-muted flex items-center gap-1 flex-shrink-0"><MapIcon size={14}/> 區域</span>
+               <select value={selectedRegion} onChange={(e) => setSelectedRegion(e.target.value)} aria-label="區域" className="h-10 px-3 border border-brand-line rounded-lg text-sm font-bold text-brand bg-white">
                  <option value="ALL">全部國家</option>
                  {Object.entries(TRADE_REGIONS).map(([key, val]) => (<option key={key} value={key}>{val.label}</option>))}
-             </select>
-             <div className="w-px h-4 bg-slate-300 mx-1"></div>
-             <div className="flex items-center text-xs font-bold text-slate-500 uppercase"><ListFilter size={14} className="mr-1"/> 粒度</div>
-             <select value={granularity} onChange={(e) => setGranularity(e.target.value)} className="bg-white border rounded px-2 py-1 text-sm"><option value="month">月</option><option value="quarter">季</option><option value="year">年</option></select>
+               </select>
+             </div>
+             <div className="flex items-center gap-2">
+               <span className="text-xs font-bold text-brand-muted flex items-center gap-1 flex-shrink-0"><ListFilter size={14}/> 粒度</span>
+               <Segmented value={granularity} onChange={setGranularity} options={[{ value: 'month', label: '月' }, { value: 'quarter', label: '季' }, { value: 'year', label: '年' }]} />
+             </div>
              {currentTopic && (
-                <div className="ml-auto flex flex-wrap gap-2 items-center">
-                    <button onClick={() => setSelectedTopicCodes([])} className={`px-3 py-1 text-xs rounded-full border transition-colors ${selectedTopicCodes.length === 0 ? 'bg-blue-100 text-blue-700 border-blue-200' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>全部 (All)</button>
-                    <div className="relative">
-                        <MultiSelectDropdown options={STRATEGIC_TOPICS[currentTopic].items} selected={selectedTopicCodes} onChange={setSelectedTopicCodes} label="細項" />
-                    </div>
+                <div className="md:ml-auto flex flex-wrap gap-2 items-center">
+                    <button onClick={() => setSelectedTopicCodes([])} className={`h-9 px-3 text-sm rounded-full border transition-colors ${selectedTopicCodes.length === 0 ? 'bg-brand-soft text-brand-dark border-brand/30 font-bold' : 'bg-white text-brand-muted border-brand-line hover:bg-slate-50'}`}>全部 (All)</button>
+                    <MultiSelectDropdown options={STRATEGIC_TOPICS[currentTopic].items} selected={selectedTopicCodes} onChange={setSelectedTopicCodes} label="細項" />
                 </div>
             )}
           </div>
 
-          <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
-              <KPICard title={`總貿易額 (${getUnitLabel(currencyUnit)})`} value={summary.totalValue} subtext="區間累計" trend="up" icon={TrendingUp} color="bg-blue-500"/>
-              <KPICard title="總重量" value={summary.totalWeight} subtext="區間累計" trend="up" icon={Database} color="bg-emerald-500"/>
-              <KPICard title="平均單價 (元/KG)" value={`$${summary.avgPrice}`} subtext="加權平均" trend="down" icon={AlertTriangle} color="bg-amber-500"/>
+          <section className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+              <KPICard title={`總貿易額 (${getUnitLabel(currencyUnit)})`} value={summary.totalValue} subtext="區間累計" trend="up" icon={TrendingUp} color="bg-brand"/>
+              <KPICard title="總重量" value={summary.totalWeight} subtext="區間累計" trend="up" icon={Database} color="bg-brand-cyan"/>
+              <KPICard title="平均單價 (元/KG)" value={`$${summary.avgPrice}`} subtext="加權平均" trend="down" icon={AlertTriangle} color="bg-brand-orange"/>
               <KPICard title="異常波動" value={0} subtext="待人工確認" trend="down" icon={AlertTriangle} color="bg-rose-500"/>
           </section>
 
           <ErrorBoundary>
-            <div className={`bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col min-h-[500px]`}>
-              <div className="border-b border-slate-200 flex overflow-x-auto">
-                  {currentTopic && <button onClick={() => setActiveTab('topic_overview')} className={`px-5 py-3 text-sm font-bold flex items-center gap-2 ${activeTab === 'topic_overview' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600'}`}><Layers size={16}/> 專題總覽</button>}
+            <div className="card overflow-hidden flex flex-col min-h-[500px]">
+              <div role="tablist" aria-label="資訊分頁" className="border-b border-brand-line flex overflow-x-auto no-scrollbar px-2 md:px-4">
+                  {currentTopic && <button role="tab" onClick={() => setActiveTab('topic_overview')} className={`tab-btn ${activeTab === 'topic_overview' ? 'tab-btn-on' : ''}`}><Layers size={17}/> 專題總覽</button>}
                   {NAV_ITEMS.map(item => (
-                      <button 
-                          key={item.id} 
-                          onClick={() => setActiveTab(item.id)} 
-                          className={`px-5 py-3 text-sm font-bold flex items-center gap-2 ${activeTab === item.id ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600'}`}
-                      >
-                          <item.icon size={16}/> {item.label}
+                      <button key={item.id} role="tab" onClick={() => setActiveTab(item.id)} className={`tab-btn ${activeTab === item.id ? 'tab-btn-on' : ''}`}>
+                          <item.icon size={17}/> {item.label}
                       </button>
                   ))}
               </div>
 
-              <div className={`flex-1 p-6 bg-slate-50/50`}>
-                {loading ? <div className="h-full flex items-center justify-center">載入中...</div> : renderContent()}
+              <div className="flex-1 p-3 md:p-6 bg-brand-ground/60">
+                {loading ? <div className="h-64 flex items-center justify-center text-brand-muted">資料載入中…（首次約需 40–50 秒）</div> : renderContent()}
               </div>
             </div>
           </ErrorBoundary>

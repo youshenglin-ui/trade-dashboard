@@ -525,12 +525,12 @@ export default function CarbonFeeDashboard() {
   const scaleLabel = SCALE_BUCKETS.find((b) => b.key === filters.scale)?.label;
 
   return (
-    <div className="p-6 space-y-5">
+    <div className="px-3 py-4 md:p-6 space-y-5">
       {/* 標題 */}
       <div className="flex flex-wrap items-start gap-3">
-        <div className="p-2 rounded-lg text-white bg-emerald-600"><TrendingDown size={24} /></div>
+        <div className="hidden md:block p-2 rounded-lg text-white bg-brand"><TrendingDown size={24} /></div>
         <div className="flex-1 min-w-0">
-          <h2 className="text-2xl font-bold text-slate-800">碳費自主減量計畫分析</h2>
+          <h2 className="text-xl md:text-2xl font-bold text-slate-800">碳費自主減量計畫分析</h2>
           <p className="text-xs text-slate-500 mt-1">
             資料來源：環境部碳費申報及收費管理平台「自主減量計畫公開資訊」
             <a href={SOURCE_URL} target="_blank" rel="noopener noreferrer" className="ml-1 inline-flex items-center gap-0.5 text-blue-600 hover:underline"><ExternalLink size={11} />官網</a>
@@ -540,7 +540,7 @@ export default function CarbonFeeDashboard() {
       </div>
 
       {/* 篩選列 */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-3 flex flex-wrap items-center gap-2 text-sm sticky top-0 z-20">
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-3 flex flex-wrap items-center gap-2 text-sm sticky top-16 md:top-0 z-20">
         <Filter size={16} className="text-slate-400" />
         <div className="relative">
           <Search size={14} className="absolute left-2.5 top-2.5 text-slate-400" />

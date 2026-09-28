@@ -526,7 +526,7 @@ const TaiwanH2Map = ({ supplyData = [], demandData = [] }) => {
                 <button onClick={handleReset} className="p-2 bg-slate-50 hover:bg-slate-200 rounded-md text-slate-600 transition-colors"><Maximize size={18}/></button>
             </div>
 
-            <svg viewBox={`0 0 ${baseWidth} ${baseHeight}`} className={`w-full h-full select-none ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave={handleMouseLeave} ref={mapRef}>
+            <svg viewBox={`0 0 ${baseWidth} ${baseHeight}`} className={`w-full h-full select-none ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`} onPointerDown={handleMouseDown} onPointerMove={handleMouseMove} onPointerUp={handleMouseUp} onPointerLeave={handleMouseLeave} style={{ touchAction: 'none' }} ref={mapRef}>
                 <g transform={`translate(${baseWidth/2 + pan.x}, ${baseHeight/2 + pan.y}) scale(${zoom})`}>
                     {mapPaths.map((p, i) => p.d && <path key={`map-${i}`} d={p.d} fill={REGION_COLORS[p.region] || '#f8fafc'} stroke="#cbd5e1" strokeWidth={1.5 / zoom} className="transition-colors hover:fill-slate-200" />)}
                     {INDUSTRIAL_ZONES_COORDS.map((zone, idx) => {
@@ -1128,10 +1128,10 @@ const HydrogenDashboard = () => {
   if (loading) return <div className="p-10 text-center animate-pulse text-blue-600 flex flex-col items-center"><RefreshCw className="animate-spin mb-2"/> 氫能資料載入中...</div>;
 
   return (
-    <div className="space-y-8 p-4 bg-slate-50 rounded-lg animate-fade-in relative min-h-screen">
-       <div className="flex justify-between items-center bg-white p-3 rounded-xl border border-slate-200 shadow-sm">
+    <div className="space-y-5 md:space-y-8 px-3 py-4 md:p-6 animate-fade-in relative min-h-screen">
+       <div className="card flex flex-wrap justify-between items-center gap-3 p-3 md:px-4">
            <div className="flex items-center gap-4">
-              <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2"><Factory className="text-blue-600"/> 氫能供需戰情室</h2>
+              <h2 className="hidden md:flex text-xl font-bold text-slate-800 items-center gap-2 whitespace-nowrap"><Factory className="text-blue-600"/> 氫能供需戰情室</h2>
               <div className="flex items-center gap-2 text-sm bg-slate-100 px-3 py-1 rounded-full">
                   <Calendar size={14}/>
                   <select value={selectedYear} onChange={e => setSelectedYear(e.target.value)} className="bg-transparent font-bold text-blue-700 outline-none">

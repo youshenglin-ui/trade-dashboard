@@ -629,7 +629,7 @@ const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], sto
                 <button onClick={exportMapAsImage} className="p-2 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-md transition-colors font-bold flex items-center justify-center" title="輸出高品質圖片"><DownloadCloud size={18}/></button>
             </div>
 
-            <svg id="ccus-main-map" viewBox={`0 0 ${baseWidth} ${baseHeight}`} className={`w-full h-full select-none ${isDragging ? 'cursor-grabbing' : 'cursor-default'} ${dragState ? 'cursor-move' : ''}`} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave={handleMouseLeave} ref={mapRef}>
+            <svg id="ccus-main-map" viewBox={`0 0 ${baseWidth} ${baseHeight}`} className={`w-full h-full select-none ${isDragging ? 'cursor-grabbing' : 'cursor-default'} ${dragState ? 'cursor-move' : ''}`} onPointerDown={handleMouseDown} onPointerMove={handleMouseMove} onPointerUp={handleMouseUp} onPointerLeave={handleMouseLeave} style={{ touchAction: 'none' }} ref={mapRef}>
                 <g className="map-content-group" transform={`translate(${baseWidth/2 + pan.x}, ${baseHeight/2 + pan.y}) scale(${zoom})`}>
                     {mapPaths.map((p, i) => p.d && <path key={`map-${i}`} d={p.d} fill="#f8fafc" stroke="#cbd5e1" strokeWidth={1.5 / zoom} />)}
 
@@ -654,10 +654,10 @@ const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], sto
                                         <path d={`M ${x1} ${y1} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${x2} ${y2}`} stroke="#0284c7" strokeWidth={Math.max(2, Math.log10(Math.max(10000, route.weight))/zoom)} strokeDasharray={`${6/zoom} ${6/zoom}`} fill="none" opacity={0.6}/>
                                         <text x={midX} y={midY} fontSize={11/zoom} fill="#0369a1" textAnchor="middle" fontWeight="bold" style={{textShadow: '0 0 3px white', pointerEvents: 'none'}}>{route.label}</text>
                                         
-                                        <circle cx={cx1} cy={cy1} r={16/zoom} fill="transparent" className={isC1Dragged ? "cursor-grabbing" : "cursor-grab hover:scale-125"} onMouseDown={(e) => handleNodeMouseDown(e, 'c1', 'seaControl', route.id)}/>
+                                        <circle cx={cx1} cy={cy1} r={16/zoom} fill="transparent" className={isC1Dragged ? "cursor-grabbing" : "cursor-grab hover:scale-125"} onPointerDown={(e) => handleNodeMouseDown(e, 'c1', 'seaControl', route.id)}/>
                                         <circle cx={cx1} cy={cy1} r={4/zoom} fill="rgba(2,132,199,0.2)" stroke="#0284c7" strokeWidth={isC1Dragged ? 2/zoom : 1/zoom} strokeDasharray={`${2/zoom} ${2/zoom}`} pointerEvents="none"/>
                                         
-                                        <circle cx={cx2} cy={cy2} r={16/zoom} fill="transparent" className={isC2Dragged ? "cursor-grabbing" : "cursor-grab hover:scale-125"} onMouseDown={(e) => handleNodeMouseDown(e, 'c2', 'seaControl', route.id)}/>
+                                        <circle cx={cx2} cy={cy2} r={16/zoom} fill="transparent" className={isC2Dragged ? "cursor-grabbing" : "cursor-grab hover:scale-125"} onPointerDown={(e) => handleNodeMouseDown(e, 'c2', 'seaControl', route.id)}/>
                                         <circle cx={cx2} cy={cy2} r={4/zoom} fill="rgba(2,132,199,0.2)" stroke="#0284c7" strokeWidth={isC2Dragged ? 2/zoom : 1/zoom} strokeDasharray={`${2/zoom} ${2/zoom}`} pointerEvents="none"/>
                                     </g>
                                 );
@@ -687,7 +687,7 @@ const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], sto
                                         <path d={`M ${x1} ${y1} Q ${cx} ${cy}, ${x2} ${y2}`} stroke="#f59e0b" strokeWidth={2/zoom} strokeDasharray={`${4/zoom} ${4/zoom}`} fill="none" opacity={0.7} />
                                         <text x={midX} y={midY - (4/zoom)} fontSize={9/zoom} fill="#b45309" textAnchor="middle" fontWeight="bold" style={{textShadow: '0 0 3px white', pointerEvents: 'none'}}>陸運 {Number(route.distance||0).toFixed(0)}km</text>
                                         
-                                        <circle cx={cx} cy={cy} r={16/zoom} fill="transparent" className={isDragged ? "cursor-grabbing" : "cursor-grab hover:scale-125"} onMouseDown={(e) => handleNodeMouseDown(e, 'land_ctrl', 'landControl', routeId)}/>
+                                        <circle cx={cx} cy={cy} r={16/zoom} fill="transparent" className={isDragged ? "cursor-grabbing" : "cursor-grab hover:scale-125"} onPointerDown={(e) => handleNodeMouseDown(e, 'land_ctrl', 'landControl', routeId)}/>
                                         <circle cx={cx} cy={cy} r={4/zoom} fill="rgba(245,158,11,0.2)" stroke="#f59e0b" strokeWidth={isDragged ? 2/zoom : 1/zoom} strokeDasharray={`${2/zoom} ${2/zoom}`} pointerEvents="none"/>
                                     </g>
                                 );
@@ -733,7 +733,7 @@ const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], sto
                                 if (cx === -9999) return null;
                                 const isDragged = dragState && dragState.id === cluster.id;
                                 return (
-                                    <g key={`cluster-${i}`} className={isDragged ? "cursor-grabbing" : "cursor-grab hover:scale-125 transition-transform"} onMouseEnter={() => setHoveredNode({...cluster, nodeType: 'cluster'})} onMouseLeave={() => setHoveredNode(null)} onMouseDown={(e) => handleNodeMouseDown(e, cluster.id, 'cluster')}>
+                                    <g key={`cluster-${i}`} className={isDragged ? "cursor-grabbing" : "cursor-grab hover:scale-125 transition-transform"} onMouseEnter={() => setHoveredNode({...cluster, nodeType: 'cluster'})} onMouseLeave={() => setHoveredNode(null)} onPointerDown={(e) => handleNodeMouseDown(e, cluster.id, 'cluster')}>
                                         <circle cx={cx} cy={cy} r={16/zoom} fill="transparent" />
                                         <circle cx={cx} cy={cy} r={isDragged ? 5/zoom : 4/zoom} fill="#fff" stroke={isDragged ? "#fcd34d" : "#3b82f6"} strokeWidth={isDragged ? 2.5/zoom : 2/zoom} style={{ filter: 'drop-shadow(0px 2px 3px rgba(0,0,0,0.4))' }} pointerEvents="none"/>
                                     </g>
@@ -753,7 +753,7 @@ const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], sto
                                     return (
                                         <g key={`node-${route.id}-${idx}`} 
                                            className={isDragged ? "cursor-grabbing" : "cursor-pointer hover:scale-125 transition-transform"} 
-                                           onMouseDown={(e) => handleNodeMouseDown(e, actualIdx, 'routeNode', route.id)} 
+                                           onPointerDown={(e) => handleNodeMouseDown(e, actualIdx, 'routeNode', route.id)} 
                                            onContextMenu={(e) => handleNodeContextMenu(e, route.id, actualIdx)}
                                            onClick={(e) => handleNodeClick(e, actualIdx, 'routeNode', route.id, route.weight)}
                                         >
@@ -770,7 +770,7 @@ const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], sto
                                 if (cx === -9999) return null;
                                 const isLandHub = hub.id === 'CENTRAL_HUB_LAND'; const isDragged = dragState && dragState.id === hub.id;
                                 return (
-                                    <g key={`hub-${i}`} className={isDragged ? "cursor-grabbing" : "cursor-grab hover:scale-110 transition-transform"} onMouseEnter={() => setHoveredNode({...hub, nodeType: 'hub', hubType: hub.type})} onMouseLeave={() => setHoveredNode(null)} onMouseDown={(e) => handleNodeMouseDown(e, hub.id, 'hub')}>
+                                    <g key={`hub-${i}`} className={isDragged ? "cursor-grabbing" : "cursor-grab hover:scale-110 transition-transform"} onMouseEnter={() => setHoveredNode({...hub, nodeType: 'hub', hubType: hub.type})} onMouseLeave={() => setHoveredNode(null)} onPointerDown={(e) => handleNodeMouseDown(e, hub.id, 'hub')}>
                                         <rect x={cx - 16/zoom} y={cy - 16/zoom} width={32/zoom} height={32/zoom} fill="transparent" />
                                         <rect x={cx - 10/zoom} y={cy - 10/zoom} width={20/zoom} height={20/zoom} fill={isLandHub ? "#b45309" : "#0ea5e9"} stroke={isDragged ? "#fbbf24" : "white"} strokeWidth={isDragged ? 3/zoom : 2/zoom} style={{ filter: 'drop-shadow(0px 3px 4px rgba(0,0,0,0.4))' }} pointerEvents="none" />
                                         <text x={cx + 14/zoom} y={cy + 4/zoom} fontSize={12/textScale} fill={isLandHub ? "#78350f" : "#0369a1"} fontWeight="900" paintOrder="stroke" stroke="white" strokeWidth={3/textScale} className="pointer-events-none">{hub.name}</text>
@@ -1296,15 +1296,15 @@ const CcusDashboard = () => {
     };
 
     return (
-        <div className="space-y-6 animate-fade-in pb-10 min-h-screen p-4 bg-slate-50">
-            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col sm:flex-row justify-between items-center gap-4">
+        <div className="space-y-5 md:space-y-6 animate-fade-in pb-10 min-h-screen px-3 py-4 md:p-6">
+            <div className="card p-3 md:p-4 flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3">
                 <div className="flex items-center gap-3">
-                    <div className="flex items-center gap-2 text-lg text-teal-800 font-bold"><Leaf className="text-teal-500"/> CCUS 碳捕捉與封存戰情室</div>
+                    <div className="hidden md:flex items-center gap-2 text-lg text-brand-ink font-bold whitespace-nowrap"><Leaf className="text-brand"/> CCUS 碳捕捉與封存戰情室</div>
                     <select value={selectedYear} onChange={e => setSelectedYear(e.target.value)} className="bg-slate-100 border border-slate-200 text-slate-700 font-bold px-3 py-1 rounded-lg outline-none cursor-pointer hover:bg-slate-200 transition-colors">
                         {availableYears.map(y => <option key={y} value={y}>{y}年</option>)}<option value="ALL">全年度</option>
                     </select>
                 </div>
-                <div className="flex bg-slate-100 p-1 rounded-xl font-bold text-sm">
+                <div className="flex bg-slate-100 p-1 rounded-xl font-bold text-sm overflow-x-auto no-scrollbar">
                     <button onClick={() => setActiveTab('planning')} className={`px-4 py-2 rounded-lg flex items-center gap-2 transition-all ${activeTab === 'planning' ? 'bg-white shadow text-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}><Map size={16}/> 案場與管線規劃</button>
                     <button onClick={() => setActiveTab('facilities')} className={`px-4 py-2 rounded-lg flex items-center gap-2 transition-all ${activeTab === 'facilities' ? 'bg-white shadow text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}><Layers size={16}/> CCUS 設施與專案總覽</button>
                 </div>
