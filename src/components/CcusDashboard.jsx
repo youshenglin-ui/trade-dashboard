@@ -603,7 +603,7 @@ const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], sto
 
                                 return (
                                     <g key={`sea-route-${i}`}>
-                                        <path d={`M ${x1} ${y1} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${x2} ${y2}`} stroke="#0284c7" strokeWidth={Math.max(2, Math.log10(Math.max(10000, route.weight))/zoom)} strokeDasharray={`${6/zoom} ${6/zoom}`} fill="none" opacity={0.6}/>
+                                        <path d={`M ${x1} ${y1} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${x2} ${y2}`} stroke="#0284c7" strokeWidth={Math.max(2, Math.log10(Math.max(10000, route.weight ?? route.flow ?? 0))/zoom)} strokeDasharray={`${6/zoom} ${6/zoom}`} fill="none" opacity={0.6}/>
                                         <text x={midX} y={midY} fontSize={11/zoom} fill="#0369a1" textAnchor="middle" fontWeight="bold" style={{textShadow: '0 0 3px white', pointerEvents: 'none'}}>{route.label}</text>
                                         
                                         <circle cx={cx1} cy={cy1} r={16/zoom} fill="transparent" className={isC1Dragged ? "cursor-grabbing" : "cursor-grab hover:scale-125"} onMouseDown={(e) => handleNodeMouseDown(e, 'c1', 'seaControl', route.id)}/>
@@ -670,7 +670,7 @@ const TaiwanCcusMap = ({ activeLayers = [], captureData = [], utilData = [], sto
                                 
                                 return (
                                     <g key={`main-route-path-${i}`}>
-                                        <path d={pathD} stroke={strokeColor} strokeWidth={Math.max(2, Math.log10(Math.max(10000, route.weight)))/zoom} strokeDasharray={isUnrealistic ? `${6/zoom} ${4/zoom}` : "none"} fill="none" strokeLinejoin="round" opacity={isUnrealistic ? 0.7 : 0.85}/>
+                                        <path d={pathD} stroke={strokeColor} strokeWidth={Math.max(2, Math.log10(Math.max(10000, route.weight ?? route.flow ?? 0)))/zoom} strokeDasharray={isUnrealistic ? `${6/zoom} ${4/zoom}` : "none"} fill="none" strokeLinejoin="round" opacity={isUnrealistic ? 0.7 : 0.85}/>
                                         <path d={pathD} stroke="transparent" strokeWidth={20/zoom} fill="none" className="cursor-crosshair" onClick={(e) => handlePathClick(e, route.id, currentNodes)} />
                                         <text x={midX} y={midY - (8/zoom)} fontSize={10/zoom} fill={textColor} textAnchor="middle" fontWeight="bold" style={{textShadow: '0 0 3px white', pointerEvents: 'none'}}>{Number(dist||0).toFixed(0)} km</text>
                                     </g>

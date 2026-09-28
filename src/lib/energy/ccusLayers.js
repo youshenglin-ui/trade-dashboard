@@ -67,8 +67,8 @@ export function buildCcusLayers(data, { year = 'ALL', onOpenTrade, priceRows = [
       details: [
         ['產品', r.product], ['CO₂需求/去化', r.co2_demand_wt != null ? tt(r.co2_demand_wt) : '未填'], ['TRL', r.trl],
         ['CO₂來源', r.co2_source], ['流向/客戶', r.destination],
-        ['貿易均價(進口)', imp ? `${imp.price.toFixed(1)} 元/kg（${imp.year}）` : null],
-        ['貿易均價(出口)', exp ? `${exp.price.toFixed(1)} 元/kg（${exp.year}）` : null],
+        ['貿易均價(進口)', imp ? `${imp.price.toFixed(2)} USD/kg（${imp.year}）` : null],
+        ['貿易均價(出口)', exp ? `${exp.price.toFixed(2)} USD/kg（${exp.year}）` : null],
         ['備註', r.note],
       ],
       actions: hs?.hs_code && onOpenTrade && (imp || exp) ? [{ label: `查看 ${hs.trade_name}（${hs.hs_code}）貿易資訊`, onClick: () => onOpenTrade(hs.hs_code, hs.trade_name) }] : [],

@@ -153,8 +153,9 @@ function FlueGasTooltip({ active, payload }) {
 }
 
 export function CcusCaptureView({ data }) {
-  const [year, setYear] = useState('ALL');
   const years = yearOptions([...data.sources, ...data.captures]);
+  // 預設最新調查年度：跨年度加總會把同一廠不同年度的申報重複計入
+  const [year, setYear] = useState(String(years[years.length - 1]));
   const sources = data.sources.filter(inYear(year));
   const captures = data.captures.filter(inYear(year));
   const plans = data.plans.filter(inYear(year)).filter((r) => r.stage === 'capture' || r.stage === 'ccs');
@@ -170,7 +171,10 @@ export function CcusCaptureView({ data }) {
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end"><YearSelect value={year} onChange={setYear} years={years} /></div>
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        {year === 'ALL' && <span className="text-[11px] text-amber-700">全部年度為跨年度加總，同一廠不同年度的申報會重複計入，僅供檢視明細。</span>}
+        <YearSelect value={year} onChange={setYear} years={years} />
+      </div>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <Kpi label="具捕捉潛力排放源" value={fmtWt(sum(sources, 'emission_wt'), 1)} unit="萬噸/年" note={`${sources.length} 個排放源（有填排放量 ${sources.filter((r) => r.emission_wt != null).length}）`} />
         <Kpi label="已裝置捕捉量" value={fmtWt(sum(captures, 'capture_wt'), 3)} unit="萬噸/年" note={`${captures.length} 筆設施`} />
@@ -188,7 +192,7 @@ export function CcusCaptureView({ data }) {
             <ResponsiveContainer width="100%" height="100%">
               <ScatterChart margin={{ top: 16, right: 24, bottom: 28, left: 8 }}>
                 <CartesianGrid stroke={GRID} />
-                <XAxis type="number" dataKey="temp_c" tick={AXIS_TICK} domain={[-30, 'auto']}>
+                <XAxis type="number" dataKey="temp_c" tick={AXIS_TICK} domain={[(min) => Math.floor((min - 20) / 50) * 50, (max) => Math.ceil((max + 20) / 50) * 50]}>
                   <Label value="溫度 (℃)" position="insideBottom" offset={-14} fontSize={11} fill="#475569" />
                 </XAxis>
                 <YAxis type="number" dataKey="co2_conc_pct" tick={AXIS_TICK} domain={[0, 100]}>
@@ -426,13 +430,15 @@ export function CcusUtilizationView({ data, onOpenTrade }) {
   const priceRows = useCcuPrices();
   const hsByProduct = new Map((data.hsMap || []).map((m) => [m.product, m]));
   const products = data.utilization;
+  // 同一稅號的不同寫法（例如「液化CO2」與「LCO2」）合併成一條
   const demandByProduct = Object.values(products.reduce((acc, r) => {
-    const k = r.product;
-    (acc[k] ||= { product: k, demand: 0, plants: new Set() });
+    const k = hsByProduct.get(r.product)?.hs_code || r.product;
+    (acc[k] ||= { names: new Set(), demand: 0, plants: new Set() });
+    acc[k].names.add(r.product);
     acc[k].demand += Number(r.co2_demand_wt) || 0;
     acc[k].plants.add(r.short_name);
     return acc;
-  }, {})).map((r) => ({ ...r, plants: [...r.plants].join('、') })).sort((a, b) => b.demand - a.demand);
+  }, {})).map((r) => ({ product: [...r.names].join(' / '), demand: r.demand, plants: [...r.plants].join('、') })).sort((a, b) => b.demand - a.demand);
 
   return (
     <div className="space-y-4">
@@ -452,7 +458,7 @@ export function CcusUtilizationView({ data, onOpenTrade }) {
                 <XAxis type="number" tick={AXIS_TICK} />
                 <YAxis type="category" dataKey="product" width={140} tick={AXIS_TICK} interval={0} />
                 <Tooltip formatter={(v, n, p) => [`${fmtWt(v, 3)} 萬噸（${p.payload.plants}）`, 'CO₂需求']} />
-                <Bar dataKey="demand" fill={CAT[2]} barSize={14} radius={[0, 4, 4, 0]} label={{ position: 'right', fontSize: 11, fill: '#475569', formatter: (v) => (v > 0 ? fmtWt(v, 2) : '未填') }} />
+                <Bar dataKey="demand" fill={CAT[2]} barSize={14} radius={[0, 4, 4, 0]} label={{ position: 'right', fontSize: 11, fill: '#475569', formatter: (v) => (v > 0 ? fmtWt(v, 3) : '未填') }} />
               </BarChart>
             </ResponsiveContainer>
           </ErrorBoundary>
@@ -462,8 +468,8 @@ export function CcusUtilizationView({ data, onOpenTrade }) {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {products.map((r) => {
           const hs = hsByProduct.get(r.product);
-          const series = priceRows.filter((p) => p.product === r.product && p.flow_type === '進口' && p.unit_price_ntd_per_kg != null)
-            .map((p) => ({ year: p.year, price: Number(p.unit_price_ntd_per_kg) }));
+          const series = priceRows.filter((p) => p.product === r.product && p.flow_type === '進口' && p.unit_price_usd_per_kg != null)
+            .map((p) => ({ year: p.year, price: Number(p.unit_price_usd_per_kg) }));
           const imp = latestPrice(priceRows, r.product, '進口');
           const exp = latestPrice(priceRows, r.product, '出口');
           return (
@@ -488,15 +494,15 @@ export function CcusUtilizationView({ data, onOpenTrade }) {
                     <div className="text-xs">
                       <div className="text-slate-500">貿易均價｜{hs.trade_name}（{hs.hs_code}）</div>
                       <div className="font-mono">
-                        {imp && <span className="mr-3">進口 <b>{imp.price.toFixed(1)}</b> 元/kg（{imp.year}）</span>}
-                        {exp && <span>出口 <b>{exp.price.toFixed(1)}</b> 元/kg（{exp.year}）</span>}
+                        {imp && <span className="mr-3">進口 <b>{imp.price.toFixed(2)}</b> USD/kg（{imp.year}）</span>}
+                        {exp && <span>出口 <b>{exp.price.toFixed(2)}</b> USD/kg（{exp.year}）</span>}
                       </div>
                       {hs.match_note && <div className="text-[10px] text-amber-700">{hs.match_note}</div>}
                     </div>
                     {series.length > 1 && (
-                      <div className="w-32 h-10" title="歷年進口均價（元/kg）">
+                      <div className="w-32 h-10" title="歷年進口均價（USD/kg）">
                         <ResponsiveContainer width="100%" height="100%">
-                          <LineChart data={series}><Line type="monotone" dataKey="price" stroke={CAT[0]} strokeWidth={2} dot={false} isAnimationActive={false} /><Tooltip formatter={(v) => [`${Number(v).toFixed(1)} 元/kg`, '進口均價']} labelFormatter={(l, p) => p?.[0]?.payload?.year} /></LineChart>
+                          <LineChart data={series}><Line type="monotone" dataKey="price" stroke={CAT[0]} strokeWidth={2} dot={false} isAnimationActive={false} /><Tooltip formatter={(v) => [`${Number(v).toFixed(2)} USD/kg`, '進口均價']} labelFormatter={(l, p) => p?.[0]?.payload?.year} /></LineChart>
                         </ResponsiveContainer>
                       </div>
                     )}

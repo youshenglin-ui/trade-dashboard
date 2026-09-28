@@ -329,15 +329,18 @@ create table if not exists ccus_product_hs_map (
 );
 
 -- 年度進出口均價（只算有對應 CCU 產品的稅號，避免掃全表）
-create or replace view v_ccus_product_trade_price with (security_invoker = true) as
+-- 單價 = 金額×1000 ÷ 重量。trade_records.value_ntd_thousand 實際是「千美元」（以醋酸/PC/CO2 行情驗證），
+-- 所以單價單位是 USD/kg。
+drop view if exists v_ccus_product_trade_price;
+create view v_ccus_product_trade_price with (security_invoker = true) as
 select m.product,
        m.hs_code,
        m.trade_name,
        substr(t.period, 1, 4)::int as year,
        t.flow_type,
-       sum(t.value_ntd_thousand) as value_ntd_thousand,
+       sum(t.value_ntd_thousand) as value_thousand,
        sum(t.weight_kg) as weight_kg,
-       case when sum(t.weight_kg) > 0 then sum(t.value_ntd_thousand) * 1000 / sum(t.weight_kg) end as unit_price_ntd_per_kg
+       case when sum(t.weight_kg) > 0 then sum(t.value_ntd_thousand) * 1000 / sum(t.weight_kg) end as unit_price_usd_per_kg
 from ccus_product_hs_map m
 join trade_records t on t.hs_code like m.hs_code || '%' and t.source = 'active'
 where m.hs_code is not null

@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "sync-data": "node scripts/sync-data.mjs",
     "db:import": "node scripts/import-to-supabase.mjs",
+    "db:import-energy": "node scripts/import-energy-survey.mjs",
     "crawl:carbonfee": "node scripts/crawl-carbonfee.mjs"
   },
   "dependencies": {

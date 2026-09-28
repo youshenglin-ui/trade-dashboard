@@ -175,10 +175,10 @@ export function concentrationClass(pct) {
   return { key: 'low', label: '低濃度煙道氣 (<10%)' };
 }
 
-// 最新一年的產品均價（元/kg），flow = '進口' | '出口'
+// 最新一年的產品均價（USD/kg；trade_records 金額欄實為千美元），flow = '進口' | '出口'
 export function latestPrice(priceRows, product, flow) {
-  const rows = (priceRows || []).filter((r) => r.product === product && r.flow_type === flow && r.unit_price_ntd_per_kg != null);
+  const rows = (priceRows || []).filter((r) => r.product === product && r.flow_type === flow && r.unit_price_usd_per_kg != null);
   if (!rows.length) return null;
   const last = rows.reduce((a, b) => (b.year > a.year ? b : a));
-  return { year: last.year, price: Number(last.unit_price_ntd_per_kg), weightKg: Number(last.weight_kg) };
+  return { year: last.year, price: Number(last.unit_price_usd_per_kg), weightKg: Number(last.weight_kg) };
 }

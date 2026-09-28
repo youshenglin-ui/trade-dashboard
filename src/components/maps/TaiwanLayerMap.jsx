@@ -5,7 +5,7 @@
 // 只吃 props（layers / lines），不自己抓業務資料 → 介面改版時可直接搬過去用，
 // 之後若換 MapLibre GL，只要維持同樣的 props 介面即可替換內部實作。
 //
-// layers: [{ id, label, color, shape: 'circle'|'square'|'diamond'|'triangle', unit, points: [
+// layers: [{ id, label, color, shape: 'circle'|'square'|'diamond'|'triangle'|'hexagon', fixedRadius, points: [
 //   { id, lat, lon, value, title, subtitle, details: [[標籤, 值], ...], actions: [{ label, onClick }] }
 // ] }]
 // lines:  [{ layerId, from: {lat, lon}, to: {lat, lon}, color, dashed, width, title }]
@@ -13,8 +13,12 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Layers, Maximize, ZoomIn, ZoomOut, X } from 'lucide-react';
 import { project, useTaiwanCounties } from '../../lib/geo/taiwanCounties';
 
-const VIEW_W = 800;
-const VIEW_H = 900;
+// 可視範圍：台灣本島＋澎湖（經度 119.3–122.1、緯度 21.85–25.35），整島一次放得下
+const VB = { x: -660, y: -740, w: 1160, h: 1570 };
+const VB_CX = VB.x + VB.w / 2;
+const VB_CY = VB.y + VB.h / 2;
+// 點位/線寬/字級的基準單位（viewBox 單位；畫面上約 1px × 顯示比例）
+const U = 2;
 
 function Marker({ shape, cx, cy, r, color, strokeWidth, opacity }) {
   const common = { fill: color, fillOpacity: opacity, stroke: '#ffffff', strokeWidth };
@@ -70,14 +74,14 @@ export default function TaiwanLayerMap({ layers = [], lines = [], defaultActive,
         const idx = groups.get(key) || 0;
         groups.set(key, idx + 1);
         const v = Math.abs(Number(p.value) || 0);
-        const r = layer.fixedRadius ?? (max > 0 && v > 0 ? 5 + 13 * Math.sqrt(v / max) : 5);
+        const r = U * (layer.fixedRadius ?? (max > 0 && v > 0 ? 5 + 13 * Math.sqrt(v / max) : 5));
         out.push({ ...p, layer, x, y, r, idx });
       });
     });
     return out.map((p) => {
       if (!p.idx) return p;
       const ang = p.idx * 2.4;
-      const dist = 9 * Math.sqrt(p.idx);
+      const dist = 9 * U * Math.sqrt(p.idx);
       return { ...p, x: p.x + (dist * Math.cos(ang)) / zoom, y: p.y + (dist * Math.sin(ang)) / zoom };
     });
   })();
@@ -103,7 +107,7 @@ export default function TaiwanLayerMap({ layers = [], lines = [], defaultActive,
   const onMove = (e) => {
     if (!drag) return;
     const rect = svgRef.current.getBoundingClientRect();
-    const k = VIEW_W / rect.width;
+    const k = Math.max(VB.w / rect.width, VB.h / rect.height); // preserveAspectRatio=meet 的縮放比
     setPan({ x: drag.pan.x + (e.clientX - drag.x) * k, y: drag.pan.y + (e.clientY - drag.y) * k });
   };
   const onUp = () => setDrag(null);
@@ -167,7 +171,7 @@ export default function TaiwanLayerMap({ layers = [], lines = [], defaultActive,
 
         <svg
           ref={svgRef}
-          viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
+          viewBox={`${VB.x} ${VB.y} ${VB.w} ${VB.h}`}
           className={`w-full h-full select-none ${drag ? 'cursor-grabbing' : 'cursor-grab'}`}
           onMouseDown={onDown}
           onMouseMove={onMove}
@@ -176,16 +180,17 @@ export default function TaiwanLayerMap({ layers = [], lines = [], defaultActive,
           role="img"
           aria-label={title || '台灣地圖'}
         >
-          <g transform={`translate(${VIEW_W / 2 + pan.x}, ${VIEW_H / 2 + pan.y}) scale(${zoom})`}>
+          {/* 以畫面中心為基準縮放 */}
+          <g transform={`translate(${pan.x + VB_CX * (1 - zoom)}, ${pan.y + VB_CY * (1 - zoom)}) scale(${zoom})`}>
             {counties.map((c) => (
-              <path key={c.name} d={c.d} fill={countyFill?.(c.name) || '#ffffff'} stroke="#cbd5e1" strokeWidth={1.2 / zoom} />
+              <path key={c.name} d={c.d} fill={countyFill?.(c.name) || '#ffffff'} stroke="#cbd5e1" strokeWidth={(1.2 * U) / zoom} />
             ))}
             {visibleLines.map((l, i) => {
               const [x1, y1] = project(l.from.lon, l.from.lat);
               const [x2, y2] = project(l.to.lon, l.to.lat);
               return (
                 <line key={`l${i}`} x1={x1} y1={y1} x2={x2} y2={y2} stroke={l.color || '#64748b'} strokeOpacity={0.7}
-                  strokeWidth={(l.width || 2) / zoom} strokeDasharray={l.dashed ? `${6 / zoom} ${5 / zoom}` : undefined} strokeLinecap="round">
+                  strokeWidth={((l.width || 2) * U) / zoom} strokeDasharray={l.dashed ? `${(6 * U) / zoom} ${(5 * U) / zoom}` : undefined} strokeLinecap="round">
                   {l.title && <title>{l.title}</title>}
                 </line>
               );
@@ -198,15 +203,15 @@ export default function TaiwanLayerMap({ layers = [], lines = [], defaultActive,
                   onMouseDown={(e) => e.stopPropagation()}
                   onClick={() => setSelected(p)}
                   onMouseEnter={() => setHover(p)} onMouseLeave={() => setHover(null)}>
-                  <circle cx={p.x} cy={p.y} r={Math.max(p.r, 10) / zoom} fill="transparent" />
+                  <circle cx={p.x} cy={p.y} r={Math.max(p.r, 10 * U) / zoom} fill="transparent" />
                   <Marker shape={p.layer.shape} cx={p.x} cy={p.y} r={p.r / zoom} color={p.layer.color}
-                    strokeWidth={(isSel || isHover ? 2.5 : 1.5) / zoom} opacity={isSel || isHover ? 1 : 0.85} />
+                    strokeWidth={((isSel || isHover ? 2.5 : 1.5) * U) / zoom} opacity={isSel || isHover ? 1 : 0.85} />
                 </g>
               );
             })}
             {hover && (
-              <text x={hover.x + (hover.r + 6) / zoom} y={hover.y + 4 / zoom} fontSize={12 * fontScale} fontWeight="700" fill="#0f172a"
-                paintOrder="stroke" stroke="#ffffff" strokeWidth={4 * fontScale} strokeLinejoin="round" pointerEvents="none">
+              <text x={hover.x + (hover.r + 6 * U) / zoom} y={hover.y + (4 * U) / zoom} fontSize={12 * U * fontScale} fontWeight="700" fill="#0f172a"
+                paintOrder="stroke" stroke="#ffffff" strokeWidth={4 * U * fontScale} strokeLinejoin="round" pointerEvents="none">
                 {hover.title}{hover.valueLabel ? `｜${hover.valueLabel}` : ''}
               </text>
             )}

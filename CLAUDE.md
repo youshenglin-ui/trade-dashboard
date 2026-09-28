@@ -32,8 +32,10 @@
    `trade_records` 對 (source, period, hs_code, country, flow_type) 有唯一鍵，同鍵多筆時匯入腳本
    會加總 value/weight，不是覆蓋。查詢分頁只排有索引的 `id`，active/archive 的優先序改成抓完後
    在前端用穩定排序處理（別在 DB 端對大表排序 + 深分頁，會撞 statement timeout）。
-   氫能/CCUS 資料表（`energy_facility_records`）已建好、已匯入，但前端還沒接上，
-   仍讀 `public/data/hydrogen`、`public/data/ccus` 本地 CSV。
+   氫能/CCUS 已改讀「問卷整併資料庫」，見下方〈氫能 / CCUS 問卷整併資料庫〉一節；
+   `energy_facility_records` 現在只剩 CCUS 規劃地圖用的範疇一排放源（category = 'ccus_scope1'）在用。
+   注意 `trade_records.value_ntd_thousand` 欄名寫「千元台幣」，但以醋酸/PC/CO2 行情驗證實際是
+   **千美元**（金額×1000÷重量 kg ≈ USD/kg），新功能顯示單價一律標 USD/kg。
    已知效能限制：前端目前是「全量抓取 45 萬列再篩選」，載入約 40-50 秒，比原本讀本地 CSV
    還慢，下一步要把篩選/聚合邏輯搬進資料庫查詢（RPC）才能真正做到快速查詢。
 2. **地圖**：CCUS 戰情室現有的手刻 SVG 地圖（座標寫死、手算縮放）之後要換成 MapLibre GL JS
@@ -57,8 +59,41 @@
   綁定 GitHub Environment `carbonfee-crawl`（Required reviewers），需使用者核准後才執行。
   排程只在預設分支（main）上生效。資料庫連線用 Supabase Session pooler（GitHub runner 不支援 IPv6）。
 
+## 氫能 / CCUS 問卷整併資料庫（2026-09 新增）
+
+- 來源：台綜院整併的兩本 Excel（工業部門氫氣供需問卷整併 112–115、工業部門負碳(CCUS)問卷整併 112–115）。
+  原始 Excel 含聯絡窗口個資，**不進 git**（`data/energy/*.xlsx` 在 .gitignore），放本機即可。
+- 資料表：`supabase/energy_survey.sql`（schema）、`energy_survey_load.sql`（寫入函式）、
+  `energy_survey_seed.sql`（參考參數、CCU 產品稅號對照、封存場址/管網樞紐、管線聚落節點）。兩層設計：
+  - 完整保存層 `survey_imports` / `survey_sheet_rows`：兩本 Excel 每張工作表每一列原樣存 jsonb，
+    **不開放前端讀取**（RLS 無 anon policy），只在 Supabase Dashboard 看。確保「所有資料都有寫入」。
+  - 分析層（公開唯讀）：`energy_plants`、`h2_production` / `h2_usage` / `h2_flows` / `h2_future_plans`、
+    `ccus_emission_sources`（含煙氣溫壓濃度，原文 + 解析值）/ `ccus_capture_units` / `ccus_plans` /
+    `ccus_utilization`、`survey_answers`（成本財務、意願障礙、減碳策略、人才）、`survey_assistance_requests`。
+    每列另有 `raw jsonb` 存該列原文。view：`v_h2_plant_balance`、`v_ccus_product_trade_price`（USD/kg）。
+- 匯入：`npm run db:import-energy -- --h2 <氫能.xlsx> --ccus <CCUS.xlsx>`（`--dry-run` 只解析；
+  `--out x.json` 另存 payload）。流程：`scripts/lib/energy-survey-parse.mjs` 解析 → 合併
+  `data/energy/plant_coords.csv` 座標 → 呼叫資料庫函式 `energy_survey_load(payload)`（單一交易、
+  整批替換；此函式只給 postgres/service_role 執行）。問卷改版時先 `--dry-run` 看「找不到欄位」警告，
+  再改 parse 檔裡的 `TABLES` 對應。沒列在 `TABLES` 的分頁也一定會進完整保存層。
+- 廠區座標：`node scripts/geocode-energy-plants.mjs <氫能.xlsx> <CCUS.xlsx>` 用 OpenStreetMap
+  Nominatim 把廠區主檔地址轉座標，寫 `data/energy/plant_coords.csv`；人工校正的列 `coord_source=manual`
+  不會被覆蓋（資料庫端也一樣）。麥寮六輕、中鋼、台電台中等已人工校正。
+- 前端：資料讀取 `src/lib/energy/fetchEnergySurvey.js`，計算定義集中在 `src/lib/energy/energyMetrics.js`
+  （例如 `toLegacyHydrogen()` 把問卷表組回氫能戰情室既有圖表的資料形狀、`ccusSummary()` 對應問卷
+  「總覽」分頁），色票 `src/lib/energy/palette.js`。新頁面在 `src/components/energy/`
+  （CCUS 整合地圖/碳捕捉/碳封存/碳再利用、氫能「問卷深度分析」），共用疊圖地圖
+  `src/components/maps/TaiwanLayerMap.jsx`（只吃 props，介面改版時可直接搬）。碳費區域地圖
+  `src/components/CarbonFeeMap.jsx`（carbonfee_facilities 目前沒有座標，先放縣市中心示意位置）。
+- 氫能戰情室不再有寫死的備用數字（MOCK）、公司名關鍵字推估座標/工業區；碳排參考線讀
+  `energy_ref_parameters`。CCUS 規劃地圖的樞紐/聚落節點讀 `ccus_storage_sites`(kind='hub') /
+  `ccus_network_nodes`，範疇一排放源讀 `energy_facility_records`，座標優先用 `ccus_emission_records`
+  已查證的地址座標。
+- 跨計畫提醒：產發署（製造部門淨零轉型）與環境部（CCUS 旗艦）屬不同委辦計畫，圖表以「計畫」欄區分，
+  對外引用請分開呈現。
+
 ## 資料來源
 
 Google Sheet 的實際連結只存在於 `scripts/data-sources.config.mjs`（Node-only，不會被打包進前端）。
-氫能/CCUS 前端一律透過 `src/config/dataSources.js` 讀本地路徑，不要在元件裡寫死 Google Sheet 網址。
+氫能/CCUS 前端改讀 Supabase 問卷整併資料表（見上一節），不要再改回讀本地 CSV 或在元件裡寫死數值。
 貿易資料前端改讀 Supabase，不要再改回讀本地 CSV 或 Google Sheet。
