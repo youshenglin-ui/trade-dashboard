@@ -1,18 +1,19 @@
 // ==========================================
 // 碳費自主減量計畫：事業地址 → 座標（產生 data/carbonfee/facility_coords.csv）
 // ==========================================
-// 用法：node scripts/geocode-carbonfee.mjs [--snapshot data/carbonfee/snapshot.json] [--retry]
+// 用法：node scripts/geocode-carbonfee.mjs [--snapshot data/carbonfee/snapshot.json] [--retry] [--recheck]
 //
 // 讀爬蟲快照裡每個事業（管制編號 control_no）的地址，用 Nominatim 轉座標：
 //   完整門牌 → 去掉樓層的門牌 → 路名 → 行政區，coord_source 記錄用到哪一層。
-// 已在 CSV 裡、地址沒變的事業不會重查（--retry 會重查「找不到」的列）；coord_source = 'manual'
+// 命中結果必須落在地址的同一個鄉鎮市區，否則改試下一層候選。
+// 已在 CSV 裡、地址沒變的事業不會重查（--retry 重查「找不到」的列；--recheck 重查命中別區的舊結果）；coord_source = 'manual'
 // 的列永遠不覆蓋——人工校正請直接改 CSV 並把 coord_source 改成 manual。
 // 寫回資料庫：npm run db:import-carbonfee-coords（寫 carbonfee_facility_coords 表）。
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { geocodeAddress, parseCsv, csvCell } from './lib/geocode.mjs';
+import { geocodeAddress, parseCsv, csvCell, sameDistrict } from './lib/geocode.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 export const COORDS_CSV = join(ROOT, 'data', 'carbonfee', 'facility_coords.csv');
@@ -27,6 +28,7 @@ async function main() {
   const snapArg = args.indexOf('--snapshot');
   const snapFile = snapArg >= 0 ? args[snapArg + 1] : join(ROOT, 'data', 'carbonfee', 'snapshot.json');
   const retry = args.includes('--retry');
+  const recheck = args.includes('--recheck');
 
   const snap = JSON.parse(await readFile(snapFile, 'utf-8'));
   const facilities = new Map();
@@ -47,7 +49,8 @@ async function main() {
   for (const [id, f] of facilities) {
     const prev = byId.get(id);
     if (prev?.coord_source === 'manual') continue;
-    if (prev && prev.address === (f.address || '') && (prev.lat || !retry)) continue;
+    const stale = recheck && prev?.lat && !sameDistrict(prev.address, prev.matched);
+    if (prev && prev.address === (f.address || '') && (prev.lat || !retry) && !stale) continue;
     const hit = await geocodeAddress(f.address);
     const row = { control_no: id, name: f.name, city: f.city, address: f.address || '', lat: '', lon: '', coord_source: 'not_found', query: '', matched: '' };
     if (hit) Object.assign(row, { lat: hit.lat.toFixed(5), lon: hit.lon.toFixed(5), coord_source: hit.coord_source, query: hit.query, matched: hit.matched });

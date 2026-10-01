@@ -28,8 +28,30 @@ const COORD_LABEL = {
   geocode_area: '依鄉鎮區定位（僅示意）',
 };
 
-function pointOf(counties, facility) {
-  if (facility.lat != null && facility.lon != null) return { lat: facility.lat, lon: facility.lon };
+// 同一座標的事業（同園區代表座標、同路名定位）排成小圓圈，避免完全重疊只看得到一個
+function spreadCollocated(list) {
+  const groups = new Map();
+  list.forEach((x) => {
+    const f = x.facility;
+    if (f.lat == null || f.lon == null) return;
+    const key = `${f.lat.toFixed(4)},${f.lon.toFixed(4)}`;
+    if (!groups.has(key)) groups.set(key, []);
+    if (!groups.get(key).some((g) => g.control_no === f.control_no)) groups.get(key).push(f);
+  });
+  const out = new Map();
+  groups.forEach((fs) => {
+    const sorted = [...fs].sort((a, b) => String(a.control_no).localeCompare(String(b.control_no)));
+    const r = sorted.length > 1 ? 0.0025 * Math.sqrt(sorted.length) : 0; // 約 250 m × √n
+    sorted.forEach((f, i) => {
+      const ang = (2 * Math.PI * i) / sorted.length;
+      out.set(f.control_no, { lat: f.lat + r * Math.sin(ang), lon: f.lon + r * Math.cos(ang) });
+    });
+  });
+  return out;
+}
+
+function pointOf(counties, facility, spread) {
+  if (facility.lat != null && facility.lon != null) return spread.get(facility.control_no) || { lat: facility.lat, lon: facility.lon };
   const c = countyCentroid(counties, facility.city);
   if (!c) return null;
   const h = hash(String(facility.control_no || facility.name));
@@ -42,7 +64,7 @@ export default function CarbonFeeMap({ plans, onSelectPlan }) {
   const counties = useTaiwanCounties();
   const [yearMode, setYearMode] = useState('all');
 
-  const { facilities, years } = useMemo(() => {
+  const { facilities, years, spread } = useMemo(() => {
     const ys = new Set();
     const list = [];
     plans.forEach((p) => {
@@ -52,7 +74,7 @@ export default function CarbonFeeMap({ plans, onSelectPlan }) {
         list.push({ plan: p, facility: f, measures: ms });
       });
     });
-    return { facilities: list, years: [...ys].sort() };
+    return { facilities: list, years: [...ys].sort(), spread: spreadCollocated(list) };
   }, [plans]);
 
   const categoriesOf = (x) => {
@@ -69,7 +91,7 @@ export default function CarbonFeeMap({ plans, onSelectPlan }) {
       color: CATEGORY_COLOR[cat] || OTHER_COLOR,
       shape: SHAPES[i] || 'hexagon',
       points: facilities.filter((x) => categoriesOf(x).includes(cat)).map((x) => {
-        const pt = counties.length ? pointOf(counties, x.facility) : null;
+        const pt = pointOf(counties, x.facility, spread);
         const ms = x.measures.filter((m) => (m.categories || []).includes(cat));
         return {
           id: `${x.plan.control_no}-${x.facility.control_no}`,

@@ -31,10 +31,24 @@ export function candidates(address) {
   return out;
 }
 
+const norm = (s) => String(s || '').replace(/臺/g, '台');
+
+// 地址裡的鄉鎮市區（例：高雄市小港區… → 小港區）
+export function districtOf(address) {
+  const m = norm(address).match(/^.+?[縣市](.+?[區鄉鎮市])/);
+  return m ? m[1] : null;
+}
+
+// 命中結果是否落在同一個鄉鎮市區（Nominatim 對找不到的路名常回傳同縣市別區的學校、機關）
+export const sameDistrict = (address, label) => {
+  const d = districtOf(address);
+  return !d || norm(label).includes(d);
+};
+
 export async function geocodeAddress(address) {
   for (const [source, q] of candidates(address)) {
     const hit = await nominatim(q);
-    if (hit) return { lat: hit.lat, lon: hit.lon, coord_source: source, query: q, matched: hit.label };
+    if (hit && sameDistrict(address, hit.label)) return { lat: hit.lat, lon: hit.lon, coord_source: source, query: q, matched: hit.label };
   }
   return null;
 }
