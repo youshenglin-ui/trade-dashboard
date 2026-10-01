@@ -34,8 +34,9 @@
    在前端用穩定排序處理（別在 DB 端對大表排序 + 深分頁，會撞 statement timeout）。
    氫能/CCUS 已改讀「問卷整併資料庫」，見下方〈氫能 / CCUS 問卷整併資料庫〉一節；
    `energy_facility_records` 現在只剩 CCUS 規劃地圖用的範疇一排放源（category = 'ccus_scope1'）在用。
-   注意 `trade_records.value_ntd_thousand` 欄名寫「千元台幣」，但以醋酸/PC/CO2 行情驗證實際是
-   **千美元**（金額×1000÷重量 kg ≈ USD/kg），新功能顯示單價一律標 USD/kg。
+   注意 `trade_records.value_ntd_thousand` 欄名寫「千元台幣」，但實際是 **千美元**（2026-10 已與資料來源
+   確認，欄位 comment 也已註明；欄名沿用不改以免牽動匯入管線）。金額×1000÷重量 kg = USD/kg，
+   前端金額一律標「美元」（`helpers.js` 的 `getUnitLabel`），單價標 USD/kg。
    已知效能限制：前端目前是「全量抓取 45 萬列再篩選」，載入約 40-50 秒，比原本讀本地 CSV
    還慢，下一步要把篩選/聚合邏輯搬進資料庫查詢（RPC）才能真正做到快速查詢。
 2. **地圖**：2026-09-28 起 CCUS 與氫能地圖已改用 MapLibre GL JS。共用底圖 `src/components/map/MapLibreBase.jsx`
@@ -94,14 +95,18 @@
   再改 parse 檔裡的 `TABLES` 對應。沒列在 `TABLES` 的分頁也一定會進完整保存層。
 - 廠區座標：`node scripts/geocode-energy-plants.mjs <氫能.xlsx> <CCUS.xlsx>` 用 OpenStreetMap
   Nominatim 把廠區主檔地址轉座標，寫 `data/energy/plant_coords.csv`；人工校正的列 `coord_source=manual`
-  不會被覆蓋（資料庫端也一樣）。麥寮六輕、中鋼、台電台中等已人工校正。
+  不會被覆蓋（資料庫端也一樣）。麥寮六輕、中鋼、台電台中、台泥和平廠（C01）、長榮鋼鐵新營廠（C04）等已人工校正。
 - 前端：資料讀取 `src/lib/energy/fetchEnergySurvey.js`，計算定義集中在 `src/lib/energy/energyMetrics.js`
   （例如 `toLegacyHydrogen()` 把問卷表組回氫能戰情室既有圖表的資料形狀、`ccusSummary()` 對應問卷
   「總覽」分頁），色票 `src/lib/energy/palette.js`。新頁面在 `src/components/energy/`
   （CCUS 整合地圖/碳捕捉/碳封存/碳再利用、氫能「問卷深度分析」），共用疊圖地圖
   `src/components/maps/TaiwanLayerMap.jsx`（只吃 props；底圖用共用的 `map/MapLibreBase`，點位以形狀＋顏色
   canvas 圖示畫成 symbol 圖層、可勾選疊圖、縣市面量圖用 `countyFill`）。碳費區域地圖
-  `src/components/CarbonFeeMap.jsx`（carbonfee_facilities 目前沒有座標，先放縣市中心示意位置）。
+  `src/components/CarbonFeeMap.jsx`：事業座標存在獨立表 `carbonfee_facility_coords`（`supabase/carbonfee_coords.sql`，
+  以管制編號為鍵，爬蟲重寫事業表不會洗掉座標）。流程：`node scripts/geocode-carbonfee.mjs`（讀爬蟲快照、
+  Nominatim 轉座標 → `data/carbonfee/facility_coords.csv`，地址沒變不重查，`--retry` 重查找不到的）→
+  `npm run db:import-carbonfee-coords`。人工校正改 CSV 並設 `coord_source=manual`。爬蟲抓到新事業後要補跑這兩步，
+  沒座標的事業會退回縣市中心示意位置。Nominatim 共用工具在 `scripts/lib/geocode.mjs`。
 - 氫能戰情室不再有寫死的備用數字（MOCK）、公司名關鍵字推估座標/工業區；碳排參考線讀
   `energy_ref_parameters`。CCUS 規劃地圖的樞紐/聚落節點讀 `ccus_storage_sites`(kind='hub') /
   `ccus_network_nodes`，範疇一排放源讀 `energy_facility_records`，座標優先用 `ccus_emission_records`

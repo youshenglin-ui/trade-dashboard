@@ -71,10 +71,11 @@ export function formatValueByUnit(val, unit) {
     return v.toLocaleString();
 }
 
+// trade_records 的金額欄（value_ntd_thousand）實際單位是「千美元」（已與資料來源確認）
 export function getUnitLabel(unit) {
-    if (unit === 'million') return '百萬';
-    if (unit === 'billion') return '十億';
-    return '千';
+    if (unit === 'million') return '百萬美元';
+    if (unit === 'billion') return '十億美元';
+    return '千美元';
 }
 
 export function formatCurrencyAxis(value, unit = 'thousand') {

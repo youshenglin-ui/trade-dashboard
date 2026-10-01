@@ -19,8 +19,18 @@ async function fetchAll(table, columns, orderBy) {
   return rows;
 }
 
+// 事業座標（carbonfee_facility_coords，見 supabase/carbonfee_coords.sql）。讀不到時不擋整頁，地圖退回縣市中心示意。
+async function fetchFacilityCoords() {
+  try {
+    return await fetchAll('carbonfee_facility_coords', 'control_no, lat, lon, coord_source, matched', 'control_no');
+  } catch (err) {
+    console.warn(err);
+    return [];
+  }
+}
+
 export async function fetchCarbonfeeData() {
-  const [plans, facilities, measures, runsRes, changesRes] = await Promise.all([
+  const [plans, rawFacilities, measures, runsRes, changesRes, coords] = await Promise.all([
     fetchAll('carbonfee_plans', '*', 'control_no'),
     fetchAll(
       'carbonfee_facilities',
@@ -30,7 +40,13 @@ export async function fetchCarbonfeeData() {
     fetchAll('carbonfee_measures', 'id, plan_control_no, facility_control_no, roc_year, code, type_raw, categories, name', 'id'),
     supabase.from('carbonfee_crawl_runs').select('*').eq('ok', true).order('started_at', { ascending: false }).limit(12),
     supabase.from('carbonfee_changes').select('*').order('detected_at', { ascending: false }).limit(500),
+    fetchFacilityCoords(),
   ]);
+  const coordByNo = new Map(coords.filter((c) => c.lat != null && c.lon != null).map((c) => [c.control_no, c]));
+  const facilities = rawFacilities.map((f) => {
+    const c = coordByNo.get(f.control_no);
+    return c ? { ...f, lat: Number(c.lat), lon: Number(c.lon), coord_source: c.coord_source, coord_matched: c.matched } : f;
+  });
   if (runsRes.error) throw new Error(`carbonfee_crawl_runs 查詢失敗: ${runsRes.error.message}`);
   if (changesRes.error) throw new Error(`carbonfee_changes 查詢失敗: ${changesRes.error.message}`);
   return { plans, facilities, measures, runs: runsRes.data || [], changes: changesRes.data || [] };

@@ -12,44 +12,10 @@ import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseWorkbook, plantsFromCcus } from './lib/energy-survey-parse.mjs';
+import { candidates, nominatim, parseCsv, csvCell } from './lib/geocode.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = join(ROOT, 'data', 'energy', 'plant_coords.csv');
-const UA = 'trade-dashboard-energy-geocoder/1.0 (https://github.com/youshenglin-ui/trade-dashboard)';
-
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-async function nominatim(q) {
-  const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=tw&q=${encodeURIComponent(q)}`;
-  const res = await fetch(url, { headers: { 'User-Agent': UA, 'Accept-Language': 'zh-TW' } });
-  await sleep(1100);
-  if (!res.ok) throw new Error(`Nominatim HTTP ${res.status}`);
-  const [hit] = await res.json();
-  return hit ? { lat: Number(hit.lat), lon: Number(hit.lon), label: hit.display_name } : null;
-}
-
-// 地址清洗：取第一段地址（去掉括號補充、頓號後的第二地址），再產生逐步放寬的候選
-function candidates(address) {
-  if (!address) return [];
-  let a = String(address).replace(/[（(][^）)]*[）)]/g, '').split(/[、；;]/)[0].trim();
-  a = a.replace(/^.*工廠登記\(總公司\)：/, '');
-  const out = [['geocode_address', a]];
-  const road = a.match(/^(.+?[縣市].+?[區鄉鎮市])(?:.+?[村里])?(?:\d+鄰)?(.+?(?:路|街|大道)(?:[一二三四五六七八九十]+段)?)/);
-  if (road) out.push(['geocode_road', `${road[1]}${road[2]}`]);
-  const area = a.match(/^(.+?[縣市].+?[區鄉鎮市])/);
-  if (area) out.push(['geocode_area', area[1]]);
-  return out;
-}
-
-function parseCsv(text) {
-  const [head, ...lines] = text.trim().split('\n');
-  const cols = head.split(',');
-  return lines.map((l) => {
-    const vals = l.match(/("([^"]|"")*"|[^,]*)(,|$)/g).map((v) => v.replace(/,$/, '').replace(/^"|"$/g, '').replace(/""/g, '"'));
-    return Object.fromEntries(cols.map((c, i) => [c, vals[i] ?? '']));
-  });
-}
-const csvCell = (v) => (v == null ? '' : /[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v));
 
 async function main() {
   const [h2File, ccusFile] = process.argv.slice(2);

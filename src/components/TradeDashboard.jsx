@@ -253,8 +253,9 @@ const TradeDashboard = ({
     
     let valDisplay = formatValueByUnit(totalValue, currencyUnit);
     if (currencyUnit === 'thousand') {
+        // totalValue 單位為千美元：1e5 千美元 = 1 億美元；÷10 = 萬美元
         if (totalValue > 100000) valDisplay = (totalValue / 100000).toFixed(2) + ' 億';
-        else valDisplay = (totalValue / 10000).toFixed(0) + ' 萬';
+        else valDisplay = (totalValue / 10).toLocaleString(undefined, { maximumFractionDigits: 0 }) + ' 萬';
     }
 
     return { 
@@ -724,9 +725,9 @@ const TradeDashboard = ({
           </div>
 
           <section className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-              <KPICard title={`總貿易額 (${getUnitLabel(currencyUnit)})`} value={summary.totalValue} subtext="區間累計" trend="up" icon={TrendingUp} color="bg-brand"/>
+              <KPICard title={`總貿易額 (${currencyUnit === 'thousand' ? '美元' : getUnitLabel(currencyUnit)})`} value={summary.totalValue} subtext="區間累計" trend="up" icon={TrendingUp} color="bg-brand"/>
               <KPICard title="總重量" value={summary.totalWeight} subtext="區間累計" trend="up" icon={Database} color="bg-brand-cyan"/>
-              <KPICard title="平均單價 (元/KG)" value={`$${summary.avgPrice}`} subtext="加權平均" trend="down" icon={AlertTriangle} color="bg-brand-orange"/>
+              <KPICard title="平均單價 (USD/kg)" value={`$${summary.avgPrice}`} subtext="加權平均" trend="down" icon={AlertTriangle} color="bg-brand-orange"/>
               <KPICard title="異常波動" value={0} subtext="待人工確認" trend="down" icon={AlertTriangle} color="bg-rose-500"/>
           </section>
 

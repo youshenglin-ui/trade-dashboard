@@ -19,7 +19,7 @@ import { existsSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseWorkbook, plantsFromCcus } from './lib/energy-survey-parse.mjs';
-import { parseCsv } from './geocode-energy-plants.mjs';
+import { parseCsv } from './lib/geocode.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const COORDS = join(ROOT, 'data', 'energy', 'plant_coords.csv');

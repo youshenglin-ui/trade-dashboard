@@ -3,8 +3,8 @@
 // ==========================================
 // 吃 CarbonFeeDashboard 已組裝、已套用篩選的 plans（含 facilities / measures），
 // 每個參與事業（facility）依其採取的減量措施類別出現在對應圖層，可勾選疊圖比較各地區採取的手段。
-// 位置：carbonfee_facilities 目前只有縣市與地址文字、沒有座標，先放在縣市中心並依管制編號做固定
-// 偏移（示意位置），縣市底色＝事業家數。之後若替 carbonfee_facilities 補上經緯度，改 pointOf() 即可。
+// 位置：優先用 carbonfee_facility_coords 的地址座標（fetchCarbonfee 已併入 facility.lat/lon/coord_source）；
+// 沒有座標的事業才放在縣市中心並依管制編號做固定偏移（示意位置）。縣市底色＝事業家數。
 import React, { useMemo, useState } from 'react';
 import TaiwanLayerMap from './maps/TaiwanLayerMap';
 import { countyCentroid, normalizeCounty, useTaiwanCounties } from '../lib/geo/taiwanCounties';
@@ -20,7 +20,16 @@ function hash(str) {
   return Math.abs(h);
 }
 
+// 座標精度說明（coord_source → 文字）
+const COORD_LABEL = {
+  manual: '人工校正',
+  geocode_address: '地址門牌定位',
+  geocode_road: '依路名定位（誤差約數百公尺）',
+  geocode_area: '依鄉鎮區定位（僅示意）',
+};
+
 function pointOf(counties, facility) {
+  if (facility.lat != null && facility.lon != null) return { lat: facility.lat, lon: facility.lon };
   const c = countyCentroid(counties, facility.city);
   if (!c) return null;
   const h = hash(String(facility.control_no || facility.name));
@@ -77,7 +86,7 @@ export default function CarbonFeeMap({ plans, onSelectPlan }) {
             ['基準年排放', fmtTon(x.facility.base_emission)],
             ['計畫減量率', x.plan.rate != null ? `${(x.plan.rate * 100).toFixed(1)}%` : null],
             ['此類措施', ms.length ? ms.map((m) => `${m.roc_year}年 ${m.name || m.type_raw || ''}`).slice(0, 6).join('；') + (ms.length > 6 ? `…等 ${ms.length} 項` : '') : null],
-            ['位置', '縣市中心示意位置（非實際廠址）'],
+            ['位置', COORD_LABEL[x.facility.coord_source] || '縣市中心示意位置（非實際廠址）'],
           ],
           actions: onSelectPlan ? [{ label: '開啟計畫明細', onClick: () => onSelectPlan(x.plan.control_no) }] : [],
         };
@@ -121,6 +130,7 @@ export default function CarbonFeeMap({ plans, onSelectPlan }) {
   };
 
   const catCols = [...MEASURE_CATEGORIES, NO_MEASURE];
+  const located = facilities.filter((x) => x.facility.lat != null).length;
 
   return (
     <div className="grid grid-cols-1 xl:grid-cols-5 gap-4">
@@ -137,7 +147,7 @@ export default function CarbonFeeMap({ plans, onSelectPlan }) {
           layers={layers}
           countyFill={countyFill}
           height="min(640px, 70vh)"
-          footnote="點位為縣市中心的示意位置（資料表目前只有縣市與地址，尚無經緯度）；一個事業採取多類措施時會同時出現在多個圖層。"
+          footnote={`點位依事業地址定位（OpenStreetMap，${located} / ${facilities.length} 家；多數為路名層級，誤差約數百公尺）${located < facilities.length ? '，其餘放在縣市中心示意' : ''}；一個事業採取多類措施時會同時出現在多個圖層。`}
         />
       </div>
       <div className="xl:col-span-2 space-y-3">

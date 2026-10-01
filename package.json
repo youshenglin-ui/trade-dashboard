@@ -11,6 +11,7 @@
     "sync-data": "node scripts/sync-data.mjs",
     "db:import": "node scripts/import-to-supabase.mjs",
     "db:import-energy": "node scripts/import-energy-survey.mjs",
+    "db:import-carbonfee-coords": "node scripts/import-carbonfee-coords.mjs",
     "crawl:carbonfee": "node scripts/crawl-carbonfee.mjs"
   },
   "dependencies": {
