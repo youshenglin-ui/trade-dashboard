@@ -11,6 +11,7 @@ import { stringToColor, cleanNumber } from '../utils/helpers';
 import { fetchHydrogenSurvey } from '../lib/energy/fetchEnergySurvey';
 import { toLegacyHydrogen, h2IntensityRefs } from '../lib/energy/energyMetrics';
 import { CAT } from '../lib/energy/palette';
+import H2PlantYearTable from './energy/H2PlantYearTable';
 import HydrogenSurveyPanels from './energy/HydrogenSurveyPanels';
 import { ErrorBoundary } from './SharedComponents';
 import MapLibreBase from './map/MapLibreBase';
@@ -900,7 +901,6 @@ const H2_TABS = [
     { id: 'intensity', label: '碳排強度', icon: Leaf },
     { id: 'region', label: '區域解析', icon: Layers },
     { id: 'survey', label: '問卷深度分析', icon: FileText },
-    { id: 'raw', label: '原始資料', icon: List },
 ];
 
 const HydrogenDashboard = () => {
@@ -911,9 +911,8 @@ const HydrogenDashboard = () => {
   const [surveyData, setSurveyData] = useState(null);
   const [flowLines, setFlowLines] = useState([]);
   const [selectedYear, setSelectedYear] = useState('2025');
-  const [h2Tab, setH2Tab] = useState('overview'); // 供需總覽 / 結構分析 / 碳排強度 / 區域解析 / 問卷深度分析 / 原始資料
+  const [h2Tab, setH2Tab] = useState('overview'); // 供需總覽 / 結構分析 / 碳排強度 / 區域解析 / 問卷深度分析（原始資料分頁已移除，避免整批被複製）
   const [statusMsg, setStatusMsg] = useState('');
-  const [rawData, setRawData] = useState({ supply: [], demand: [] }); 
 
   useEffect(() => {
     // 資料來源：Supabase 問卷整併表（h2_production / h2_usage / h2_flows / energy_plants），
@@ -927,7 +926,6 @@ const HydrogenDashboard = () => {
           throw new Error('資料庫中尚無氫能問卷資料，請先執行 npm run db:import-energy 匯入問卷整併檔。');
         }
         setSurveyData(survey);
-        setRawData({ supply: survey.production.map(({ raw, ...r }) => r), demand: survey.usage.map(({ raw, ...r }) => r) }); // eslint-disable-line no-unused-vars
         setSupplyData(legacy.supplyData);
         setDemandData(legacy.demandData);
         setFlowLines(legacy.flowLines);
@@ -1058,8 +1056,7 @@ const HydrogenDashboard = () => {
        </div>
        </div>
 
-       {h2Tab !== 'raw' ? (
-           <>
+       <>
              {/* Row 1: Supply/Demand Trends & Balance */}
              {h2Tab === 'overview' && (
              <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
@@ -1078,6 +1075,9 @@ const HydrogenDashboard = () => {
                      <StackedTrendChart data={demandTrend.data} keys={demandTrend.keys} title="歷年總用量分佈 (公司廠區)" icon={Activity} />
                  </div>
              </div>
+             )}
+             {h2Tab === 'overview' && (
+                 <div className="mt-6"><H2PlantYearTable supplyData={supplyData} demandData={demandData} /></div>
              )}
 
 {/* Row 2: Structure Analysis (Pies) */}
@@ -1207,36 +1207,7 @@ const HydrogenDashboard = () => {
              </div>
              )}
 
-           </>
-       ) : (
-           <div className="card p-3 md:p-6">
-               <h3 className="font-bold text-base mb-4">原始數據檢視與診斷</h3>
-               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
-                   <ErrorBoundary>
-                       <div className="bg-white rounded-lg shadow overflow-hidden flex flex-col h-[500px]">
-                           <div className="p-3 bg-slate-50 border-b font-bold text-slate-700">供給端原始資料</div>
-                           <div className="overflow-auto flex-1">
-                               <table className="w-full text-xs text-left whitespace-nowrap">
-                                   <thead className="bg-slate-100 sticky top-0"><tr>{rawData.supply.length > 0 && Object.keys(rawData.supply[0]).map(h=><th key={h} className="p-2 border-b">{h}</th>)}</tr></thead>
-                                   <tbody className="divide-y divide-slate-50">{rawData.supply.map((row, i) => <tr key={i} className="hover:bg-blue-50">{Object.values(row).map((v,j)=><td key={j} className="p-2">{v == null ? '' : String(v)}</td>)}</tr>)}</tbody>
-                               </table>
-                           </div>
-                       </div>
-                   </ErrorBoundary>
-                   <ErrorBoundary>
-                       <div className="bg-white rounded-lg shadow overflow-hidden flex flex-col h-[500px]">
-                           <div className="p-3 bg-slate-50 border-b font-bold text-slate-700">需求端原始資料</div>
-                           <div className="overflow-auto flex-1">
-                               <table className="w-full text-xs text-left whitespace-nowrap">
-                                   <thead className="bg-slate-100 sticky top-0"><tr>{rawData.demand.length > 0 && Object.keys(rawData.demand[0]).map(h=><th key={h} className="p-2 border-b">{h}</th>)}</tr></thead>
-                                   <tbody className="divide-y divide-slate-50">{rawData.demand.map((row, i) => <tr key={i} className="hover:bg-blue-50">{Object.values(row).map((v,j)=><td key={j} className="p-2">{v == null ? '' : String(v)}</td>)}</tr>)}</tbody>
-                               </table>
-                           </div>
-                       </div>
-                   </ErrorBoundary>
-               </div>
-           </div>
-       )}
+       </>
     </div>
   );
 };

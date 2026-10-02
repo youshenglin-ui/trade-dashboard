@@ -326,7 +326,6 @@ export function CcusStorageView({ data }) {
 
   const barrierCols = ['障礙：缺乏基礎設施', '障礙：缺乏去化路徑', '障礙：投資成本過高', '促進：目標提前/加嚴', '促進：高碳價(2,000元/噸)', '碳捕捉', '碳利用', '碳運輸', '碳封存'];
   const barrierCounts = barrierCols.map((c) => ({ name: c.replace(/^障礙：|^促進：/, ''), group: c.startsWith('障礙') ? '障礙' : c.startsWith('促進') ? '促進因素' : '使用意向', n: willingness.filter((w) => w.answers?.[c] === '✓').length }));
-  const ccfd = finance.map((f) => ({ name: f.short_name, price: Number(f.answers?.['CCfD執行價格(元/噸以上)']) || null })).filter((r) => r.price);
 
   const storageMap = buildCcusLayers(data).filter((l) => ['storage', 'hubs', 'sources'].includes(l.id))
     .map((l) => (l.id === 'sources' ? { ...l, label: '排放源（有封存需求）', points: l.points.filter((p) => storageDemand.some((d) => d.key === p.id)) } : l));
@@ -397,23 +396,9 @@ export function CcusStorageView({ data }) {
           </div>
         </Card>
 
-        <Card title="CCfD 期待執行價格 vs CCS 均化成本初估" subtitle="元/噸；業者填「以上」者以下限表示">
-          <div className="h-[300px]">
-            <ErrorBoundary>
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={ccfd} margin={{ top: 20, right: 20, left: 0, bottom: 4 }}>
-                  <CartesianGrid stroke={GRID} vertical={false} />
-                  <XAxis dataKey="name" tick={AXIS_TICK} />
-                  <YAxis tick={AXIS_TICK} />
-                  <Tooltip formatter={(v) => [`${Number(v).toLocaleString()} 元/噸以上`, 'CCfD 執行價格']} />
-                  {lcoc && <ReferenceLine y={Number(lcoc.value)} stroke={NEUTRAL} strokeDasharray="4 4" label={{ value: `${lcoc.label} ${Number(lcoc.value).toLocaleString()}`, position: 'insideTopLeft', fontSize: 10, fill: '#64748b' }} />}
-                  <Bar dataKey="price" fill={CAT[0]} barSize={36} radius={[4, 4, 0, 0]} label={{ position: 'top', fontSize: 11, fill: '#475569', formatter: (v) => Number(v).toLocaleString() }} />
-                </BarChart>
-              </ResponsiveContainer>
-            </ErrorBoundary>
-          </div>
-        </Card>
       </div>
+
+      <CcusCostCompare finance={finance} benchmark={lcoc} />
 
       <Collapsible title={`意願與障礙勾選明細（${willingness.length} 份）`} defaultOpen><AnswersTable rows={willingness} /></Collapsible>
       <Collapsible title={`成本與財務（${finance.length} 份，金額：萬元）`}><AnswersTable rows={finance} /></Collapsible>

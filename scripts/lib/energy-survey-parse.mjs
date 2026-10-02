@@ -300,7 +300,7 @@ export const TABLES = {
     成本與財務: {
       table: 'survey_answers',
       map: (g, cells) => (pid(g)
-        ? { domain: 'ccus', sheet: '成本與財務', survey_year: 115, program: '環境部-CCUS旗艦', plant_id: str(g('廠區ID')), short_name: str(g('簡稱')), answers: cells }
+        ? { domain: 'ccus', sheet: '成本與財務', survey_year: 115, program: '環境部-CCUS旗艦', plant_id: str(g('廠區ID')), short_name: str(g('簡稱')), answers: realignFinanceRow(cells) }
         : null),
     },
     意願與障礙: {
@@ -394,4 +394,38 @@ export function plantsFromCcus(ccusTables, knownIds) {
     for (const r of ccusTables[t] || []) add(r.plant_id, r.short_name, null, null);
   }
   return [...extra.values()];
+}
+
+
+// ---------- 「成本與財務」錯位校正 ----------
+// 115 年整併檔此分頁有幾列（台塑化、中鋼、台電、台泥）從「封存投入」或「剩餘50%資金籌措」之後整段右移一格，
+// CCfD 執行價格落在沒有表頭的 Z 欄（解析成鍵 "Z"）。判斷規則：
+//   - 「價值鏈情境」欄出現百分比（那其實是 IRR 門檻）→ 從「封存投入(億元)」起整段左移一格
+//   - 否則若有 Z 欄、或「CCfD執行價格」欄是 A/B/C 方案代號 → 只把最後三欄左移一格
+// 校正過的列加上「_欄位校正」說明，原始儲存格仍完整保存在 survey_sheet_rows。
+export const FINANCE_HEADERS = ['廠區ID', '簡稱', '業別', '年直接排放級距', '捕捉規模(噸/年)', '捕捉CAPEX(萬元)', '捕捉OPEX(萬元/年)',
+  '單位CAPEX(元/噸年產能)', '單位OPEX(元/噸)', '申報OPEX(元/噸)', '運輸成本', '封存投入(億元)', '封存攤提(年)', '工程建置期',
+  '財務攤提年限', 'IRR門檻', '價值鏈情境', '需Pre-FEED全額補助', '支持措施：CAPEX補助', 'OPEX/CCfD補貼', '稅賦抵減',
+  '低利融資/保證', '剩餘50%資金籌措', 'CCfD參考價格模式', 'CCfD執行價格(元/噸以上)'];
+
+export function realignFinanceRow(cells) {
+  const H = FINANCE_HEADERS;
+  const at = (i) => (i === H.length ? cells.Z : cells[H[i]]);
+  const out = { ...cells };
+  delete out.Z;
+  const full = /%/.test(String(cells['價值鏈情境'] ?? ''));
+  const trailing = !full && ('Z' in cells || /^[A-C]\s/.test(String(cells['CCfD執行價格(元/噸以上)'] ?? '')));
+  if (!full && !trailing) return cells;
+  const from = full ? H.indexOf('封存投入(億元)') : H.indexOf('剩餘50%資金籌措');
+  for (let i = from; i < H.length; i++) {
+    const v = at(i + 1);
+    if (v === undefined || v === null || v === '') {
+      // 尾段只位移有值的欄，避免把原本正確的勾選洗掉
+      if (full) delete out[H[i]];
+    } else out[H[i]] = v;
+  }
+  out['_欄位校正'] = full ? '原檔此列自「封存投入」起右移一格，已左移對齊' : '原檔此列最後三欄右移一格，已左移對齊';
+  const ordered = {};
+  [...H, ...Object.keys(out)].forEach((k) => { if (k in out && !(k in ordered)) ordered[k] = out[k]; });
+  return ordered;
 }

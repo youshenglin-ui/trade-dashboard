@@ -33,6 +33,8 @@ insert into ccus_product_hs_map (product, hs_code, trade_name, match_note) value
 on conflict (product) do update set hs_code = excluded.hs_code, trade_name = excluded.trade_name, match_note = excluded.match_note;
 
 -- ---------- 封存場址（問卷「封存與其他」）與管網規劃樞紐（原 INITIAL_CCS_HUBS） ----------
+-- 澳洲海域封存只是早期測試用說法，實際無此規劃（2026-10 移除）
+delete from ccus_storage_sites where site_id = 'S_AUSTRALIA';
 insert into ccus_storage_sites (site_id, name, kind, site_type, region, lat, lon, capacity_raw, capacity_wt, start_year, status, operator_plant_id, note, source, sort_order) values
   ('S_TIEZHENSHAN', '中油苗栗鐵砧山碳封存試驗場域', 'storage', '陸地封存', '中區', 24.45, 120.68, '30萬噸(10萬噸/年)', 10, 2026, '規劃 2026–2028 封存', null,
      '旗艦問卷投入意願：台塑化否(自行開發)、中鋼否(研發平台)、台電否(自有場址)、台泥否(運輸及環評法規)', '115旗艦供需匹配問卷題幹', 10),
@@ -40,8 +42,6 @@ insert into ccus_storage_sites (site_id, name, kind, site_type, region, lat, lon
      '預期營運2年、投入20億元、攤提11年、CO2純度≧99.5%', '115年環境部CCUS旗艦計畫供需匹配調查', 20),
   ('S_FPCC_TAIXI', '台塑化自行開發封存(台西盆地)', 'storage', '自有封存', '中區', 23.80, 120.10, '評估中', null, null, '評估中', 'P01',
      '全價值鏈整合', '115年環境部CCUS旗艦計畫供需匹配調查', 30),
-  ('S_AUSTRALIA', '澳洲海域封存(跨境)', 'storage', '跨境封存', '境外', null, null, '150｜海運｜85', null, null, '數值意義待確認', 'X04',
-     '114工作表1 中鋼小港廠列：欄位標題缺漏，推測為量/方式/成本', '問卷回收情況(1140422)-繪圖板.xlsx', 40),
   ('NORTH_HUB', '台北港/林口 (陸地轉海域)', 'hub', '本土外海封存', '北區', 25.14, 121.32, null, null, null, '規劃假設', null, '管網規劃樞紐（可在規劃地圖拖曳調整）', '原 CCUS 戰情室設定', 100),
   ('CENTRAL_HUB_1', '台中港接收站 (陸地轉海域)', 'hub', '本土外海封存', '中區', 24.25, 120.45, null, null, null, '規劃假設', null, '管網規劃樞紐', '原 CCUS 戰情室設定', 110),
   ('CENTRAL_HUB_2', '麥寮外海 (陸地轉海域)', 'hub', '本土外海封存', '中區', 23.80, 120.10, null, null, null, '規劃假設', null, '管網規劃樞紐', '原 CCUS 戰情室設定', 120),

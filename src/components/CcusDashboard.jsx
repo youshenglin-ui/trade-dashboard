@@ -10,6 +10,7 @@ import {
 import { cleanNumber } from '../utils/helpers';
 import { fetchCcusSurvey, fetchScope1Rows, fetchVerifiedEmitterCoords } from '../lib/energy/fetchEnergySurvey';
 import { paramsByKey } from '../lib/energy/energyMetrics';
+import CcusTransportCost from './energy/CcusTransportCost';
 import CcusSurveyPanel from './energy/CcusSurveyViews';
 import { CCUS_SURVEY_TABS } from './energy/ccusTabs';
 import MapLibreBase from './map/MapLibreBase';
@@ -1136,7 +1137,7 @@ const CcusDashboard = ({ onOpenTrade }) => {
                             <div className="flex flex-col gap-2 overflow-y-auto pr-2 custom-scrollbar">
                                 <div className="bg-slate-50 p-3 rounded border border-slate-200">
                                     <div className="text-xs font-bold text-slate-500 mb-1">【南區】多節點集中 ➔ 港口接收外銷</div>
-                                    <div className="text-xs text-slate-600 leading-relaxed">由於缺乏合適本土封存場址，系統已將高雄分為南北與內陸多節點，分別收集周邊高排碳區至高雄港接收站，轉由船運送往中部的麥寮/台中港或東南亞(印尼/馬來西亞)進行封存。台東則以南迴海運接駁至高雄。</div>
+                                    <div className="text-xs text-slate-600 leading-relaxed">由於缺乏合適本土封存場址，系統已將高雄分為南北與內陸多節點，分別收集周邊高排碳區至高雄港接收站，轉由船運送往中部的麥寮/台中港進行封存。台東則以南迴海運接駁至高雄。</div>
                                 </div>
                                 <div className="bg-slate-50 p-3 rounded border border-slate-200">
                                     <div className="text-xs font-bold text-slate-500 mb-1">【中區】多節點中繼 ➔ 本土海/陸封存</div>
@@ -1215,6 +1216,7 @@ const CcusDashboard = ({ onOpenTrade }) => {
                             </div>
                         </div>
                     </div>
+                    <ErrorBoundary><CcusTransportCost topology={ccsTopology} refParams={refParams} /></ErrorBoundary>
                     </>
                     )}
 
