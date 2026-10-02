@@ -15,6 +15,7 @@ import {
 import { ErrorBoundary } from './SharedComponents';
 import { fetchCarbonfeeData } from '../lib/fetchCarbonfee';
 import CarbonFeeMap from './CarbonFeeMap';
+import CarbonFeeProcessBreakdown from './CarbonFeeProcessBreakdown';
 import {
   CATEGORY_COLOR, MEASURE_CATEGORIES, OTHER_COLOR, SCALE_BUCKETS, SEQ_BLUE, SERIES_COLORS, TIER_COLOR, TIER_LABEL,
   fmtPct, fmtTon, fmtWan, reductionAmount, reductionRate, scaleBucket,
@@ -810,6 +811,10 @@ export default function CarbonFeeDashboard() {
           </div>
         </Card>
       </div>
+
+      <Card title="製程改善細分：哪些做法對應較高的減量率" subtitle="依措施名稱把「製程改善」再分 9 類，以採用計畫的減量率中位數分成高效率／低效率兩組（隨上方篩選變動）">
+        <CarbonFeeProcessBreakdown plans={plans} />
+      </Card>
 
       </>)}
 

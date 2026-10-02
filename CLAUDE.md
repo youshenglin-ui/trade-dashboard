@@ -37,6 +37,11 @@
    注意 `trade_records.value_ntd_thousand` 欄名寫「千元台幣」，但實際是 **千美元**（2026-10 已與資料來源
    確認，欄位 comment 也已註明；欄名沿用不改以免牽動匯入管線）。金額×1000÷重量 kg = USD/kg，
    前端金額一律標「美元」（`helpers.js` 的 `getUnitLabel`），單價標 USD/kg。
+   貿易戰情室（2026-10 改版）：重點指標 `src/components/trade/TradeKpis.jsx`（規模＋年增率、主要進出口國與 HHI、
+   單價年增、±2σ 異常月份）；國家分析 `trade/CountryAnalysis.jsx`（世界地圖 `maps/WorldTradeMap.jsx` 用 d3-geo +
+   world-atlas 打包在前端、不依賴外部圖磚；國旗用 flagcdn 圖片，因 Windows 不顯示國旗 emoji；國名對照與座標在
+   `src/lib/geo/countries.js`，新國名出現時在那裡補一行）；變動與關聯 `trade/ProductGroupAnalysis.jsx`，產品類別
+   （五大基礎化學品等）定義在 `src/lib/trade/productGroups.js`。
    已知效能限制：前端目前是「全量抓取 45 萬列再篩選」，載入約 40-50 秒，比原本讀本地 CSV
    還慢，下一步要把篩選/聚合邏輯搬進資料庫查詢（RPC）才能真正做到快速查詢。
 2. **地圖**：2026-09-28 起 CCUS 與氫能地圖已改用 MapLibre GL JS。共用底圖 `src/components/map/MapLibreBase.jsx`
@@ -111,6 +116,12 @@
   `energy_ref_parameters`。CCUS 規劃地圖的樞紐/聚落節點讀 `ccus_storage_sites`(kind='hub') /
   `ccus_network_nodes`，範疇一排放源讀 `energy_facility_records`，座標優先用 `ccus_emission_records`
   已查證的地址座標。
+- 2026-10 補充：氫能「原始資料」分頁已移除（使用者不希望整批被複製；注意分析層資料表仍可經 anon API 讀取）。
+  供需總覽下方有各廠區歷年填報表 `energy/H2PlantYearTable.jsx`。CCUS 碳封存頁的成本比較 `energy/CcusCostCompare.jsx`、
+  規劃頁運輸估價 `energy/CcusTransportCost.jsx`，模型都在 `src/lib/energy/ccusCost.js`。「成本與財務」分頁原檔有幾列
+  欄位右移一格，解析時由 `realignFinanceRow()` 自動對齊。國內 CCU 示範案例名錄表 `ccus_ccu_cases`
+  （`supabase/ccus_ccu_cases.sql`，含已停止／規劃中案場）。碳費「製程改善」細分規則在 `carbonfeeMetrics.js` 的
+  `PROCESS_SUBTYPES`（`CarbonFeeProcessBreakdown.jsx`）。
 - 跨計畫提醒：產發署（製造部門淨零轉型）與環境部（CCUS 旗艦）屬不同委辦計畫，圖表以「計畫」欄區分，
   對外引用請分開呈現。
 

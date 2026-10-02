@@ -13,6 +13,8 @@ import { Box, ExternalLink, Factory, FlaskConical, Map as MapIcon, Rocket, Therm
 import { ErrorBoundary } from '../SharedComponents';
 import TaiwanLayerMap, { LegendSwatch } from '../maps/TaiwanLayerMap';
 import { AnswersTable, Badge, Card, Collapsible, DataTable, ErrorBlock, Kpi, LoadingBlock } from './ui';
+import CcusCostCompare from './CcusCostCompare';
+import CcuCaseList from './CcuCaseList';
 import { fetchCcuProductPrices } from '../../lib/energy/fetchEnergySurvey';
 import { useCcusSurvey } from '../../lib/energy/useEnergySurvey';
 import { buildCcusLayers } from '../../lib/energy/ccusLayers';
@@ -433,6 +435,8 @@ export function CcusUtilizationView({ data, onOpenTrade }) {
         <Kpi label="115年 CO₂ 需求/去化量" value={fmtWt(sum(products.filter((r) => r.survey_year === 115), 'co2_demand_wt'), 3)} unit="萬噸/年" />
         <Kpi label="有貿易價格可對照" value={[...hsByProduct.values()].filter((m) => m.hs_code && priceRows.some((p) => p.product === m.product)).length} unit="項產品" note="稅號對照表：ccus_product_hs_map" />
       </div>
+
+      <CcuCaseList cases={data.ccuCases} onOpenTrade={onOpenTrade} />
 
       <Card title="CO₂ 需求/去化量（依產品）" subtitle="萬噸/年；各年度加總。大連醋酸需 CO₂ 11 萬噸，但廠內捕捉僅 6.1 萬噸，缺碳源。" icon={FlaskConical}>
         <div className="h-[260px]">

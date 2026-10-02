@@ -50,7 +50,7 @@ export function fetchHydrogenSurvey() {
 
 export function fetchCcusSurvey() {
   return once('ccus', async () => {
-    const [plants, sources, captures, plans, utilization, answers, assistance, sites, nodes, hsMap, params] = await Promise.all([
+    const [plants, sources, captures, plans, utilization, answers, assistance, sites, nodes, hsMap, params, ccuCases] = await Promise.all([
       fetchEnergyPlants(),
       fetchAll('ccus_emission_sources'),
       fetchAll('ccus_capture_units'),
@@ -62,8 +62,10 @@ export function fetchCcusSurvey() {
       fetchAll('ccus_network_nodes', { order: 'node_id' }),
       fetchAll('ccus_product_hs_map', { order: 'product' }),
       fetchRefParameters(),
+      // CCU 案例名錄（supabase/ccus_ccu_cases.sql）；表還沒建立時不擋整頁
+      fetchAll('ccus_ccu_cases', { order: 'sort_order' }).catch((e) => { console.warn(e); return []; }),
     ]);
-    return { plants, sources, captures, plans, utilization, answers, assistance, sites, nodes, hsMap, params };
+    return { plants, sources, captures, plans, utilization, answers, assistance, sites, nodes, hsMap, params, ccuCases };
   });
 }
 
