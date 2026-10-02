@@ -15,6 +15,9 @@ import {
   formatValueByUnit, getUnitLabel, formatCurrencyAxis, mapEventToDateKey, 
   exportToCSV, copyToClipboard
 } from '../utils/helpers';
+import CountryAnalysis from './trade/CountryAnalysis';
+import TradeKpis from './trade/TradeKpis';
+import ProductGroupAnalysis from './trade/ProductGroupAnalysis';
 import { ErrorBoundary, CustomTimeTooltip, renderCustomizedLabel, KPICard, MultiSelectDropdown, Segmented, ScrollableChart } from './SharedComponents';
 
 const TradeDashboard = ({
@@ -26,14 +29,14 @@ const TradeDashboard = ({
   const [activeTab, setActiveTab] = useState('overview'); 
   const [timeRange, setTimeRange] = useState(120); 
   const [granularity, setGranularity] = useState('month'); 
-  const [countryViewType, setCountryViewType] = useState('出口'); 
-  const [countryMetric, setCountryMetric] = useState('value'); 
-  const [countryTopN, setCountryTopN] = useState('5'); 
+  // 時間趨勢「國家堆疊」沿用的檢視設定（國家分析分頁有自己的切換）
+  const countryViewType = '出口';
+  const countryMetric = 'value';
   const [pivotMode, setPivotMode] = useState('time'); 
   const [topicMetric, setTopicMetric] = useState('value');
   const [selectedTopicCodes, setSelectedTopicCodes] = useState([]); 
   const [selectedRegion, setSelectedRegion] = useState('ALL'); 
-  const [currencyUnit, setCurrencyUnit] = useState('thousand');
+  const currencyUnit = 'thousand';
   const [topicChartLevel, setTopicChartLevel] = useState('hs2'); 
   const [trendViewMode, setTrendViewMode] = useState('summary');
   const [displayData, setDisplayData] = useState([]);
@@ -139,6 +142,13 @@ const TradeDashboard = ({
     });
   }, [displayData, timeRange, selectedRegion]);
 
+  // 只套區域、不套時間範圍（給 KPI 年增率用）
+  const regionData = useMemo(() => {
+    if (selectedRegion === 'ALL') return displayData;
+    const countries = TRADE_REGIONS[selectedRegion].countries;
+    return displayData.filter(d => countries.some(c => d.country.includes(c)));
+  }, [displayData, selectedRegion]);
+
   const aggregatedData = useMemo(() => {
     const map = {};
     filteredData.forEach(d => {
@@ -193,77 +203,6 @@ const TradeDashboard = ({
           };
       }).sort((a, b) => b.totalValue - a.totalValue);
   }, [filteredData]);
-
-  const countryPieData = useMemo(() => {
-    const map = {};
-    const isExportView = countryViewType === '出口';
-    const isBalanceView = countryViewType === 'balance';
-    
-    if (isBalanceView) {
-         filteredData.forEach(d => {
-             if (!map[d.country]) map[d.country] = { name: d.country, value: 0 };
-             map[d.country].value += (countryMetric === 'value' ? d.value : d.weight);
-         });
-    } else {
-        filteredData.forEach(d => {
-            const isExport = d.type.includes('出') || d.type === 'E';
-            if (isExport === isExportView) {
-                 if (!map[d.country]) map[d.country] = { name: d.country, value: 0 };
-                 map[d.country].value += (countryMetric === 'value' ? d.value : d.weight);
-            }
-        });
-    }
-    const sorted = Object.values(map).sort((a, b) => b.value - a.value);
-    const sliceIndex = countryTopN === 'all' ? undefined : parseInt(countryTopN);
-    return sorted.slice(0, sliceIndex);
-  }, [filteredData, countryViewType, countryMetric, countryTopN]);
-
-  const countryTrendData = useMemo(() => {
-      const topCountries = pivotCountryData.slice(0, parseInt(countryTopN === 'all' ? 10 : countryTopN)).map(c => c.country);
-      const map = {};
-      aggregatedData.forEach(t => { map[t.date] = { date: t.date }; topCountries.forEach(c => map[t.date][c] = 0); });
-
-      filteredData.forEach(d => {
-          if (topCountries.includes(d.country)) {
-              let key = d.date;
-              if (granularity === 'year') key = d.year;
-              else if (granularity === 'quarter') {
-                  const m = parseInt(d.date.split('-')[1]);
-                  key = `${d.year}-Q${Math.floor((m+2)/3)}`;
-              }
-              if (map[key]) {
-                  const val = countryMetric === 'value' ? d.value : d.weight;
-                  const isExport = d.type.includes('出') || d.type === 'E';
-                  if (countryViewType === 'balance') map[key][d.country] += (isExport ? val : -val);
-                  else {
-                      const viewIsExport = countryViewType === '出口';
-                      if (isExport === viewIsExport) map[key][d.country] += val;
-                  }
-              }
-          }
-      });
-      return sanitizeForChart(Object.values(map).sort((a, b) => a.date.localeCompare(b.date)));
-  }, [filteredData, pivotCountryData, countryViewType, countryMetric, granularity, aggregatedData, countryTopN]);
-
-  const summary = useMemo(() => {
-    if (filteredData.length === 0) return { totalValue: 0, totalWeight: 0, avgPrice: 0 };
-    const totalValue = filteredData.reduce((acc, curr) => acc + curr.value, 0);
-    const totalWeight = filteredData.reduce((acc, curr) => acc + curr.weight, 0);
-    const avg = totalWeight > 0 ? (totalValue * 1000) / totalWeight : 0;
-    
-    let valDisplay = formatValueByUnit(totalValue, currencyUnit);
-    if (currencyUnit === 'thousand') {
-        // totalValue 單位為千美元：1e5 千美元 = 1 億美元；÷10 = 萬美元
-        if (totalValue > 100000) valDisplay = (totalValue / 100000).toFixed(2) + ' 億';
-        else valDisplay = (totalValue / 10).toLocaleString(undefined, { maximumFractionDigits: 0 }) + ' 萬';
-    }
-
-    return { 
-        totalValue: valDisplay, 
-        totalWeight: formatSmartWeight(totalWeight), 
-        avgPrice: isFinite(avg) ? avg.toFixed(2) : 0 
-    };
-  }, [filteredData, currencyUnit]);
 
   const topicBreakdown = useMemo(() => {
       if (!currentTopic) return [];
@@ -346,21 +285,6 @@ const TradeDashboard = ({
       };
   }, [filteredData, pivotCountryData, countryViewType, countryMetric, granularity]);
 
-  const crossProductComparison = useMemo(() => {
-      if (!useRealData) return [];
-      const topCountries = pivotCountryData.slice(0, 5).map(c => c.country);
-      const productMap = {};
-      dataset.forEach(d => {
-          if (topCountries.includes(d.country) && d.hsCode !== searchQuery) { 
-              if (!productMap[d.hsCode]) {
-                  productMap[d.hsCode] = { code: d.hsCode, name: d.productName || d.hsCode, totalValue: 0 };
-              }
-              productMap[d.hsCode].totalValue += d.value;
-          }
-      });
-      return Object.values(productMap).sort((a, b) => b.totalValue - a.totalValue).slice(0, 5); 
-  }, [dataset, pivotCountryData, useRealData, searchQuery]);
-
   // ** 3. Render Helpers **
   const renderOverviewTab = () => (
     <div className="space-y-6">
@@ -426,87 +350,7 @@ const TradeDashboard = ({
     </div>
   );
 
-  const renderCountryTab = () => (
-      <div className="space-y-6">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-            <div className="flex flex-wrap gap-2 md:gap-3">
-                <Segmented value={countryViewType} onChange={setCountryViewType} options={[{ value: '出口', label: '出口' }, { value: '進口', label: '進口' }, { value: 'balance', label: '順逆差' }]} />
-                <Segmented value={countryTopN} onChange={setCountryTopN} options={[{ value: '5', label: 'Top 5' }, { value: '10', label: 'Top 10' }, { value: 'all', label: '全部' }]} />
-                <Segmented value={countryMetric} onChange={setCountryMetric} options={[{ value: 'value', label: '金額' }, { value: 'weight', label: '重量' }]} />
-            </div>
-            <div className="flex gap-2">
-                <button onClick={() => copyToClipboard(pivotCountryData)} className="flex items-center gap-1 h-10 px-3.5 bg-white border border-brand-line rounded-lg text-sm hover:bg-slate-50"><Copy size={14}/> 複製</button>
-                <button onClick={() => exportToCSV(pivotCountryData, `Country_Data_${countryViewType}`)} className="flex items-center gap-1 h-10 px-3.5 bg-brand text-white rounded-lg text-sm font-bold hover:bg-brand-dark"><Download size={14}/> 下載</button>
-            </div>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className="card p-3 md:p-4 h-80 flex flex-col">
-                <h4 className="font-bold text-center mb-2">{countryViewType === 'balance' ? '貿易總額佔比 (依存度)' : '總量佔比'}</h4>
-                <div className="flex-1 min-h-0 relative w-full">
-                    <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                            <Pie data={countryPieData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} dataKey="value" label={renderCustomizedLabel}>
-                                {countryPieData.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
-                            </Pie>
-                            <Tooltip formatter={(val) => countryMetric === 'value' ? formatCurrencyAxis(val, currencyUnit) : formatSmartWeight(val)} />
-                        </PieChart>
-                    </ResponsiveContainer>
-                </div>
-            </div>
-            <div className="card p-3 md:p-4 h-80 flex flex-col">
-                <h4 className="font-bold text-center mb-2">{countryViewType === 'balance' ? '順逆差趨勢' : '各國趨勢競賽'}</h4>
-                <div className="flex-1 min-h-0 relative w-full">
-                    <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={countryTrendData}>
-                            <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                            <XAxis dataKey="date" tick={{fontSize: 10}} />
-                            <YAxis tickFormatter={countryMetric==='value'?formatCurrencyAxis:formatSmartWeight} tick={{fontSize: 10}} />
-                            <Tooltip formatter={(value, name) => [(value || 0).toLocaleString(), name]} />
-                            <Legend wrapperStyle={{fontSize: '10px'}}/>
-                            {pivotCountryData.slice(0, parseInt(countryTopN === 'all' ? 10 : countryTopN)).map((c, i) => (
-                                <Line key={c.country} type="monotone" dataKey={c.country} stroke={COLORS[i % COLORS.length]} dot={false} strokeWidth={2} />
-                            ))}
-                        </LineChart>
-                    </ResponsiveContainer>
-                </div>
-            </div>
-        </div>
-        
-        {/* Country Table */}
-        <div className="card  overflow-hidden flex flex-col h-96">
-            <div className="overflow-auto flex-1">
-                <table className="w-full text-sm text-left whitespace-nowrap">
-                    <thead className="text-xs text-slate-500 uppercase bg-slate-50 border-b border-slate-200 sticky top-0">
-                        <tr>
-                            <th className="px-4 py-3">國家</th>
-                            <th className="px-4 py-3 text-right">出口額 ({getUnitLabel(currencyUnit)})</th>
-                            <th className="px-4 py-3 text-right">進口額 ({getUnitLabel(currencyUnit)})</th>
-                            <th className="px-4 py-3 text-right font-bold text-blue-600">順逆差 ({getUnitLabel(currencyUnit)})</th>
-                            <th className="px-4 py-3 text-right">出口重量</th>
-                            <th className="px-4 py-3 text-right">進口重量</th>
-                            <th className="px-4 py-3 text-right text-amber-600">出口單價</th><th className="px-4 py-3 text-right text-amber-600">進口單價</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                        {pivotCountryData.slice(0, parseInt(countryTopN === 'all' ? 100 : countryTopN)).map((row, idx) => (
-                            <tr key={idx} className="hover:bg-slate-50">
-                                <td className="px-4 py-2 font-medium text-slate-800">{row.country}</td>
-                                <td className="px-4 py-2 text-right font-mono">{formatValueByUnit(row.exportValue, currencyUnit)}</td>
-                                <td className="px-4 py-2 text-right font-mono">{formatValueByUnit(row.importValue, currencyUnit)}</td>
-                                <td className={`px-4 py-2 text-right font-mono font-bold ${row.tradeBalance >= 0 ? 'text-slate-800' : 'text-red-500'}`}>{row.tradeBalance >= 0 ? '+' : ''}{formatValueByUnit(row.tradeBalance, currencyUnit)}</td>
-                                <td className="px-4 py-2 text-right font-mono">{formatSmartWeight(row.exportWeight)}</td>
-                                <td className="px-4 py-2 text-right font-mono">{formatSmartWeight(row.importWeight)}</td>
-                                <td className="px-4 py-2 text-right font-mono text-amber-700">{row.avgExportPrice}</td>
-                                <td className="px-4 py-2 text-right font-mono text-amber-700">{row.avgImportPrice}</td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-      </div>
-  );
+  const renderCountryTab = () => <CountryAnalysis filteredData={filteredData} granularity={granularity} />;
 
   const renderPivotTab = () => (
       <div className="space-y-4 h-full flex flex-col">
@@ -562,62 +406,9 @@ const TradeDashboard = ({
   );
 
   const renderAnalysisTab = () => (
-      <div className="space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="space-y-4">
-                <div className="bg-rose-50 border border-rose-100 p-4 rounded-lg">
-                    <h4 className="font-bold text-rose-800 flex items-center gap-2 mb-2"><BookOpen size={18}/> 重大歷史事件簿</h4>
-                    <p className="text-sm text-rose-700">{currentTopic ? '相關政策實施時間軸' : '影響國際貿易之重大事件一覽'}</p>
-                </div>
-                <div className="space-y-2 max-h-96 overflow-y-auto pr-2">
-                    {(currentTopic && TOPIC_MILESTONES[currentTopic] ? TOPIC_MILESTONES[currentTopic] : GLOBAL_EVENTS).map((ev, i) => (
-                        <div key={i} className="flex items-start gap-3 text-xs bg-white p-3 rounded border border-slate-200 hover:shadow-md transition-shadow">
-                            <div className="font-mono text-slate-500 font-bold min-w-[60px] pt-0.5">{ev.date}</div>
-                            <div className="flex-1">
-                                <div className="flex items-center gap-2 mb-1">
-                                    <span className={`px-1.5 py-0.5 rounded text-[10px] bg-blue-100 text-blue-600 font-bold`}>{ev.type || 'Event'}</span>
-                                    <span className="text-slate-800 font-bold text-sm">{ev.label}</span>
-                                </div>
-                                <div className="text-slate-600 leading-relaxed">{ev.desc}</div>
-                            </div>
-                        </div>
-                    ))}
-                </div>
-            </div>
-
-            <div className="space-y-4">
-                <div className="bg-blue-50 border border-blue-100 p-4 rounded-lg">
-                    <h4 className="font-bold text-blue-800 flex items-center gap-2 mb-2"><ArrowRightLeft size={18}/> 核心夥伴之關聯產品分析</h4>
-                    <p className="text-sm text-blue-700">分析前 5 大貿易國在資料庫中其他產品 (稅號) 的交易情況。</p>
-                </div>
-                {crossProductComparison.length > 0 ? (
-                    <div className="card overflow-hidden">
-                        <table className="w-full text-xs text-left">
-                            <thead className="bg-slate-50 border-b border-slate-200">
-                                <tr><th className="px-3 py-2">關聯產品 (稅號)</th><th className="px-3 py-2 text-right">對應貿易額</th></tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100">
-                                {crossProductComparison.map((prod, idx) => (
-                                    <tr key={idx} className="hover:bg-slate-50">
-                                        <td className="px-3 py-2">
-                                            <div className="font-medium text-slate-800">{prod.name}</div>
-                                            <div className="text-slate-400 text-[10px]">{prod.code}</div>
-                                        </td>
-                                        <td className="px-3 py-2 text-right font-mono text-blue-600">{(prod.totalValue || 0).toLocaleString()}</td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                ) : (
-                    <div className="p-8 text-center text-slate-400 border-2 border-dashed border-slate-200 rounded-lg">
-                        <p>尚無關聯數據。</p>
-                        <p className="text-xs mt-1">(請確認 CSV 包含多種稅號資料)</p>
-                    </div>
-                )}
-            </div>
-        </div>
-      </div>
+      <ProductGroupAnalysis dataset={dataset} searchQuery={currentTopic ? '' : searchQuery}
+        events={[...(currentTopic && TOPIC_MILESTONES[currentTopic] ? TOPIC_MILESTONES[currentTopic] : []), ...GLOBAL_EVENTS].sort((x, y) => x.date.localeCompare(y.date))}
+        eventTitle={currentTopic ? '重大事件與專題政策時間軸' : '重大歷史事件簿'} />
   );
 
   const renderTopicOverview = () => (
@@ -724,12 +515,7 @@ const TradeDashboard = ({
             )}
           </div>
 
-          <section className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-              <KPICard title={`總貿易額 (${currencyUnit === 'thousand' ? '美元' : getUnitLabel(currencyUnit)})`} value={summary.totalValue} subtext="區間累計" trend="up" icon={TrendingUp} color="bg-brand"/>
-              <KPICard title="總重量" value={summary.totalWeight} subtext="區間累計" trend="up" icon={Database} color="bg-brand-cyan"/>
-              <KPICard title="平均單價 (USD/kg)" value={`$${summary.avgPrice}`} subtext="加權平均" trend="down" icon={AlertTriangle} color="bg-brand-orange"/>
-              <KPICard title="異常波動" value={0} subtext="待人工確認" trend="down" icon={AlertTriangle} color="bg-rose-500"/>
-          </section>
+          <TradeKpis filteredData={filteredData} regionData={regionData} loading={loading} />
 
           <ErrorBoundary>
             <div className="card overflow-hidden flex flex-col min-h-[500px]">

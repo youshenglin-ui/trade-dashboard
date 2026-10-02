@@ -11,6 +11,8 @@ export const NAV_ITEMS = [
 ];
 
 export const GLOBAL_EVENTS = [
+    { date: '2020-03', label: 'COVID-19', type: 'Health', desc: '全球疫情擴散，需求驟降、油價崩跌' },
+    { date: '2021-02', label: '美國德州寒流', type: 'Supply', desc: '美國墨西哥灣石化廠大規模停產，化學品價格急漲' },
     { date: '2022-02', label: '烏俄戰爭', type: 'War', desc: '能源原物料飆漲' },
     { date: '2022-06', label: '美升息', type: 'Finance', desc: '強勢美元導致亞幣競貶' },
     { date: '2023-10', label: '以巴衝突', type: 'War', desc: '紅海航運危機，運費上漲' },
@@ -18,6 +20,7 @@ export const GLOBAL_EVENTS = [
     { date: '2024-04', label: '電價調漲', type: 'Domestic', desc: '工業電價平均調漲' },
     { date: '2024-06', label: 'ECFA中止(34項)', type: 'Policy', desc: '第二波中止，含潤滑油、紡織' },
     { date: '2024-11', label: '美國大選', type: 'Politics', desc: '川普當選，市場預期關稅壁壘升高' },
+    { date: '2025-04', label: '美國對等關稅', type: 'Policy', desc: '美國宣布對各國課徵對等關稅' },
 ];
 
 export const TOPIC_MILESTONES = {
