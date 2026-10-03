@@ -6,13 +6,14 @@ import TradeDashboard from './components/TradeDashboard';
 import HydrogenDashboard from './components/HydrogenDashboard';
 import CcusDashboard from './components/CcusDashboard';
 import CarbonFeeDashboard from './components/CarbonFeeDashboard';
+import LowCarbonDashboard from './components/LowCarbonDashboard';
 import { STRATEGIC_TOPICS } from './utils/constants';
 import { normalizeCode } from './utils/helpers';
 import { fetchAllTradeRecords } from './lib/fetchTradeRecords';
 
 const App = () => {
   const [activeTab, setActiveTab] = useState('overview'); 
-  const [activeModule, setActiveModule] = useState('trade'); // 'trade' | 'hydrogen' | 'ccus' | 'carbonfee'
+  const [activeModule, setActiveModule] = useState('trade'); // 'trade' | 'hydrogen' | 'ccus' | 'carbonfee' | 'lowcarbon'
   const [showConfigModal, setShowConfigModal] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false); // 新增：控制是否為獨立全螢幕展示模式
   const [showMore, setShowMore] = useState(false); // 手機版「更多」抽屜
@@ -51,7 +52,7 @@ const App = () => {
     const mod = params.get('module');
     const standalone = params.get('standalone');
     
-    if (mod && ['trade', 'hydrogen', 'ccus', 'carbonfee'].includes(mod)) {
+    if (mod && ['trade', 'hydrogen', 'ccus', 'carbonfee', 'lowcarbon'].includes(mod)) {
       setActiveModule(mod);
     }
     // 其他模組連到貿易資料用：?module=trade&hs=281121（例如 CCUS 再利用產品的「貿易資訊」）
@@ -279,6 +280,8 @@ const App = () => {
              <CcusDashboard onOpenTrade={(code, name) => selectProduct(code, name)} />
         ) : activeModule === 'carbonfee' ? (
              <CarbonFeeDashboard />
+        ) : activeModule === 'lowcarbon' ? (
+             <LowCarbonDashboard />
         ) : (
              <TradeDashboard 
                 useRealData={useRealData}

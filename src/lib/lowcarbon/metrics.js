@@ -31,12 +31,28 @@ export const TECHDB_PROCESS_MAP = {
 // ---------- 電力排碳係數（經濟部能源署公告，kgCO2e/kWh） ----------
 // 各版彙編用的是出版當年可取得的係數（0.554 → 0.474），跨年比較時可換算成同一係數。
 export const LATEST_EF = { value: 0.474, label: '113年度電力排碳係數 0.474 kgCO2e/kWh' };
+// 歷年公告值（西元年度 → kgCO2e/kWh），計算器與「係數 vs 減碳量」圖用
+export const EF_HISTORY = [
+  { year: 2015, roc: 104, ef: 0.525 }, { year: 2016, roc: 105, ef: 0.529 }, { year: 2017, roc: 106, ef: 0.554 },
+  { year: 2018, roc: 107, ef: 0.533 }, { year: 2019, roc: 108, ef: 0.509 }, { year: 2020, roc: 109, ef: 0.502 },
+  { year: 2021, roc: 110, ef: 0.509 }, { year: 2022, roc: 111, ef: 0.495 }, { year: 2023, roc: 112, ef: 0.494 },
+  { year: 2024, roc: 113, ef: 0.474 },
+];
+
+// 碳費（環境部，元/公噸CO2e）：一般費率與自主減量計畫優惠費率；收費排放量 = 年排放量 − 2.5 萬公噸（K 值）
+export const CARBON_FEE_RATES = [
+  { key: 'general', label: '一般費率 300 元', value: 300 },
+  { key: 'B', label: '優惠費率 B 100 元', value: 100 },
+  { key: 'A', label: '優惠費率 A 50 元', value: 50 },
+];
+export const CARBON_FEE_THRESHOLD_T = 25000;
 
 // ---------- 經濟性假設（年化減碳成本） ----------
 // 年化減碳成本（元/公噸CO2e）=（投資 × 資本回收因子 − 年效益）÷ 年減碳量；負值代表「減碳同時省錢」。
 // 資本回收因子 CRF = r(1+r)^n / ((1+r)^n − 1)，預設折現率 5%、設備壽命 10 年。
 export const ECON = { discountRate: 0.05, lifetimeYears: 10 };
-export const crf = (r = ECON.discountRate, n = ECON.lifetimeYears) => (r * (1 + r) ** n) / ((1 + r) ** n - 1);
+export const crf = (r = ECON.discountRate, n = ECON.lifetimeYears) =>
+  r === 0 ? 1 / n : (r * (1 + r) ** n) / ((1 + r) ** n - 1);
 
 const num = (v) => (v == null || v === '' || Number.isNaN(Number(v)) ? null : Number(v));
 
@@ -62,12 +78,12 @@ export function investPerTon(c, opts) {
 }
 
 // 年化減碳成本（元/公噸CO2e）
-export function abatementCost(c, opts) {
+export function abatementCost(c, opts = {}) {
   const inv = num(c.investment_wan);
   const ben = num(c.benefit_wan);
   const co2 = co2Of(c, opts);
   if (inv == null || ben == null || co2 == null || co2 <= 0) return null;
-  return ((inv * crf() - ben) * 1e4) / co2;
+  return ((inv * crf(opts.discountRate, opts.lifetimeYears) - ben) * 1e4) / co2;
 }
 
 // 回收年限：原文有寫用原文；沒寫但有投資與年效益時用 投資 ÷ 年效益 推算
@@ -118,3 +134,25 @@ export const fmtTon = (v) => {
 };
 export const fmtYears = (v) => (v == null || !Number.isFinite(v) ? '—' : `${v < 1 ? v.toFixed(2) : v.toFixed(1)} 年`);
 export const rocToAd = (y) => (y ? Number(y) + 1911 : null);
+
+// 低碳製程技術資料庫的「典型應用案例」轉成與彙編案例相同的欄位，分析時可選擇納入（廠商提供，標示來源）
+export function techToCase(t) {
+  const [category, subcategory] = TECHDB_PROCESS_MAP[t.process_type] || ['節能', t.process_type];
+  return {
+    case_id: `tech-${t.tech_id}`, source: 'techdb', doc_title: '低碳製程技術資料庫（廠商典型案例）', doc_kind: 'techdb',
+    pub_year_roc: null, industry: (t.industries?.[0]?.industry) || '跨產業', tech_name: t.tech_name, category, subcategory,
+    company: null, supplier: t.vendor, status: '廠商案例', is_latest: true,
+    investment_wan: t.case_investment_wan, electricity_kwh: t.case_kwh, benefit_wan: t.case_benefit_wan,
+    co2_t: t.case_co2_t, payback_years: t.case_payback_years, saving_text: t.case_text?.slice(0, 200), url: t.detail_url,
+  };
+}
+
+// 投資門檻級距（萬元）
+export const INVEST_BUCKETS = [
+  { key: 'i1', label: '100 萬以下', max: 100 },
+  { key: 'i2', label: '100–500 萬', max: 500 },
+  { key: 'i3', label: '500–2,000 萬', max: 2000 },
+  { key: 'i4', label: '2,000 萬–1 億', max: 10000 },
+  { key: 'i5', label: '1 億以上', max: Infinity },
+];
+export const investBucket = (v) => (v == null ? null : INVEST_BUCKETS.find((b) => v < b.max)?.key ?? null);

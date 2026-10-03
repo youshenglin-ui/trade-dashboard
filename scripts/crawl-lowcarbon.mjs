@@ -269,7 +269,9 @@ async function main() {
     // 給 GitHub Actions 判斷要不要開 Issue
     const needsAttention = problems.length > 0 || diff.pendingDocuments.length > 0 || diff.newArticles.length > 0 || diff.newTechs.length > 0;
     if (process.env.GITHUB_OUTPUT) {
-      await writeFile(process.env.GITHUB_OUTPUT, `attention=${needsAttention}\npending=${diff.pendingDocuments.length}\n`, { flag: 'a' });
+      // changed：書目/企業案例/技術有增減 → 才需要送出「寫入資料庫」核准請求
+      const changed = diff.newDocuments.length + diff.removedDocuments.length + diff.newArticles.length + diff.newTechs.length > 0;
+      await writeFile(process.env.GITHUB_OUTPUT, `attention=${needsAttention}\npending=${diff.pendingDocuments.length}\nchanged=${changed}\n`, { flag: 'a' });
     }
   }
   if (problems.length) throw new Error(`驗證未通過，不更新快照也不寫入資料庫：\n  - ${problems.join('\n  - ')}`);

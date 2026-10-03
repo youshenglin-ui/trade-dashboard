@@ -1,0 +1,159 @@
+# 製造業低碳技術：每月檢查產發署「低碳技術彙編／典範案例／企業減碳案例／低碳製程技術資料庫」
+#
+# 排程：每月 1 日 09:00（台灣時間）輕量檢查；12 月那次加 --full（明細頁全部重抓），
+#       配合每年 12 月前後新一年度彙編上架（例：114 年造紙彙編 2025-12-18 上架，只在 12/1 檢查會漏掉）。
+#
+# 兩段式：
+#   1. detect（不需核准）：爬取 → 比對上次快照 → 提交快照 →
+#      有「待擷取的新 PDF」、新企業案例或新技術時，自動開 GitHub Issue 通知（已有未關閉的通知 Issue 就改留言）。
+#      PDF 內的案例數值不會自動擷取，要開 Claude 工作階段依 data/lowcarbon/README.md 擷取。
+#   2. write-db（需核准）：書目／企業案例／技術資料庫有增減時，才送出寫入 Supabase 的核准請求。
+#      綁定與碳費爬蟲相同的 GitHub Environment「carbonfee-crawl」（Required reviewers），
+#      到 Actions 頁面按「Review deployments → Approve」才會寫入。
+# 手動執行：Actions → 製造業低碳技術檢查 → Run workflow（可選 full / 強制寫入資料庫）。
+# 排程只在預設分支（main）上生效。
+#
+# 需要的 Repository secrets（與碳費爬蟲共用）：SUPABASE_DB_HOST（Session pooler）、SUPABASE_DB_USER、
+#   SUPABASE_DB_PASSWORD，選填 SUPABASE_DB_PORT。
+name: 製造業低碳技術檢查
+
+on:
+  schedule:
+    - cron: '0 1 1 * *'
+  workflow_dispatch:
+    inputs:
+      full:
+        description: '明細頁全部重抓（--full）'
+        type: boolean
+        default: false
+      write_db:
+        description: '無論有無變動都送出寫入資料庫（仍需核准）'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: crawl-lowcarbon
+  cancel-in-progress: false
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      attention: ${{ steps.crawl.outputs.attention }}
+      pending: ${{ steps.crawl.outputs.pending }}
+      changed: ${{ steps.crawl.outputs.changed }}
+      ok: ${{ steps.crawl.outputs.ok }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: 爬取並比對
+        id: crawl
+        run: |
+          ARGS="--report report.md"
+          month=$(TZ=Asia/Taipei date +%-m)
+          if [ "${{ inputs.full }}" = "true" ] || { [ "${{ github.event_name }}" = "schedule" ] && [ "$month" = "12" ]; }; then
+            ARGS="$ARGS --full"
+          fi
+          set +e
+          node scripts/crawl-lowcarbon.mjs $ARGS 2>&1 | tee crawl.log
+          code=${PIPESTATUS[0]}
+          set -e
+          if [ "$code" = "0" ]; then echo "ok=true" >> "$GITHUB_OUTPUT"; else echo "ok=false" >> "$GITHUB_OUTPUT"; fi
+          # 驗證失敗也要開 Issue 通知，所以不在這裡讓 job 失敗；最後一步再回報
+          if [ "$code" != "0" ] && [ ! -f report.md ]; then
+            printf '# 低碳技術爬蟲執行失敗\n\n請查看 Actions 執行紀錄。\n' > report.md
+            echo "attention=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 保存快照與報告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lowcarbon-snapshot-${{ github.run_id }}
+          path: |
+            data/lowcarbon/snapshot.json
+            report.md
+            crawl.log
+          retention-days: 90
+          if-no-files-found: ignore
+
+      - name: 開 Issue 通知
+        if: steps.crawl.outputs.attention == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          label="lowcarbon-update"
+          gh label create "$label" --color 1baf7a --description "低碳技術彙編爬蟲通知" 2>/dev/null || true
+          body="$(cat report.md)
+
+          ---
+          由 GitHub Actions 執行 [#${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) 自動產生。"
+          existing=$(gh issue list --label "$label" --state open --json number --jq '.[0].number')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$body"
+          else
+            title="低碳技術彙編：$(TZ=Asia/Taipei date +%Y-%m) 檢查發現更新（待擷取 PDF ${{ steps.crawl.outputs.pending }} 本）"
+            gh issue create --title "$title" --label "$label" --body "$body"
+          fi
+
+      # 快照提交回 repo：保留每月版本歷史，也讓 repo 持續有活動（GitHub 會停用 60 天無提交 repo 的排程）
+      - name: 提交快照
+        if: steps.crawl.outputs.ok == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/lowcarbon/snapshot.json
+          if git diff --cached --quiet; then echo "快照無變動"; exit 0; fi
+          git commit -m "資料更新：低碳技術彙編快照 $(TZ=Asia/Taipei date +%Y-%m-%d)"
+          for i in 1 2 3; do
+            git pull --rebase origin "${GITHUB_REF_NAME}" && git push origin "HEAD:${GITHUB_REF_NAME}" && exit 0
+            sleep $((i * 10))
+          done
+          echo "快照推送失敗"; exit 1
+
+      - name: 回報爬蟲結果
+        if: steps.crawl.outputs.ok != 'true'
+        run: |
+          echo "爬蟲驗證未通過或執行失敗，快照未更新（詳見 crawl.log 與 Issue）"; exit 1
+
+  write-db:
+    needs: detect
+    if: needs.detect.outputs.ok == 'true' && (needs.detect.outputs.changed == 'true' || inputs.write_db == true)
+    runs-on: ubuntu-latest
+    environment: carbonfee-crawl
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: lowcarbon-snapshot-${{ github.run_id }}
+          path: artifact
+
+      - name: 寫入書目／企業案例／技術資料庫
+        env:
+          SUPABASE_DB_HOST: ${{ secrets.SUPABASE_DB_HOST }}
+          SUPABASE_DB_PORT: ${{ secrets.SUPABASE_DB_PORT }}
+          SUPABASE_DB_USER: ${{ secrets.SUPABASE_DB_USER }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          SUPABASE_DB_NAME: postgres
+        run: node scripts/crawl-lowcarbon.mjs --from-snapshot artifact/data/lowcarbon/snapshot.json --write-db
