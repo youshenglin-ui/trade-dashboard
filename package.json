@@ -12,7 +12,10 @@
     "db:import": "node scripts/import-to-supabase.mjs",
     "db:import-energy": "node scripts/import-energy-survey.mjs",
     "db:import-carbonfee-coords": "node scripts/import-carbonfee-coords.mjs",
-    "crawl:carbonfee": "node scripts/crawl-carbonfee.mjs"
+    "crawl:carbonfee": "node scripts/crawl-carbonfee.mjs",
+    "crawl:lowcarbon": "node scripts/crawl-lowcarbon.mjs",
+    "db:import-lowcarbon": "node scripts/import-lowcarbon.mjs",
+    "export:lowcarbon": "node scripts/export-lowcarbon-xlsx.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.116.0",

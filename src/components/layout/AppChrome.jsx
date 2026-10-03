@@ -16,7 +16,7 @@ export const Sidebar = ({ activeModule, onModule, topics, currentTopic, onTopic,
       <img src="/brand/tri-logo.png" alt="財團法人台灣綜合研究院" className="h-10 w-auto" />
       <div>
         <div className="text-xl font-black tracking-wide text-brand-ink">產業戰情室</div>
-        <div className="text-[11px] tracking-[0.08em] text-brand-muted mt-0.5">TRADE · HYDROGEN · CCUS · CARBON FEE</div>
+        <div className="text-[11px] tracking-[0.08em] text-brand-muted mt-0.5">TRADE · HYDROGEN · CCUS · CARBON FEE · LOW-CARBON</div>
       </div>
     </div>
 
@@ -87,7 +87,7 @@ export const MobileTopBar = ({ title, showSearch, onSearch }) => (
 
 export const MobileBottomNav = ({ activeModule, onModule, onMore }) => (
   <nav aria-label="戰情模組" className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-white border-t border-brand-line pb-safe">
-    <div className="grid grid-cols-5 h-16">
+    <div className="grid h-16" style={{ gridTemplateColumns: `repeat(${MODULES.length + 1}, minmax(0, 1fr))` }}>
       {MODULES.map(({ id, short, icon }) => {
         const Icon = icon;
         const on = activeModule === id;

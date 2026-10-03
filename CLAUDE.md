@@ -54,7 +54,7 @@
    （事件只註冊一次，透過 `stateRef` 取最新資料）。無頭瀏覽器測試需加 `--use-angle=swiftshader` 才有 WebGL。
 3. **響應式設計**：2026-09 起進行中，採「風格 B 淨零跨域」（色票與字型在 `tailwind.config.js` 的
    `brand` 與 `index.css` 的 `.card` / `.seg` / `.tab-btn`）。版面外框在 `src/components/layout/AppChrome.jsx`：
-   電腦版左側功能列、手機版上方標題列 + 底部導覽列（貿易／氫能／CCUS／碳費／更多）。模組清單在
+   電腦版左側功能列、手機版上方標題列 + 底部導覽列（貿易／氫能／CCUS／碳費／低碳／更多）。模組清單在
    `src/config/modules.js`。貿易模組已改為分段篩選、分頁與手機可左右滑動圖表（`ScrollableChart`）；
    CCUS 拆成六個分頁（案場與管線規劃／整合地圖／碳捕捉／碳封存／碳再利用／排放源清單，定義在
    `CcusDashboard.jsx` 的 `CCUS_TABS`；中間四個是問卷資料頁，來自 `src/components/energy/ccusTabs.js`）；
@@ -80,6 +80,26 @@
 - 排程：`.github/workflows/crawl-carbonfee.yml`，每月第一個週六 09:00（台灣時間）觸發，
   綁定 GitHub Environment `carbonfee-crawl`（Required reviewers），需使用者核准後才執行。
   排程只在預設分支（main）上生效。資料庫連線用 Supabase Session pooler（GitHub runner 不支援 IPv6）。
+
+## 製造業低碳技術模組（2026-10 新增）
+
+- 來源：經濟部產發署「產業節能減碳資訊網」——低碳技術彙編與典範案例（PDF，106–114 年 21 本）、企業減碳案例
+  （ZeroCase）、低碳製程技術資料庫（lgiptd.tgpf.org.tw，ASP.NET postback）。
+- 爬蟲 `npm run crawl:lowcarbon`（解析 `scripts/lib/lowcarbon-parse.mjs`、寫庫 `scripts/lib/lowcarbon-db.mjs`，
+  快照 `data/lowcarbon/snapshot.json`）只抓書目與網頁資料；**PDF 案例數值是人工＋AI 擷取**到 `data/lowcarbon/cases.csv`
+  再 `npm run db:import-lowcarbon` 匯入（流程見 `data/lowcarbon/README.md`）。下載用 Excel 由 `npm run export:lowcarbon`
+  產生到 `public/data/lowcarbon/lowcarbon-database.xlsx`，案例更新後要重跑。
+- 資料表：`supabase/lowcarbon.sql`。`lowcarbon_cases` 以 `case_key` 串起跨年度重複收錄的同一案例，`is_latest`
+  標最新版，統計一律只算最新版。單位：萬元、公噸CO2e/年、年。分類：節能／燃料／製程／其他（餘熱回收歸節能、電氣化歸燃料）。
+- 排程 `.github/workflows/crawl-lowcarbon.yml`：每月 1 日 09:00（12 月加 `--full`）檢查，有待擷取 PDF 就開 Issue
+  （標籤 `lowcarbon-update`）；書目等有增減才送出寫入資料庫的核准請求（共用 Environment `carbonfee-crawl`）。
+- 前端 `src/components/LowCarbonDashboard.jsx`（模組 id `lowcarbon`，名稱「製造業低碳技術」），兩個子頁（`?section=`）：
+  - 低碳技術彙編 `lowcarbon/CompendiumView.jsx`：投資門檻與減碳效益（含補助政策試算）／技術與產業比較（含產業×子類
+    熱圖、產業選技術建議）／節電減碳計算器／減碳成本曲線（MACC）／案例與資料來源。
+  - 企業減碳模式預估 `lowcarbon/SimulatorView.jsx`：版型克隆自 `youshenglin-ui/ecirisk-demo` 的 EcoRisk SCADA
+    （設備 SVG 在 `lowcarbon/ScadaVisuals.jsx`），銀行 DSCR/信評改為碳費財務面板。產業／廠型／製程節點與 AI 點線面
+    假設在 `src/lib/lowcarbon/simulator.js`，措施直接取彙編案例；預設排放量與節點占比是示意基準廠，不是特定工廠。
+- 指標定義集中在 `src/lib/lowcarbon/metrics.js`（電力係數歷年值、碳費費率、年化減碳成本、投資強度），要改只改那裡。
 
 ## 氫能 / CCUS 問卷整併資料庫（2026-09 新增）
 
