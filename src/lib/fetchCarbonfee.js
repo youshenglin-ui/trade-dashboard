@@ -39,7 +39,7 @@ export async function fetchCarbonfeeData() {
     ),
     fetchAll('carbonfee_measures', 'id, plan_control_no, facility_control_no, roc_year, code, type_raw, categories, name', 'id'),
     supabase.from('carbonfee_crawl_runs').select('*').eq('ok', true).order('started_at', { ascending: false }).limit(12),
-    supabase.from('carbonfee_changes').select('*').order('detected_at', { ascending: false }).limit(500),
+    fetchAll('carbonfee_changes', '*', 'id'), // 全部異動（首次建檔約 250 筆 new，之後每月少量）
     fetchFacilityCoords(),
   ]);
   const coordByNo = new Map(coords.filter((c) => c.lat != null && c.lon != null).map((c) => [c.control_no, c]));
@@ -48,6 +48,6 @@ export async function fetchCarbonfeeData() {
     return c ? { ...f, lat: Number(c.lat), lon: Number(c.lon), coord_source: c.coord_source, coord_matched: c.matched } : f;
   });
   if (runsRes.error) throw new Error(`carbonfee_crawl_runs 查詢失敗: ${runsRes.error.message}`);
-  if (changesRes.error) throw new Error(`carbonfee_changes 查詢失敗: ${changesRes.error.message}`);
-  return { plans, facilities, measures, runs: runsRes.data || [], changes: changesRes.data || [] };
+
+  return { plans, facilities, measures, runs: runsRes.data || [], changes: [...changesRes].sort((a, b) => String(b.detected_at).localeCompare(String(a.detected_at))) };
 }

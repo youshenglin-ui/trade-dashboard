@@ -112,3 +112,37 @@ export const trajectoryBucket = (s) => (s == null ? null : TRAJECTORY_BUCKETS.fi
 
 // 措施組合：計畫執行期間曾採用的大類集合（依 MEASURE_CATEGORIES 固定順序）
 export const measureCombo = (plan) => MEASURE_CATEGORIES.filter((c) => plan.measures.some((m) => (m.categories || []).includes(c)));
+
+// ---------- 異動追蹤（CarbonFeeChanges） ----------
+// 把爬蟲比對出的 carbonfee_changes 依「對減量承諾的意義」再分類。
+// 排放目標數字變大＝允許排得更多＝承諾放寬（下修）；變小＝加嚴。
+export const CHANGE_KINDS = {
+  new: { label: '新增計畫', tone: 'emerald' },
+  removed: { label: '下架／撤回', tone: 'rose' },
+  restored: { label: '重新上架', tone: 'sky' },
+  target_loosen: { label: '目標下修（放寬）', tone: 'rose' },
+  target_tighten: { label: '目標加嚴', tone: 'emerald' },
+  first_loosen: { label: '首年目標放寬', tone: 'amber' },
+  first_tighten: { label: '首年目標加嚴', tone: 'emerald' },
+  base_change: { label: '基準年排放變更', tone: 'amber' },
+  tier_down: { label: '級別調降（A→B）', tone: 'rose' },
+  tier_up: { label: '級別調升（B→A）', tone: 'emerald' },
+  other: { label: '其他內容變更', tone: 'slate' },
+};
+
+export const CHANGE_FIELD_LABEL = {
+  plan_name: '計畫名稱', tier: '級別', total_base_emission: '基準年排放', total_first_year_target: '首年目標',
+  total_target_emission: '目標年目標', period_text: '執行期間', participant_count: '參與事業數',
+};
+
+export function classifyChange(c) {
+  if (c.change_type !== 'updated') return c.change_type;
+  const a = Number(c.old_value);
+  const b = Number(c.new_value);
+  const numeric = Number.isFinite(a) && Number.isFinite(b);
+  if (c.field === 'total_target_emission' && numeric) return b > a ? 'target_loosen' : 'target_tighten';
+  if (c.field === 'total_first_year_target' && numeric) return b > a ? 'first_loosen' : 'first_tighten';
+  if (c.field === 'total_base_emission') return 'base_change';
+  if (c.field === 'tier') return c.old_value === 'A' && c.new_value === 'B' ? 'tier_down' : c.old_value === 'B' && c.new_value === 'A' ? 'tier_up' : 'other';
+  return 'other';
+}

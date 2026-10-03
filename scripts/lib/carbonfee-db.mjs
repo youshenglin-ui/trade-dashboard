@@ -14,6 +14,7 @@ const TRACKED_FIELDS = [
   ['plan_name', (p) => p.name],
   ['tier', (p) => p.tier],
   ['total_base_emission', (p) => p.totals.base],
+  ['total_first_year_target', (p) => p.totals.firstYearTarget],
   ['total_target_emission', (p) => p.totals.target],
   ['period_text', (p) => p.period.text],
   ['participant_count', (p) => p.participantCount],
@@ -59,7 +60,7 @@ export function diffPlans(existingRows, snapshotPlans) {
 export async function writeSnapshot(client, snapshot, { force = false, minRatio = 0.8 } = {}) {
   const plans = snapshot.plans;
   const { rows: existingRows } = await client.query(
-    `select control_no, plan_name, tier, total_base_emission, total_target_emission, period_text, participant_count, status
+    `select control_no, plan_name, tier, total_base_emission, total_first_year_target, total_target_emission, period_text, participant_count, status
        from carbonfee_plans`
   );
   const activeBefore = existingRows.filter((r) => r.status === 'active').length;

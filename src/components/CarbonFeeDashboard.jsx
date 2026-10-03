@@ -17,6 +17,7 @@ import { fetchCarbonfeeData } from '../lib/fetchCarbonfee';
 import CarbonFeeMap from './CarbonFeeMap';
 import CarbonFeeProcessBreakdown from './CarbonFeeProcessBreakdown';
 import CarbonFeeInsights from './CarbonFeeInsights';
+import CarbonFeeChanges from './CarbonFeeChanges';
 import {
   CATEGORY_COLOR, MEASURE_CATEGORIES, OTHER_COLOR, SCALE_BUCKETS, SEQ_BLUE, SERIES_COLORS, TIER_COLOR, TIER_LABEL,
   fmtPct, fmtTon, fmtWan, reductionAmount, reductionRate, scaleBucket,
@@ -735,7 +736,10 @@ export default function CarbonFeeDashboard() {
       </>)}
 
       {cfTab === 'insight' && (
-        <ErrorBoundary><CarbonFeeInsights plans={plans} onSelectPlan={setSelectedId} /></ErrorBoundary>
+        <ErrorBoundary>
+          <CarbonFeeInsights plans={plans} onSelectPlan={setSelectedId} />
+          <div className="mt-4"><CarbonFeeChanges runs={raw?.runs || []} changes={raw?.changes || []} plans={allPlans} onSelectPlan={setSelectedId} /></div>
+        </ErrorBoundary>
       )}
 
       {cfTab === 'map' && (
