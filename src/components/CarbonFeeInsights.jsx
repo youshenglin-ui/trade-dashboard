@@ -2,8 +2,9 @@
 // 碳費自主減量計畫：深入分析分頁
 // ==========================================
 // 1. 減量率 vs 排放規模：大排放源是否承諾較低的減量率
-// 2. 措施組合型態：各計畫採用四大類措施的組合，與其減量率
-// 3. 逐年減量路徑：首年承諾占全程減量的比例（前段集中／線性／後段集中）
+// 2. 同產業排名：產業內減量率排名，標出落後者（低於產業 P25）
+// 3. 措施組合型態：各計畫採用四大類措施的組合，與其減量率
+// 4. 逐年減量路徑：首年承諾占全程減量的比例（前段集中／線性／後段集中）
 // 吃 CarbonFeeDashboard 已套用篩選的 plans；定義集中在 carbonfeeMetrics.js。
 import React, { useMemo, useState } from 'react';
 import { ScatterChart, Scatter, XAxis, YAxis, ZAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, BarChart, Bar, Cell, LineChart, Line, Legend } from 'recharts';
@@ -113,6 +114,102 @@ function RateVsScale({ plans, onSelectPlan }) {
   );
 }
 
+
+// ---------- 2. 同產業排名 ----------
+const quantile = (xs, q) => {
+  const v = xs.filter((x) => x != null && isFinite(x)).sort((a, b) => a - b);
+  if (!v.length) return null;
+  const i = (v.length - 1) * q;
+  const lo = Math.floor(i);
+  return v[lo] + (v[Math.ceil(i)] - v[lo]) * (i - lo);
+};
+
+function IndustryRanking({ plans, onSelectPlan }) {
+  const groups = useMemo(() => {
+    const m = new Map();
+    plans.forEach((p) => {
+      if (p.rate == null) return;
+      const k = p.industry || '未填產業';
+      if (!m.has(k)) m.set(k, []);
+      m.get(k).push(p);
+    });
+    return [...m.entries()].map(([name, ps]) => {
+      const rates = ps.map((p) => p.rate);
+      const p25 = quantile(rates, 0.25);
+      const med = quantile(rates, 0.5);
+      const ranked = [...ps].sort((a, b) => b.rate - a.rate).map((p, i) => ({
+        p, rank: i + 1,
+        lag: ps.length >= 4 ? p.rate < p25 : p.rate < med,
+      }));
+      return { name, n: ps.length, med, p25, p75: quantile(rates, 0.75), ranked, lagCount: ranked.filter((r) => r.lag).length,
+        base: ps.reduce((a, p) => a + (p.total_base_emission || 0), 0) };
+    }).sort((a, b) => b.n - a.n);
+  }, [plans]);
+  const [picked, setPicked] = useState(null);
+  const cur = groups.find((g) => g.name === picked) || groups[0];
+  if (!cur) return null;
+  const maxRate = Math.max(0.05, ...cur.ranked.map((r) => r.p.rate));
+  const minRate = Math.min(0, ...cur.ranked.map((r) => r.p.rate));
+  const span = maxRate - minRate;
+  const x = (v) => `${((v - minRate) / span) * 100}%`;
+
+  return (
+    <Section title="② 同產業減量率排名"
+      subtitle="左表為各產業計畫數與減量率分布（P25／中位數／P75），點產業看該產業內每件計畫的排名。「落後」＝減量率低於該產業 P25（產業不足 4 件時改用中位數）。">
+      <div className="grid grid-cols-1 xl:grid-cols-5 gap-4">
+        <div className="xl:col-span-2 overflow-auto max-h-[460px] border border-slate-100 rounded-lg">
+          <table className="w-full text-xs">
+            <thead className="bg-slate-50 sticky top-0 text-slate-500">
+              <tr><th className="text-left p-2">產業</th><th className="text-right p-2">計畫</th><th className="text-right p-2">P25</th><th className="text-right p-2">中位數</th><th className="text-right p-2">P75</th><th className="text-right p-2">落後</th></tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {groups.map((g) => (
+                <tr key={g.name} onClick={() => setPicked(g.name)} className={`cursor-pointer ${g.name === cur.name ? 'bg-blue-50' : 'hover:bg-slate-50'}`}>
+                  <td className={`p-2 ${g.name === cur.name ? 'font-bold text-blue-700' : 'text-slate-700'}`} title={g.name}>{g.name.length > 14 ? `${g.name.slice(0, 14)}…` : g.name}</td>
+                  <td className="p-2 text-right font-mono">{g.n}</td>
+                  <td className="p-2 text-right font-mono text-slate-500">{fmtPct(g.p25)}</td>
+                  <td className="p-2 text-right font-mono font-bold">{fmtPct(g.med)}</td>
+                  <td className="p-2 text-right font-mono text-slate-500">{fmtPct(g.p75)}</td>
+                  <td className="p-2 text-right font-mono text-rose-600">{g.lagCount || '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="xl:col-span-3">
+          <div className="flex flex-wrap items-baseline justify-between gap-2 mb-2">
+            <div className="font-bold text-slate-800 text-sm">{cur.name}<span className="ml-2 text-xs font-normal text-slate-500">{cur.n} 件・基準排放 {fmtWan(cur.base)} 萬噸</span></div>
+            <div className="flex items-center gap-3 text-[11px] text-slate-500">
+              <span className="flex items-center gap-1"><i className="w-3 h-2 rounded-sm bg-blue-500" />減量率</span>
+              <span className="flex items-center gap-1"><i className="w-3 h-2 rounded-sm bg-rose-500" />落後</span>
+              <span className="flex items-center gap-1"><i className="w-0.5 h-3 bg-slate-600" />產業中位數</span>
+              <span className="flex items-center gap-1"><i className="w-3 h-3 bg-slate-100 border border-slate-200" />P25–P75</span>
+            </div>
+          </div>
+          <div className="overflow-auto max-h-[420px] pr-1 space-y-1">
+            {cur.ranked.map(({ p, rank, lag }) => (
+              <button key={p.control_no} type="button" onClick={() => onSelectPlan?.(p.control_no)}
+                className="w-full grid grid-cols-[28px_minmax(0,1fr)_minmax(0,1.3fr)_56px] items-center gap-2 text-xs text-left hover:bg-slate-50 rounded px-1 py-0.5">
+                <span className="font-mono text-slate-400 text-right">{rank}</span>
+                <span className={`truncate ${lag ? 'text-rose-700 font-bold' : 'text-slate-700'}`} title={p.plan_name}>
+                  {p.tier && <span className="mr-1 text-[10px] px-1 rounded border border-slate-200 text-slate-500">{p.tier}</span>}{p.plan_name}
+                </span>
+                <span className="relative h-4">
+                  {cur.p25 != null && <span className="absolute top-0 bottom-0 bg-slate-100" style={{ left: x(cur.p25), width: `calc(${x(cur.p75)} - ${x(cur.p25)})` }} />}
+                  <span className="absolute top-1 h-2 rounded" style={{ left: x(Math.min(0, p.rate)), width: `${(Math.abs(p.rate) / span) * 100}%`, background: lag ? '#e34948' : '#2a78d6' }} />
+                  {cur.med != null && <span className="absolute -top-0.5 -bottom-0.5 w-0.5 bg-slate-600" style={{ left: x(cur.med) }} />}
+                </span>
+                <span className={`font-mono text-right ${lag ? 'text-rose-600 font-bold' : ''}`}>{fmtPct(p.rate)}</span>
+              </button>
+            ))}
+          </div>
+          <p className="text-[11px] text-slate-500 mt-2">產業依代表事業的主要行業別歸類；共同申請計畫用計畫整體減量率。點列開啟計畫明細與逐年措施。落後不代表違規，只是相對同業承諾較保守。</p>
+        </div>
+      </div>
+    </Section>
+  );
+}
+
 // ---------- 2. 措施組合型態 ----------
 function ComboPatterns({ plans }) {
   const [sortKey, setSortKey] = useState('n');
@@ -138,7 +235,7 @@ function ComboPatterns({ plans }) {
   }).filter((x) => x.n);
 
   return (
-    <Section title="② 措施組合型態" subtitle="每件計畫在執行期間曾採用的四大類措施組合（● 有採用）。看哪些組合最常見、對應的計畫減量率中位數。"
+    <Section title="③ 措施組合型態" subtitle="每件計畫在執行期間曾採用的四大類措施組合（● 有採用）。看哪些組合最常見、對應的計畫減量率中位數。"
       right={(
         <div className="seg">
           {[['n', '依計畫數'], ['med', '依減量率']].map(([k, l]) => (
@@ -222,7 +319,7 @@ function Trajectory({ plans }) {
   const colors = { none: '#e34948', back: '#eb6834', linear: '#94a3b8', front: '#2a78d6', done: '#1baf7a' };
 
   return (
-    <Section title="③ 逐年減量路徑：首年承諾占全程減量的比例"
+    <Section title="④ 逐年減量路徑：首年承諾占全程減量的比例"
       subtitle={`= (基準年 − 首年目標) ÷ (基準年 − 目標年目標)。首年 114、目標年 119，若線性遞減首年約占 ${fmtPct(LINEAR_FIRST_SHARE, 0)}；本篩選範圍中位數 ${fmtPct(medShare, 0)}（${valid.length} 件可計算）。`}>
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         <div>
@@ -270,6 +367,7 @@ export default function CarbonFeeInsights({ plans, onSelectPlan }) {
   return (
     <div className="space-y-4">
       <RateVsScale plans={plans} onSelectPlan={onSelectPlan} />
+      <IndustryRanking plans={plans} onSelectPlan={onSelectPlan} />
       <ComboPatterns plans={plans} />
       <Trajectory plans={plans} />
       <p className="text-[11px] text-slate-400">以上皆隨頁面上方的縣市／產業／規模／級別篩選變動；減量率定義見 src/lib/carbonfeeMetrics.js。</p>
