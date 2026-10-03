@@ -125,10 +125,18 @@ const quantile = (xs, q) => {
 };
 
 function IndustryRanking({ plans, onSelectPlan }) {
+  // A 級（技術標竿）與 B 級（達成效益）門檻不同，預設分開排名，避免 B 級被 A 級拉成落後
+  const [tierPick, setTierPick] = useState('B');
+  // 頁面上方已篩選單一級別時，跟著上方走
+  const pageTiers = new Set(plans.map((p) => p.tier).filter(Boolean));
+  const tier = pageTiers.size === 1 ? [...pageTiers][0] : tierPick;
+  const setTier = setTierPick;
+  const tierCount = (t) => plans.filter((p) => p.rate != null && p.tier === t).length;
   const groups = useMemo(() => {
     const m = new Map();
     plans.forEach((p) => {
       if (p.rate == null) return;
+      if (tier !== 'ALL' && p.tier !== tier) return;
       const k = p.industry || '未填產業';
       if (!m.has(k)) m.set(k, []);
       m.get(k).push(p);
@@ -139,23 +147,37 @@ function IndustryRanking({ plans, onSelectPlan }) {
       const med = quantile(rates, 0.5);
       const ranked = [...ps].sort((a, b) => b.rate - a.rate).map((p, i) => ({
         p, rank: i + 1,
-        lag: ps.length >= 4 ? p.rate < p25 : p.rate < med,
+        // 容許 0.5 個百分點誤差：A 級多為法定 42%，小數差異不算落後
+        lag: p.rate < (ps.length >= 4 ? p25 : med) - 0.005,
       }));
       return { name, n: ps.length, med, p25, p75: quantile(rates, 0.75), ranked, lagCount: ranked.filter((r) => r.lag).length,
         base: ps.reduce((a, p) => a + (p.total_base_emission || 0), 0) };
     }).sort((a, b) => b.n - a.n);
-  }, [plans]);
+  }, [plans, tier]);
   const [picked, setPicked] = useState(null);
   const cur = groups.find((g) => g.name === picked) || groups[0];
-  if (!cur) return null;
+  const tierSwitch = (
+    <div className="seg">
+      {[['B', `B級 ${tierCount('B')}`], ['A', `A級 ${tierCount('A')}`], ['ALL', '不分級']].map(([k, l]) => (
+        <button key={k} type="button" onClick={() => setTier(k)} className={`seg-btn ${tier === k ? 'seg-btn-on' : ''}`}>{l}</button>
+      ))}
+    </div>
+  );
+  if (!cur) {
+    return (
+      <Section title="② 同產業減量率排名" right={tierSwitch}>
+        <div className="text-sm text-slate-400 py-6 text-center">目前篩選條件下沒有{tier === 'ALL' ? '' : ` ${tier} 級`}計畫</div>
+      </Section>
+    );
+  }
   const maxRate = Math.max(0.05, ...cur.ranked.map((r) => r.p.rate));
   const minRate = Math.min(0, ...cur.ranked.map((r) => r.p.rate));
   const span = maxRate - minRate;
   const x = (v) => `${((v - minRate) / span) * 100}%`;
 
   return (
-    <Section title="② 同產業減量率排名"
-      subtitle="左表為各產業計畫數與減量率分布（P25／中位數／P75），點產業看該產業內每件計畫的排名。「落後」＝減量率低於該產業 P25（產業不足 4 件時改用中位數）。">
+    <Section title="② 同產業減量率排名" right={tierSwitch}
+      subtitle={`${tier === 'ALL' ? 'A、B 級混合排名（A 級門檻較高，B 級容易被拉成落後）' : tier === 'A' ? '只比較 A 級計畫（技術標竿；A 級目標多為法定 42%，排名差異有限）' : '只比較 B 級計畫（達成效益）'}。左表為各產業計畫數與減量率分布（P25／中位數／P75），點產業看該產業內每件計畫的排名。「落後」＝減量率低於該產業 P25 超過 0.5 個百分點（產業不足 4 件時改用中位數）。`}>
       <div className="grid grid-cols-1 xl:grid-cols-5 gap-4">
         <div className="xl:col-span-2 overflow-auto max-h-[460px] border border-slate-100 rounded-lg">
           <table className="w-full text-xs">
@@ -178,7 +200,7 @@ function IndustryRanking({ plans, onSelectPlan }) {
         </div>
         <div className="xl:col-span-3">
           <div className="flex flex-wrap items-baseline justify-between gap-2 mb-2">
-            <div className="font-bold text-slate-800 text-sm">{cur.name}<span className="ml-2 text-xs font-normal text-slate-500">{cur.n} 件・基準排放 {fmtWan(cur.base)} 萬噸</span></div>
+            <div className="font-bold text-slate-800 text-sm">{cur.name}{tier !== 'ALL' && <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">{tier} 級</span>}<span className="ml-2 text-xs font-normal text-slate-500">{cur.n} 件・基準排放 {fmtWan(cur.base)} 萬噸</span></div>
             <div className="flex items-center gap-3 text-[11px] text-slate-500">
               <span className="flex items-center gap-1"><i className="w-3 h-2 rounded-sm bg-blue-500" />減量率</span>
               <span className="flex items-center gap-1"><i className="w-3 h-2 rounded-sm bg-rose-500" />落後</span>
