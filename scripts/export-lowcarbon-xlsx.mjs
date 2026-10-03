@@ -15,7 +15,7 @@ import ExcelJS from 'exceljs';
 import { readCasesCsv } from './lib/lowcarbon-csv.mjs';
 import { normalizeCaseRows } from './lib/lowcarbon-db.mjs';
 import {
-  CATEGORIES, CATEGORY_DESC, LATEST_EF, TECHDB_PROCESS_MAP, abatementCost, co2Of, investPerTon, median, paybackOf,
+  CATEGORIES, CATEGORY_DESC, LATEST_EF, TECHDB_PROCESS_MAP, abatementCost, amortCost, co2Of, investPerTon, median, paybackOf,
 } from '../src/lib/lowcarbon/metrics.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -59,6 +59,7 @@ async function main() {
     ['重複收錄', '同一案例被多個年度彙編收錄時 case_key 相同，「最新版」= 出版年最新（同年取資料較完整）者，統計一律只算最新版'],
     ['電力係數換算', `「減碳量（${LATEST_EF.value} 換算）」= 純節電案例依最新電力係數重算，便於跨年度比較；原文減碳量欄保留原值`],
     ['技術類別', CATEGORIES.map((c) => `${c}：${CATEGORY_DESC[c]}`).join('\n')],
+    ['投資攤提成本', '投資 × 資本回收因子 ÷ 年減碳量（元/公噸，不扣節能收益），折現率 5%、壽命 10 年；代表企業推動時要先投入的門檻'],
     ['分類原則', '餘熱回收歸節能、電氣化歸燃料；子類為整併後的技術子類'],
     ['年化減碳成本', '（投資 × 資本回收因子 − 年效益）÷ 年減碳量，折現率 5%、壽命 10 年；負值代表省錢又減碳'],
     ['注意', '各案例數值為原文所載，未經查核；跨案例加總僅供量級參考'],
@@ -79,13 +80,13 @@ async function main() {
     ['coal_t', '節省煤(公噸/年)', 12, '#,##0'], ['gas_m3', '節省天然氣(m3/年)', 14, '#,##0'],
     ['benefit_wan', '年效益(萬元)', 12, '#,##0.0'], ['co2_t', '年減碳(公噸)', 12, '#,##0.0'], ['co2_norm', `年減碳(${LATEST_EF.value}換算)`, 14, '#,##0.0'],
     ['emission_factor', '原文電力係數', 10], ['payback_years', '回收年限(年)', 10, '0.00'], ['payback_calc', '回收年限(原文或計算)', 12, '0.00'],
-    ['intensity', '投資強度 萬元/(t/年)', 12, '0.000'], ['abatement', '年化減碳成本(元/t)', 14, '#,##0'],
+    ['intensity', '投資強度 萬元/(t/年)', 12, '0.000'], ['amort', '投資攤提成本(元/t)', 14, '#,##0'], ['abatement', '年化減碳成本(元/t)', 14, '#,##0'],
     ['investment_text', '投資原文', 30], ['saving_text', '節能量原文', 40], ['benefit_text', '效益原文', 30], ['co2_text', '減碳原文', 30],
     ['payback_text', '回收原文', 16], ['note', '備註', 30],
   ], cases.map((c) => ({
     ...c, is_latest: c.is_latest ? 'Y' : '', overseas: c.overseas ? 'Y' : '',
     co2_norm: round(co2Of(c, norm), 1), payback_calc: round(paybackOf(c)), intensity: round(investPerTon(c, norm), 3),
-    abatement: round(abatementCost(c, norm), 0),
+    amort: round(amortCost(c, norm), 0), abatement: round(abatementCost(c, norm), 0),
   })));
 
   // 3. 書目
@@ -132,6 +133,7 @@ async function main() {
   const statRows = [];
   for (const cat of CATEGORIES) {
     const list = latest.filter((c) => c.category === cat);
+    if (!list.length) continue;
     statRows.push({ level: '類別', cat, sub: '（小計）', ...stat(list) });
     const subs = [...new Set(list.map((c) => c.subcategory))].sort((a, b) => String(a).localeCompare(String(b), 'zh-Hant'));
     for (const s of subs) statRows.push({ level: '子類', cat, sub: s, ...stat(list.filter((c) => c.subcategory === s)) });

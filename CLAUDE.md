@@ -93,12 +93,22 @@
   標最新版，統計一律只算最新版。單位：萬元、公噸CO2e/年、年。分類：節能／燃料／製程／其他（餘熱回收歸節能、電氣化歸燃料）。
 - 排程 `.github/workflows/crawl-lowcarbon.yml`：每月 1 日 09:00（12 月加 `--full`）檢查，有待擷取 PDF 就開 Issue
   （標籤 `lowcarbon-update`）；書目等有增減才送出寫入資料庫的核准請求（共用 Environment `carbonfee-crawl`）。
-- 前端 `src/components/LowCarbonDashboard.jsx`（模組 id `lowcarbon`，名稱「製造業低碳技術」），兩個子頁（`?section=`）：
-  - 低碳技術彙編 `lowcarbon/CompendiumView.jsx`：投資門檻與減碳效益（含補助政策試算）／技術與產業比較（含產業×子類
-    熱圖、產業選技術建議）／節電減碳計算器／減碳成本曲線（MACC）／案例與資料來源。
-  - 企業減碳模式預估 `lowcarbon/SimulatorView.jsx`：版型克隆自 `youshenglin-ui/ecirisk-demo` 的 EcoRisk SCADA
-    （設備 SVG 在 `lowcarbon/ScadaVisuals.jsx`），銀行 DSCR/信評改為碳費財務面板。產業／廠型／製程節點與 AI 點線面
-    假設在 `src/lib/lowcarbon/simulator.js`，措施直接取彙編案例；預設排放量與節點占比是示意基準廠，不是特定工廠。
+- 前端 `src/components/LowCarbonDashboard.jsx`（模組 id `lowcarbon`）。2026-10 依使用者理念重組為「技術均化減碳成本檢索」，
+  依使用目的分三區（`?section=`，舊網址 compendium/simulator 會自動轉到 policy/enterprise）：
+  - 政府決策 policy：技術均化減碳成本 `lowcarbon/CostView.jsx`（技術類型加權平均的成本曲線 `CostCurve.jsx`：向上＝投資攤提、
+    向下斜線＝節能收益、黑線＝淨成本，**投資攤提要醒目呈現**，避免只看到負的淨成本；回收年限篩選、折現率／壽命；可搜尋檢索表）、
+    投資門檻與效益 `InvestTab.jsx`（泡泡圖：縱軸減碳或效益、泡泡大小為另一個；補助情境）。
+  - 企業試算 enterprise：工廠減碳模擬 `FactoryView.jsx`（生產流程圖＋點節點選技術＋AIoT 監控中心：監控（點）→產線聯控（線）
+    →全廠調度（面）；導入效益儀表板）、節電減碳計算器 `CalculatorTab.jsx`。模型在 `src/lib/lowcarbon/simulator.js`
+    （`simulateFactory`；主製程節點 AI 只計能源相關一半 `PROCESS_AI_SHARE`；未監控的措施效益每年衰退 `MEASURE_DECAY`）。
+  - 技術研究 research：技術類別分析 `CategoryView.jsx`（類別對照、子類排行可展開組成、子類×產業矩陣）、資料年代與不確定性
+    `VintageView.jsx`、案例資料庫 `CasesTab.jsx`。
+  - 政府決策與技術研究共用 `AnalysisView.jsx`（篩選列、資料年代誤差設定）；任何地方點技術類型都開 `TechDrawer.jsx`
+    （組成案例、可信度、相關廠商技術；網址 `?tech=類別|子類`）。
+  - 均化成本與年代加權在 `src/lib/lowcarbon/lcoa.js`：案例標準誤差隨年代放大 σ=1+年代/A，權重 1/σ²（反變異數），
+    技術類型平均 = Σ(w·攤提) ÷ Σ(w·減碳量)，典型範圍為加權 P25–P75。圖表字級最小 12px；自繪 SVG 用
+    `useElementWidth` 以實際像素繪製（不要用 viewBox 縮放，手機字會變小）。
+  - 類別「創新」（cases.csv 的 category 填「創新」）是預留給使用者之後加入的創新技術，沒資料時自動隱藏。
 - 指標定義集中在 `src/lib/lowcarbon/metrics.js`（電力係數歷年值、碳費費率、年化減碳成本、投資強度），要改只改那裡。
 
 ## 氫能 / CCUS 問卷整併資料庫（2026-09 新增）

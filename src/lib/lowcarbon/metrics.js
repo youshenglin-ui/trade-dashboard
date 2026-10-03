@@ -3,17 +3,21 @@
 // ==========================================
 // 純 JS、不依賴瀏覽器，scripts/export-lowcarbon-xlsx.mjs 也直接 import 這支。
 
-// ---------- 四大類（使用者定義，2026-10） ----------
+// ---------- 技術類別（使用者定義，2026-10） ----------
 // 順序 = 固定的顏色槽位順序，不要依排名重排。
-export const CATEGORIES = ['節能', '燃料', '製程', '其他'];
+// 「創新」：使用者之後自行加入的創新／新興技術（cases.csv 的 category 填「創新」即可），用來和傳統技術對照；
+// 沒有資料時畫面會自動隱藏。
+export const CATEGORIES = ['節能', '燃料', '製程', '其他', '創新'];
+export const TRADITIONAL_CATEGORIES = ['節能', '燃料', '製程', '其他'];
 export const CATEGORY_DESC = {
   節能: '設備或系統效率提升：動力（馬達、泵浦、空壓、鼓風）、冷卻空調、餘熱餘能回收、熱泵、燃燒效率、保溫、能源管理',
   燃料: '燃料轉換與替代：燃煤/重油改天然氣、電氣化、生質與廢棄物衍生燃料（SRF）、氫能',
   製程: '製程技術或原料改變：低浴比染色、靴壓、散漿/磨漿、原料替代、新製程',
   其他: '再生能源、CCUS（碳捕捉再利用）、資源循環與環保設施',
+  創新: '尚未普及的創新／新興技術（示範或試驗階段），單位減碳成本通常遠高於傳統技術',
 };
 // 經 CVD 驗證的類別色（與碳費模組同一組色票）
-export const CATEGORY_COLOR = { 節能: '#2a78d6', 燃料: '#eb6834', 製程: '#1baf7a', 其他: '#eda100' };
+export const CATEGORY_COLOR = { 節能: '#2a78d6', 燃料: '#eb6834', 製程: '#1baf7a', 其他: '#eda100', 創新: '#e87ba4' };
 export const OTHER_COLOR = '#94a3b8';
 
 // 低碳製程技術資料庫的「製程別」→ 四大類 / 子類（技術資料庫的廠商案例納入分析時用）
@@ -84,6 +88,15 @@ export function abatementCost(c, opts = {}) {
   const co2 = co2Of(c, opts);
   if (inv == null || ben == null || co2 == null || co2 <= 0) return null;
   return ((inv * crf(opts.discountRate, opts.lifetimeYears) - ben) * 1e4) / co2;
+}
+
+// 投資攤提成本（元/公噸CO2e）＝ 投資 × CRF ÷ 年減碳量：只看「每減 1 公噸要攤多少設備錢」，不扣節能收益。
+// 節能技術的淨成本常是負值（省下的能源費大於攤提），但攤提成本才是推動時企業要先拿出來的門檻，畫面上要醒目呈現。
+export function amortCost(c, opts = {}) {
+  const inv = num(c.investment_wan);
+  const co2 = co2Of(c, opts);
+  if (inv == null || inv <= 0 || co2 == null || co2 <= 0) return null;
+  return (inv * crf(opts.discountRate, opts.lifetimeYears) * 1e4) / co2;
 }
 
 // 回收年限：原文有寫用原文；沒寫但有投資與年效益時用 投資 ÷ 年效益 推算

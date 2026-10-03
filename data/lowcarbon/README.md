@@ -40,7 +40,14 @@
    `--catalog` 會一併用 `snapshot.json` 更新書目／企業案例／技術資料庫。
 5. 更新下載檔：`npm run export:lowcarbon`，連同 `cases.csv` 一起 commit，然後關閉 Issue。
 
+## 加入創新技術
+
+創新／新興技術（示範或試驗階段）用同一個 `cases.csv` 格式加入，`category` 填 **創新**、`subcategory` 填技術名稱類型
+（例：氫能煉鋼、電熱窯爐、碳捕捉），`doc_title` 寫資料來源（文獻、示範計畫）。匯入後會自動出現在減碳成本曲線與類別分析中，
+作為與傳統技術（節能、燃料、製程）的單位減碳成本對照。
+
 ## 計算定義
 
-集中在 `src/lib/lowcarbon/metrics.js`（類別、色票、電力係數、投資強度、年化減碳成本、回收年限）與
-`src/lib/lowcarbon/simulator.js`（企業減碳模式預估：產業／廠型／製程節點、AI 點線面假設），要改定義只改那裡。
+集中在 `src/lib/lowcarbon/metrics.js`（類別、色票、電力係數、投資強度、投資攤提成本、年化減碳成本、回收年限）、
+`src/lib/lowcarbon/lcoa.js`（技術類型加權平均、資料年代權重、典型範圍與可信度）與
+`src/lib/lowcarbon/simulator.js`（工廠減碳模擬：產業／廠型／製程節點、AIoT 監控／產線聯控／全廠調度假設），要改定義只改那裡。

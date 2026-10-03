@@ -24,7 +24,7 @@ function Field({ label, unit, value, onChange, step = 'any', hint }) {
         <input type="number" inputMode="decimal" step={step} value={value} onChange={(e) => onChange(e.target.value)} className={numIn} />
         {unit && <span className="text-xs text-slate-500 whitespace-nowrap w-16">{unit}</span>}
       </div>
-      {hint && <span className="text-[11px] text-slate-400">{hint}</span>}
+      {hint && <span className="text-xs text-slate-500">{hint}</span>}
     </label>
   );
 }
@@ -108,7 +108,7 @@ export default function CalculatorTab({ rows }) {
                   </select>
                   {efYear === 'custom' && <input type="number" step="0.001" value={efCustom} onChange={(e) => setEfCustom(e.target.value)} className={`${numIn} !w-20`} />}
                 </div>
-                <span className="text-[11px] text-slate-400">kgCO2e/kWh，經濟部能源署公告</span>
+                <span className="text-xs text-slate-500">kgCO2e/kWh，經濟部能源署公告</span>
               </label>
             </div>
             <div className="grid grid-cols-2 gap-2">
@@ -121,7 +121,7 @@ export default function CalculatorTab({ rows }) {
                 <select value={feeRate} onChange={(e) => setFeeRate(e.target.value)} className="mt-1 h-9 w-full rounded-lg border border-brand-line bg-white px-2 text-sm">
                   {CARBON_FEE_RATES.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
                 </select>
-                <span className="text-[11px] text-slate-400">僅年排放 2.5 萬公噸以上須繳</span>
+                <span className="text-xs text-slate-500">僅年排放 2.5 萬公噸以上須繳</span>
               </label>
             </div>
           </div>
@@ -159,7 +159,7 @@ export default function CalculatorTab({ rows }) {
                 ) : null)} />
                 <Line dataKey="ef" stroke="#2a78d6" strokeWidth={2} dot={{ r: 4, fill: '#2a78d6', stroke: '#fff', strokeWidth: 2 }} isAnimationActive={false} />
                 {efMarker && <ReferenceDot x={efMarker.year} y={efMarker.ef} r={7} fill="#eb6834" stroke="#fff" strokeWidth={2}
-                  label={{ value: `計算用 ${efMarker.ef}`, position: 'left', offset: 12, fontSize: 11, fill: '#334155' }} />}
+                  label={{ value: `計算用 ${efMarker.ef}`, position: 'left', offset: 12, fontSize: 12, fill: '#334155' }} />}
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -211,7 +211,7 @@ export default function CalculatorTab({ rows }) {
                   ['累計減碳', fmtTon(payload[0].payload.cum)],
                 ]} />
               ) : null)} />
-              <ReferenceLine y={co2} stroke="#94a3b8" strokeDasharray="5 4" label={{ value: '係數不變', position: 'insideTopRight', fontSize: 10, fill: '#64748b' }} />
+              <ReferenceLine y={co2} stroke="#94a3b8" strokeDasharray="5 4" label={{ value: '係數不變', position: 'insideTopRight', fontSize: 12, fill: '#64748b' }} />
               <Line dataKey="co2" stroke="#2a78d6" strokeWidth={2} dot={{ r: 3 }} isAnimationActive={false} />
             </LineChart>
           </ResponsiveContainer>

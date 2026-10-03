@@ -1,21 +1,29 @@
-// 分頁 1：投資門檻與減碳效益
-//   - 投資 vs 年減碳 散佈（雙對數），斜線 = 每公噸年減碳的投資強度
+// 政府決策：投資門檻與減碳效益
+//   - 投資 × 年減碳 × 年效益 泡泡圖（雙對數；縱軸與泡泡大小可互換），斜線 = 每公噸年減碳的投資強度
 //   - 投資級距分布：案例數 vs 減碳量貢獻（看出「門檻」在哪）
 //   - 政策投入情境：補助門檻 × 補助比例 × 推廣家數 → 帶動投資與年減碳
 import React, { useMemo, useState } from 'react';
 import {
-  Bar, BarChart, CartesianGrid, LabelList, ReferenceLine, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis,
+  Bar, BarChart, CartesianGrid, LabelList, ReferenceLine, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis, ZAxis,
 } from 'recharts';
 import { Coins, Factory, Gauge, Leaf, Timer } from 'lucide-react';
 import {
   CATEGORIES, CATEGORY_COLOR, INVEST_BUCKETS, co2Of, fmtNum, fmtTon, fmtWan, fmtYears, investBucket, investPerTon,
   median, paybackOf,
 } from '../../lib/lowcarbon/metrics';
+import { amortCost } from '../../lib/lowcarbon/metrics';
+import { fmtCost } from '../../lib/lowcarbon/lcoa';
+import { useOpenTech } from './techDrawerContext';
 import { AXIS_TICK, Card, GRID, Kpi, Note, Segmented, TipBox } from './ui';
 
-const Y_METRICS = [
-  { value: 'co2', label: '年減碳量', unit: '公噸CO2e/年', pick: (c, o) => co2Of(c, o), fmt: fmtTon },
-  { value: 'benefit', label: '年效益', unit: '萬元/年', pick: (c) => (c.benefit_wan > 0 ? c.benefit_wan : null), fmt: fmtWan },
+const METRICS = {
+  co2: { label: '年減碳量', unit: '公噸CO2e/年', pick: (c, o) => co2Of(c, o), fmt: fmtTon },
+  benefit: { label: '年效益', unit: '萬元/年', pick: (c) => (c.benefit_wan > 0 ? c.benefit_wan : null), fmt: fmtWan },
+};
+// 縱軸與泡泡大小互換
+const LAYOUTS = [
+  { value: 'co2', label: '泡泡＝年效益', y: 'co2', z: 'benefit' },
+  { value: 'benefit', label: '泡泡＝年減碳', y: 'benefit', z: 'co2' },
 ];
 // 投資強度參考斜線：每「公噸/年」減碳需投資多少萬元
 const INTENSITY_LINES = [1, 10, 100];
@@ -26,14 +34,22 @@ const logTicks = (min, max) => {
 };
 const tickLabel = (v) => (v >= 1e4 ? `${v / 1e4}萬` : fmtNum(v));
 
-export default function InvestTab({ rows, normalizeEf }) {
+export default function InvestTab({ rows, ctx }) {
+  const openTech = useOpenTech();
   const [yMetric, setYMetric] = useState('co2');
-  const metric = Y_METRICS.find((m) => m.value === yMetric);
-  const opts = useMemo(() => ({ normalizeEf }), [normalizeEf]);
+  const layout = LAYOUTS.find((l) => l.value === yMetric);
+  const metric = METRICS[layout.y];
+  const zMetric = METRICS[layout.z];
+  const opts = ctx.opts;
 
-  const points = useMemo(() => rows.map((c) => ({
-    c, x: c.investment_wan > 0 ? c.investment_wan : null, y: metric.pick(c, opts),
-  })).filter((p) => p.x != null && p.y != null && p.y > 0), [rows, metric, opts]);
+  const points = useMemo(() => rows.map((c) => {
+    const z = zMetric.pick(c, opts);
+    return { c, x: c.investment_wan > 0 ? c.investment_wan : null, y: metric.pick(c, opts), z: z > 0 ? z : null };
+  }).filter((p) => p.x != null && p.y != null && p.y > 0), [rows, metric, zMetric, opts]);
+  const zs = points.map((p) => p.z).filter(Boolean);
+  const zDomain = zs.length ? [Math.min(...zs), Math.max(...zs)] : [1, 2];
+  // 泡泡面積用平方根尺度避免大案例把小案例蓋掉；缺值者畫最小並空心
+  const sized = points.map((p) => ({ ...p, zr: p.z ? Math.sqrt(p.z) : Math.sqrt(zDomain[0]) }));
 
   const withBoth = useMemo(() => rows.filter((c) => c.investment_wan > 0 && co2Of(c, opts) > 0), [rows, opts]);
   const kpi = {
@@ -75,8 +91,8 @@ export default function InvestTab({ rows, normalizeEf }) {
         <Kpi icon={Timer} label="回收年限中位數" value={fmtYears(kpi.payback)} note="原文值；未列者以投資÷年效益推算" />
       </div>
 
-      <Card title="投入金額 × 減碳效益" subtitle="雙對數座標。斜虛線為「投資強度」等值線：越靠左上方，同樣的錢換到越多減碳。點越往右代表投資門檻越高。"
-        right={<Segmented value={yMetric} onChange={setYMetric} options={Y_METRICS} />}>
+      <Card title="投入金額 × 減碳量 × 年效益" subtitle={`雙對數座標。泡泡大小＝${zMetric.label}（空心＝原文未載）。斜虛線為投資強度等值線：越靠左上方，同樣的錢換到越多減碳；越往右投資門檻越高。點泡泡看該技術類型的組成。`}
+        right={<Segmented value={yMetric} onChange={setYMetric} options={LAYOUTS} />}>
         <div className="h-[420px] -ml-2">
           <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
             <ScatterChart margin={{ top: 10, right: 24, bottom: 28, left: 8 }}>
@@ -87,10 +103,11 @@ export default function InvestTab({ rows, normalizeEf }) {
               <YAxis type="number" dataKey="y" scale="log" domain={yDomain} ticks={logTicks(...yDomain)} tickFormatter={tickLabel}
                 tick={AXIS_TICK} width={56} allowDataOverflow
                 label={{ value: `${metric.label}（${metric.unit}）`, angle: -90, position: 'insideLeft', offset: 2, fontSize: 12, fill: '#475569', dy: 70 }} />
+              <ZAxis type="number" dataKey="zr" range={[30, 900]} domain={[Math.sqrt(zDomain[0]), Math.sqrt(zDomain[1])]} />
               {yMetric === 'co2' && INTENSITY_LINES.map((k) => (
                 <ReferenceLine key={k} ifOverflow="hidden" stroke="#94a3b8" strokeDasharray="5 4"
                   segment={[{ x: xDomain[0], y: xDomain[0] / k }, { x: xDomain[1], y: xDomain[1] / k }]}
-                  label={{ value: `${k} 萬元/(t/年)`, position: 'insideTopRight', fontSize: 10, fill: '#64748b' }} />
+                  label={{ value: `${k} 萬元/(t/年)`, position: 'insideTopRight', fontSize: 12, fill: '#64748b' }} />
               ))}
               <Tooltip cursor={{ strokeDasharray: '3 3' }} content={({ active, payload }) => {
                 if (!active || !payload?.length) return null;
@@ -103,13 +120,20 @@ export default function InvestTab({ rows, normalizeEf }) {
                     ['投資', fmtWan(c.investment_wan)],
                     ['年減碳', fmtTon(co2Of(c, opts))],
                     ['年效益', fmtWan(c.benefit_wan)],
+                    ['投資攤提成本', fmtCost(amortCost(c, opts))],
                     ['回收年限', fmtYears(paybackOf(c))],
-                  ]} footer={c.doc_title} />
+                  ]} footer={`${c.doc_title}・點擊看技術類型明細`} />
                 );
               }} />
               {CATEGORIES.map((cat) => (
-                <Scatter key={cat} name={cat} data={points.filter((p) => p.c.category === cat)} fill={CATEGORY_COLOR[cat]}
-                  fillOpacity={0.85} stroke="#fff" strokeWidth={1.5} shape="circle" isAnimationActive={false} />
+                <Scatter key={cat} name={cat} data={sized.filter((p) => p.c.category === cat)} fill={CATEGORY_COLOR[cat]}
+                  isAnimationActive={false} style={{ cursor: 'pointer' }}
+                  onClick={(p) => openTech(`${p.payload?.c?.category ?? p.c.category}|${(p.payload?.c ?? p.c).subcategory || '未分類'}`)}
+                  shape={(props) => (
+                    <circle cx={props.cx} cy={props.cy} r={Math.max(3, props.width / 2)}
+                      fill={props.payload.z ? CATEGORY_COLOR[cat] : '#fff'} fillOpacity={props.payload.z ? 0.55 : 1}
+                      stroke={CATEGORY_COLOR[cat]} strokeWidth={1.5} />
+                  )} />
               ))}
             </ScatterChart>
           </ResponsiveContainer>
@@ -151,7 +175,7 @@ function BucketChart({ data, prefix, fmt }) {
           {CATEGORIES.map((c, i) => (
             <Bar key={c} dataKey={`${prefix}_${c}`} stackId="a" fill={CATEGORY_COLOR[c]} stroke="#fff" strokeWidth={1}
               radius={i === CATEGORIES.length - 1 ? [0, 4, 4, 0] : 0} maxBarSize={22} isAnimationActive={false}>
-              {i === CATEGORIES.length - 1 && <LabelList dataKey={prefix} position="right" fontSize={11} fill="#475569" formatter={fmt} />}
+              {i === CATEGORIES.length - 1 && <LabelList dataKey={prefix} position="right" fontSize={12} fill="#475569" formatter={fmt} />}
             </Bar>
           ))}
         </BarChart>

@@ -4,7 +4,7 @@
 // 設計：以「示意基準廠」為底（排放量可自行修改），從低碳技術彙編的實際案例挑選可導入措施，
 // 每項措施的減碳量、投資、年效益直接採用案例實績（× 導入套數），再疊加 AI 點／線／面情境。
 // 預設排放量與節點占比為量級參考（依產業公開資料粗估），不是特定工廠實績；正式評估需逐廠盤查。
-import { LATEST_EF, co2Of, median } from './metrics';
+import { LATEST_EF, co2Of, median } from './metrics.js';
 
 // 節點類型：process 主製程、thermal 熱能（窯爐、烘乾、蒸汽）、fuel 鍋爐／汽電（燃料）、utility 公用（動力、冷卻、空調、電力）
 // visualType 對應 ScadaVisuals 的設備圖示（沿用 EcoRisk SCADA demo）
@@ -181,19 +181,40 @@ const SUB_KIND = {
 };
 export const measureKind = (c) => (c.category === '製程' ? 'process' : c.category === '其他' ? 'site' : SUB_KIND[c.subcategory] || 'utility');
 
-// 每減 1 公噸 CO2 約省下的能源成本（元），用在 AI 情境估算年效益
+// 每減 1 公噸 CO2 約省下的能源成本（元），用在 AI 效益估算
 //   電：電價 3.45 元/度 ÷ 電力係數 ≈ 7,300 元/公噸；熱：燃煤約 4,000 元/公噸煤 ÷ 2.4 公噸CO2 ≈ 1,700 元/公噸
 export const ENERGY_VALUE_PER_TON = { electricity: 3.45 / (LATEST_EF.value / 1000), fuel: 1700 };
 
-// AI 點／線／面：預設減碳率與投資（可在畫面調整）。依據彙編中 AI 案例實績的量級：
-//   點＝單機 AI 最佳化（例：冰水系統 AI 控制節電約 2~17%，台積 F14B、彙編 110 年冷卻篇）
-//   線＝產線/系統聯控（例：空壓群控、MAU 機差平衡、冰機 3.0）
-//   面＝全廠能源調度（例：中龍轉爐氣智能化輸出、日月光空調供應智能化）
-export const AI_LAYERS = [
-  { id: 'point', name: '點：設備級 AIoT', short: '點', desc: '單機感測＋AI 參數最佳化與預測維護（冰機、空壓、泵浦、風機）', basis: 'utility', defaultPct: 4, max: 12, invPerPct: 120, color: '#9a90ea' },
-  { id: 'line', name: '線：產線／系統級聯控', short: '線', desc: '跨設備聯控與製程參數最佳化（群控、熱整合、配方與排程）', basis: 'process', defaultPct: 3, max: 10, invPerPct: 400, color: '#6d5fd0' },
-  { id: 'area', name: '面：全廠能源管理（EMS）', short: '面', desc: '全廠能源調度、需量與蒸汽平衡、碳排即時盤查與預測', basis: 'total', defaultPct: 2, max: 6, invPerPct: 800, color: '#4a3aa7' },
+// 各產業流程的投入與產出（流程圖頭尾）
+export const PLANT_IO = {
+  steel: ['鐵礦砂、焦煤、廢鋼', '鋼胚、鋼捲'], petchem: ['石腦油、原料', '石化中間體'], cement: ['石灰石、黏土', '水泥'],
+  paper: ['紙漿、廢紙', '紙捲'], textile: ['原料（PTA、紗）', '布／纖維'], semi: ['晶圓', '晶片'], opto: ['玻璃基板', '面板'],
+  glass: ['矽砂、碎玻璃', '玻璃製品'],
+};
+
+// ---------- AI 監控與最佳化（三階段，依序疊加） ----------
+// 1. AIoT 監控（點）：在個別製程節點裝設感測與 AI 分析（異常偵測、參數最佳化、預測維護）。
+// 2. 產線聯控（線）：至少 2 個節點已監控後，跨設備協同（群控、熱整合、排程）。
+// 3. 全廠 AI 能源調度（面）：產線聯控後，全廠能源與需量調度、碳排即時盤查。
+// 節能幅度依低碳技術彙編 AI 案例的量級設定（冰水 AI 控制 2~17%、空壓群控、MAU 機差平衡、空調智能化），可在畫面調整。
+export const AI_STAGES = [
+  { id: 'point', name: 'AIoT 監控', short: '監控', layer: '點', color: '#9a90ea', desc: '設備感測＋AI 異常偵測、參數最佳化、預測維護' },
+  { id: 'line', name: '產線聯控', short: '聯控', layer: '線', color: '#6d5fd0', desc: '跨設備協同控制：群控、熱整合、配方與排程最佳化' },
+  { id: 'area', name: '全廠 AI 能源調度', short: '調度', layer: '面', color: '#4a3aa7', desc: '全廠能源／需量／蒸汽平衡調度與碳排即時盤查' },
 ];
+// 技術導入階段的顏色（與 AI 紫色系區隔）
+export const TECH_COLOR = '#1baf7a';
+export const DEFAULT_AI_PCT = { utility: 5, thermal: 3, fuel: 3, process: 2, line: 3, area: 2 };
+// 節點感測點數（示意）：公用系統設備多、感測點多
+export const SENSORS_BY_KIND = { utility: 8, thermal: 6, fuel: 5, process: 6 };
+export const SENSOR_TYPES = {
+  utility: ['電力', '壓力', '流量', '溫度'], thermal: ['溫度', '蒸汽流量', '煙氣含氧'], fuel: ['燃料流量', '煙氣含氧', '蒸汽壓力'],
+  process: ['電力', '溫度', '產量', '品質'],
+};
+// 未監控時節能措施效益每年衰退（設備劣化、操作偏離設計值）；AIoT 監控可維持
+export const MEASURE_DECAY = 0.03;
+// 主製程節點的排放有一部分是化學反應（煉鐵還原、石灰石煅燒、含氟氣體），AI 只能改善能源相關的部分
+export const PROCESS_AI_SHARE = 0.5;
 
 // 某產業可選的措施：本產業案例 + 跨產業（系統篇）案例；量化不了的列出但不計
 // 原文缺投資或年效益者，以同類別（節能/燃料/製程/其他）案例的每公噸中位數推估，並標記 invEst / benefitEst，
@@ -236,89 +257,112 @@ export function assignNode(plant, kind) {
 }
 
 const NODE_CAP = 0.6; // 單一節點的措施減碳量上限：該節點排放的 60%（避免案例實績直接加總超過工廠規模）
+const nodeValuePerTon = (n, scope2) => (n.kinds[0] === 'utility' ? ENERGY_VALUE_PER_TON.electricity
+  : n.kinds[0] === 'process' ? scope2 * ENERGY_VALUE_PER_TON.electricity + (1 - scope2) * ENERGY_VALUE_PER_TON.fuel
+    : ENERGY_VALUE_PER_TON.fuel);
+const crf10 = (0.05 * 1.05 ** 10) / (1.05 ** 10 - 1);
 
-// 計算：selected = { [measureId]: qty }；ai = { point: pct, line: pct, area: pct }
-export function simulate({ plant, emission, measures, selected, ai, feeRate, feeThreshold = 25000 }) {
-  const nodes = plant.nodes.map((n) => ({ ...n, base: emission * n.share, cut: 0, raw: 0, inv: 0, benefit: 0, count: 0 }));
+// 模擬：selected = { [measureId]: 套數 }；aiot = { [nodeId]: true }；line / area = 是否啟用
+export function simulateFactory({
+  plant, emission, measures, selected, aiot = {}, line = false, area = false, pct = DEFAULT_AI_PCT, feeRate = 300, feeThreshold = 25000,
+}) {
+  const scope2 = plant.scope2 ?? 0.5;
+  const nodes = plant.nodes.map((n) => ({ ...n, base: emission * n.share, raw: 0, cut: 0, inv: 0, benefit: 0, items: [] }));
   const byNode = Object.fromEntries(nodes.map((n) => [n.id, n]));
-  const site = { cut: 0, inv: 0, benefit: 0, count: 0 };
-  const cat = { 節能: 0, 燃料: 0, 製程: 0, 其他: 0 };
+  const site = { id: 'site', base: emission, raw: 0, cut: 0, inv: 0, benefit: 0, items: [] };
   let unquantified = 0;
   for (const m of measures) {
     const qty = selected[m.id] || 0;
     if (!qty) continue;
     if (m.co2 == null) { unquantified++; continue; }
     const node = assignNode(plant, m.kind);
-    const target = node ? byNode[node.id] : site;
-    target.raw = (target.raw || 0) + m.co2 * qty;
-    target.inv += (m.inv || 0) * qty;
-    target.benefit += (m.benefit || 0) * qty;
-    target.count += 1;
-    cat[m.c.category] += m.co2 * qty;
+    const t = node ? byNode[node.id] : site;
+    t.raw += m.co2 * qty;
+    t.inv += (m.inv || 0) * qty;
+    t.benefit += (m.benefit || 0) * qty;
+    t.items.push({ m, qty, co2: m.co2 * qty, inv: (m.inv || 0) * qty, benefit: (m.benefit || 0) * qty });
   }
-  // 節點上限截斷，類別貢獻依比例縮減
   let capped = false;
-  let scaleSum = 0;
-  let rawSum = 0;
-  for (const n of nodes) {
-    const cap = n.base * NODE_CAP;
-    n.cut = Math.min(n.raw, cap);
-    if (n.raw > cap) {
+  for (const t of [...nodes, site]) {
+    const cap = t === site ? emission * 0.3 : t.base * NODE_CAP;
+    t.cut = Math.min(t.raw, cap);
+    if (t.raw > cap) {
       capped = true;
-      // 截斷時投資與效益同比例縮減（相當於只導入可用到的規模）
-      n.inv *= cap / n.raw;
-      n.benefit *= cap / n.raw;
+      const k = cap / t.raw;
+      t.inv *= k;
+      t.benefit *= k;
+      for (const it of t.items) { it.co2 *= k; it.inv *= k; it.benefit *= k; }
     }
-    scaleSum += n.cut;
-    rawSum += n.raw;
   }
-  site.cut = Math.min(site.raw || 0, emission * 0.3);
-  if ((site.raw || 0) > emission * 0.3) {
-    capped = true;
-    site.inv *= site.cut / site.raw;
-    site.benefit *= site.cut / site.raw;
-  }
-  scaleSum += site.cut;
-  rawSum += site.raw || 0;
-  const scale = rawSum ? scaleSum / rawSum : 1;
-  for (const k of Object.keys(cat)) cat[k] *= scale;
-  const measureCut = scaleSum;
+  const techCut = nodes.reduce((s, n) => s + n.cut, 0) + site.cut;
 
-  // AI：以措施後剩餘排放為基礎
-  const scope2 = (plant.scope2 ?? 0.5);
-  const remain = (n) => n.base - n.cut;
-  const utilityRemain = nodes.filter((n) => n.kinds.includes('utility')).reduce((s, n) => s + remain(n), 0);
-  const processRemain = nodes.filter((n) => n.kinds.includes('process')).reduce((s, n) => s + remain(n), 0);
-  const afterMeasures = emission - measureCut;
-  const aiCut = {};
-  aiCut.point = (utilityRemain * (ai.point || 0)) / 100;
-  aiCut.line = ((processRemain) * (ai.line || 0)) / 100;
-  aiCut.area = ((afterMeasures - aiCut.point - aiCut.line) * (ai.area || 0)) / 100;
-  const aiTotal = aiCut.point + aiCut.line + aiCut.area;
-  const scale100 = emission / 1e5; // AI 投資依廠規模縮放（以 10 萬公噸為 1 單位，規模經濟取 0.8 次方）
-  const aiInv = AI_LAYERS.reduce((s, l) => s + (ai[l.id] || 0) * l.invPerPct * Math.max(scale100, 0.1) ** 0.8, 0);
-  const valuePerTon = scope2 * ENERGY_VALUE_PER_TON.electricity + (1 - scope2) * ENERGY_VALUE_PER_TON.fuel;
-  const aiBenefit = (aiTotal * valuePerTon) / 1e4;
-
-  // AI 分到節點（畫圖用）
+  // AI 三階段
+  const monitored = nodes.filter((n) => aiot[n.id]);
+  const lineOn = line && monitored.length >= 2;
+  const areaOn = area && lineOn;
+  const scale = Math.max(emission / 1e5, 0.1) ** 0.85;
   for (const n of nodes) {
-    const share = (x, pool) => (pool ? x * (remain(n) / pool) : 0);
-    n.aiPoint = n.kinds.includes('utility') ? share(aiCut.point, utilityRemain) : 0;
-    n.aiLine = n.kinds.includes('process') ? share(aiCut.line, processRemain) : 0;
-    n.aiArea = afterMeasures ? aiCut.area * ((remain(n) - n.aiPoint - n.aiLine) / Math.max(1, afterMeasures - aiCut.point - aiCut.line)) : 0;
+    const remain = n.base - n.cut;
+    n.monitored = !!aiot[n.id];
+    n.sensors = n.monitored ? SENSORS_BY_KIND[n.kinds[0]] || 5 : 0;
+    const f = n.kinds[0] === 'process' ? PROCESS_AI_SHARE : 1;
+    n.aiPoint = n.monitored ? (remain * f * (pct[n.kinds[0]] ?? 2)) / 100 : 0;
+    n.aiLine = lineOn && n.monitored && (n.kinds.includes('process') || n.kinds.includes('thermal')) ? ((remain - n.aiPoint) * f * pct.line) / 100 : 0;
+    n.aiArea = areaOn ? ((remain - n.aiPoint - n.aiLine) * f * pct.area) / 100 : 0;
+    // 投資（萬元）：感測、邊緣運算、AI 模型導入；依節點規模放大
+    n.aiInvPoint = n.monitored ? 60 + 60 * (n.base / 1e4) ** 0.85 : 0;
     n.after = Math.max(0, n.base - n.cut - n.aiPoint - n.aiLine - n.aiArea);
+    n.valuePerTon = nodeValuePerTon(n, scope2);
   }
+  const sum = (f) => nodes.reduce((s, n) => s + f(n), 0);
+  const ai = {
+    point: { cut: sum((n) => n.aiPoint), inv: sum((n) => n.aiInvPoint), benefit: sum((n) => n.aiPoint * n.valuePerTon) / 1e4 },
+    line: { cut: sum((n) => n.aiLine), inv: lineOn ? Math.max(200, 500 * scale) : 0, benefit: sum((n) => n.aiLine * n.valuePerTon) / 1e4 },
+    area: { cut: sum((n) => n.aiArea), inv: areaOn ? Math.max(400, 1000 * scale) : 0, benefit: sum((n) => n.aiArea * n.valuePerTon) / 1e4 },
+  };
+  const aiCut = ai.point.cut + ai.line.cut + ai.area.cut;
+  const aiInv = ai.point.inv + ai.line.inv + ai.area.inv;
+  const aiBenefit = ai.point.benefit + ai.line.benefit + ai.area.benefit;
+  const techInv = sum((n) => n.inv) + site.inv;
+  const techBenefit = sum((n) => n.benefit) + site.benefit;
+  // 監控節點上的措施效益不衰退 → AI 的「效益維持」價值（以 10 年平均計）
+  const monitoredTechBenefit = monitored.reduce((s, n) => s + n.benefit, 0);
+  const monitoredTechCut = monitored.reduce((s, n) => s + n.cut, 0);
+  const avgDecayLoss = 1 - (1 - (1 - MEASURE_DECAY) ** 10) / (10 * MEASURE_DECAY); // 10 年平均衰退比例
+  const persistCut = monitoredTechCut * avgDecayLoss;
 
-  const after = Math.max(0, emission - measureCut - aiTotal);
-  const inv = nodes.reduce((s, n) => s + n.inv, 0) + site.inv;
-  const benefit = nodes.reduce((s, n) => s + n.benefit, 0) + site.benefit;
+  const stages = [
+    { id: 'base', label: '基準排放', emission },
+    { id: 'tech', label: '導入減碳技術', emission: emission - techCut, cut: techCut, inv: techInv },
+    { id: 'point', label: '＋AIoT 監控', emission: emission - techCut - ai.point.cut, cut: ai.point.cut, inv: ai.point.inv },
+    { id: 'line', label: '＋產線聯控', emission: emission - techCut - ai.point.cut - ai.line.cut, cut: ai.line.cut, inv: ai.line.inv },
+    { id: 'area', label: '＋全廠調度', emission: emission - techCut - aiCut, cut: ai.area.cut, inv: ai.area.inv },
+  ];
+  const after = Math.max(0, emission - techCut - aiCut);
   const fee = (e) => (Math.max(0, e - feeThreshold) * feeRate) / 1e4;
+  const feeSavingTech = fee(emission) - fee(emission - techCut);
   const feeSaving = fee(emission) - fee(after);
-  const totalInv = inv + aiInv;
-  const totalBenefit = benefit + aiBenefit + feeSaving;
+  const totalInv = techInv + aiInv;
+  const totalBenefit = techBenefit + aiBenefit + feeSaving;
+
+  // 10 年累計現金流（萬元）：僅技術（效益逐年衰退） vs 技術＋AI（監控節點不衰退）
+  const cash = [{ year: 0, tech: -techInv, techAi: -totalInv }];
+  for (let y = 1; y <= 10; y++) {
+    const d = (1 - MEASURE_DECAY) ** (y - 1);
+    const tech = (techBenefit + feeSavingTech) * d;
+    const unmon = techBenefit - monitoredTechBenefit;
+    const techAi = monitoredTechBenefit + unmon * d + aiBenefit + feeSaving - (feeSavingTech * (1 - d) * (techCut ? (techCut - monitoredTechCut) / techCut : 0));
+    cash.push({ year: y, tech: cash[y - 1].tech + tech, techAi: cash[y - 1].techAi + techAi });
+  }
+  const lcoa = (inv, ben, cut) => (cut > 0 ? ((inv * crf10 - ben) * 1e4) / cut : null);
+
   return {
-    nodes, site, cat, capped, unquantified, measureCut, aiCut, aiTotal, aiInv, aiBenefit, after,
-    inv, benefit, feeBefore: fee(emission), feeAfter: fee(after), feeSaving, totalInv, totalBenefit,
-    payback: totalBenefit > 0 ? totalInv / totalBenefit : null, rate: emission ? (emission - after) / emission : 0,
+    nodes, site, capped, unquantified, techCut, techInv, techBenefit, ai, aiCut, aiInv, aiBenefit, monitored: monitored.length,
+    lineOn, areaOn, sensors: sum((n) => n.sensors), persistCut, stages, after, feeBefore: fee(emission), feeAfter: fee(after), feeSaving,
+    totalInv, totalBenefit, payback: totalBenefit > 0 ? totalInv / totalBenefit : null, rate: emission ? (emission - after) / emission : 0,
+    techPayback: techBenefit + feeSavingTech > 0 ? techInv / (techBenefit + feeSavingTech) : null,
+    lcoaTech: lcoa(techInv, techBenefit, techCut), lcoaAi: lcoa(aiInv, aiBenefit, aiCut), lcoaAll: lcoa(totalInv, techBenefit + aiBenefit, techCut + aiCut),
+    amortAll: techCut + aiCut > 0 ? (totalInv * crf10 * 1e4) / (techCut + aiCut) : null,
+    cash,
   };
 }

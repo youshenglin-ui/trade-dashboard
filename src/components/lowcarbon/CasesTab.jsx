@@ -235,7 +235,7 @@ function ArticleList({ articles }) {
             <div className="flex flex-wrap items-baseline gap-x-2">
               <a href={a.url} target="_blank" rel="noopener noreferrer" className="font-medium text-slate-800 hover:text-brand">{a.title}</a>
               <span className="text-xs text-slate-400 num">{a.published_on}</span>
-              {(a.keywords || []).map((k) => <span key={k} className="text-[11px] text-slate-500 bg-brand-ground border border-brand-line rounded px-1.5">{k}</span>)}
+              {(a.keywords || []).map((k) => <span key={k} className="text-xs text-slate-500 bg-brand-ground border border-brand-line rounded px-1.5">{k}</span>)}
             </div>
             {a.summary && <p className="text-xs text-slate-500 mt-1 line-clamp-2">{a.summary.replace(/\n/g, ' ')}</p>}
           </li>

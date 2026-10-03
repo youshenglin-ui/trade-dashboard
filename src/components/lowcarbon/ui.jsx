@@ -2,7 +2,8 @@
 import React from 'react';
 import { CATEGORY_COLOR, CATEGORIES } from '../../lib/lowcarbon/metrics';
 
-export const AXIS_TICK = { fontSize: 11, fill: '#64748b' };
+// 圖表字級：手機上也要可讀，刻度最小 12px
+export const AXIS_TICK = { fontSize: 12, fill: '#64748b' };
 export const GRID = '#e2e8f0';
 
 export const Card = ({ title, subtitle, right, children, className = '' }) => (
@@ -11,7 +12,7 @@ export const Card = ({ title, subtitle, right, children, className = '' }) => (
       <div className="flex items-start justify-between gap-2 mb-3">
         <div className="min-w-0">
           {title && <h3 className="font-bold text-slate-800 text-base">{title}</h3>}
-          {subtitle && <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">{subtitle}</p>}
+          {subtitle && <p className="text-xs md:text-[13px] text-slate-500 mt-0.5 leading-relaxed">{subtitle}</p>}
         </div>
         {right}
       </div>
@@ -60,7 +61,7 @@ export const TipBox = ({ title, rows, footer }) => (
 // 類別圖例（顏色 + 文字，永遠不只靠顏色）；可點擊切換顯示
 export const CategoryLegend = ({ hidden = [], onToggle, counts }) => (
   <div className="flex flex-wrap gap-2">
-    {CATEGORIES.map((c) => {
+    {CATEGORIES.filter((c) => !counts || counts[c] > 0 || hidden.includes(c)).map((c) => {
       const off = hidden.includes(c);
       return (
         <button key={c} onClick={onToggle ? () => onToggle(c) : undefined}
@@ -84,5 +85,18 @@ export const Select = ({ value, onChange, options, label, className = '' }) => (
 );
 
 export const Note = ({ children }) => (
-  <p className="text-[11px] leading-relaxed text-slate-500 bg-brand-ground border border-brand-line rounded-lg px-3 py-2">{children}</p>
+  <p className="text-xs leading-relaxed text-slate-600 bg-brand-ground border border-brand-line rounded-lg px-3 py-2">{children}</p>
+);
+
+// 資料可信度標籤（高／中／低）——不只靠顏色，一定帶文字
+export const ReliabilityBadge = ({ r, compact }) => {
+  const cls = r.tone === 'good' ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+    : r.tone === 'mid' ? 'bg-amber-50 text-amber-800 border-amber-200' : 'bg-slate-100 text-slate-600 border-slate-300';
+  return <span title={r.note} className={`inline-flex items-center rounded border px-1.5 text-xs whitespace-nowrap ${cls}`}>{compact ? r.level : `可信度 ${r.level}`}</span>;
+};
+
+export const CategoryChip = ({ cat }) => (
+  <span className="inline-flex items-center gap-1 text-xs text-slate-600 whitespace-nowrap">
+    <span className="w-2.5 h-2.5 rounded-full" style={{ background: CATEGORY_COLOR[cat] }} />{cat}
+  </span>
 );
