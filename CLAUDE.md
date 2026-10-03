@@ -59,7 +59,7 @@
    CCUS 拆成六個分頁（案場與管線規劃／整合地圖／碳捕捉／碳封存／碳再利用／排放源清單，定義在
    `CcusDashboard.jsx` 的 `CCUS_TABS`；中間四個是問卷資料頁，來自 `src/components/energy/ccusTabs.js`）；
    氫能拆成六個分頁（供需總覽／結構分析／碳排強度／區域解析／問卷深度分析／原始資料，
-   `HydrogenDashboard.jsx` 的 `H2_TABS`）；碳費拆成五個分頁（總覽／產業與地區／區域地圖／減量措施／計畫明細，
+   `HydrogenDashboard.jsx` 的 `H2_TABS`）；碳費拆成六個分頁（總覽／產業與地區／區域地圖／減量措施／深入分析／計畫明細；深入分析 = `CarbonFeeInsights.jsx`：減量率 vs 規模、措施組合、逐年減量路徑，
    `CarbonFeeDashboard.jsx` 的 `CF_TABS`），手機版計畫明細為卡片、明細改為底部抽屜。地圖拖曳已改用 pointer
    事件，手機可單指平移。
    可安裝到手機主畫面（PWA）：`public/manifest.webmanifest` + `public/icons/`（圖示由 `public/brand/nz-mark.png` 產生），
