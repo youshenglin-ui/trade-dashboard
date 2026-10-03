@@ -16,6 +16,7 @@ import { ErrorBoundary } from './SharedComponents';
 import { fetchCarbonfeeData } from '../lib/fetchCarbonfee';
 import CarbonFeeMap from './CarbonFeeMap';
 import CarbonFeeProcessBreakdown from './CarbonFeeProcessBreakdown';
+import CarbonFeeInsights from './CarbonFeeInsights';
 import {
   CATEGORY_COLOR, MEASURE_CATEGORIES, OTHER_COLOR, SCALE_BUCKETS, SEQ_BLUE, SERIES_COLORS, TIER_COLOR, TIER_LABEL,
   fmtPct, fmtTon, fmtWan, reductionAmount, reductionRate, scaleBucket,
@@ -36,6 +37,7 @@ const CF_TABS = [
   { id: 'rank', label: '產業與地區' },
   { id: 'map', label: '區域地圖' },
   { id: 'measure', label: '減量措施' },
+  { id: 'insight', label: '深入分析' },
   { id: 'table', label: '計畫明細' },
 ];
 
@@ -731,6 +733,10 @@ export default function CarbonFeeDashboard() {
         </Card>
       </div>
       </>)}
+
+      {cfTab === 'insight' && (
+        <ErrorBoundary><CarbonFeeInsights plans={plans} onSelectPlan={setSelectedId} /></ErrorBoundary>
+      )}
 
       {cfTab === 'map' && (
         <Card title="區域分布地圖：各地參與事業與採取的減量手段" subtitle="勾選上方措施類別疊圖比較；地圖跟著上方篩選條件變動・點擊點位看事業與措施">

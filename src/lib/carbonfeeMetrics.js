@@ -89,3 +89,26 @@ export function processSubtype(name) {
 }
 
 export const PROCESS_SUBTYPE_LABEL = { ...Object.fromEntries(PROCESS_SUBTYPES.map((s) => [s.key, s.label])), other: '其他製程改善' };
+
+// ---------- 深入分析（CarbonFeeInsights） ----------
+// 減量路徑：首年就承諾的減量占全程減量的比例 = (基準 − 首年目標) ÷ (基準 − 目標年目標)。
+// 首年 114、目標年 119，若從基準年線性遞減，首年約占 1/6（≈17%）。
+export const LINEAR_FIRST_SHARE = 1 / 6;
+export function frontShare(plan) {
+  const b = plan.total_base_emission;
+  const f = plan.total_first_year_target;
+  const t = plan.total_target_emission;
+  if (b == null || f == null || t == null || !(b > t)) return null;
+  return (b - f) / (b - t);
+}
+export const TRAJECTORY_BUCKETS = [
+  { key: 'none', label: '首年未減（後段才減）', test: (s) => s <= 0.02 },
+  { key: 'back', label: '後段集中', test: (s) => s < LINEAR_FIRST_SHARE * 0.6 },
+  { key: 'linear', label: '接近線性', test: (s) => s <= LINEAR_FIRST_SHARE * 1.6 },
+  { key: 'front', label: '前段集中', test: (s) => s < 0.9 },
+  { key: 'done', label: '首年即達標', test: () => true },
+];
+export const trajectoryBucket = (s) => (s == null ? null : TRAJECTORY_BUCKETS.find((b) => b.test(s)).key);
+
+// 措施組合：計畫執行期間曾採用的大類集合（依 MEASURE_CATEGORIES 固定順序）
+export const measureCombo = (plan) => MEASURE_CATEGORIES.filter((c) => plan.measures.some((m) => (m.categories || []).includes(c)));
