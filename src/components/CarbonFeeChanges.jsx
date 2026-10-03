@@ -70,8 +70,18 @@ export default function CarbonFeeChanges({ runs = [], changes = [], plans = [], 
 
       {rows.length === 0 ? (
         <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-6 text-center text-sm text-slate-500">
-          <div className="font-bold text-slate-600 mb-1">目前只有首次建檔，尚無異動</div>
-          下一次排程爬取（每月第一個週六 09:00，需在 GitHub 核准執行）後，新增、撤回、目標調整會自動出現在這裡。
+          {perRun.length ? (
+            <>
+              <div className="font-bold text-slate-600 mb-1">已比對 {perRun.length} 次，官網目前沒有任何異動</div>
+              最近一次：{perRun[perRun.length - 1].label}（{runs.find((r) => r.id === Math.max(...runs.map((x) => x.id)))?.plan_count} 件計畫，與首次建檔相同）。
+              之後每月第一個週六排程爬取（需在 GitHub 核准執行），有新增、撤回、目標調整會自動出現在這裡。
+            </>
+          ) : (
+            <>
+              <div className="font-bold text-slate-600 mb-1">目前只有首次建檔，尚無異動</div>
+              下一次排程爬取（每月第一個週六 09:00，需在 GitHub 核准執行）後，新增、撤回、目標調整會自動出現在這裡。
+            </>
+          )}
         </div>
       ) : (
         <>
