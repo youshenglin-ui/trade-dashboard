@@ -40,8 +40,8 @@ const SOURCES = [
   {
     key: 'tw-moea-ee521',
     tw: true,
-    label: '經濟部統計處 經濟統計數據分析系統（新版，含工業產銷存產品統計）',
-    url: 'https://service.moea.gov.tw/EE521/query/Query.aspx',
+    label: '經濟部統計處 工業產銷存動態調查 產品統計（瀏覽器可開，腳本會被 Cloudflare 封鎖）',
+    url: 'https://service.moea.gov.tw/EE520/investigate/InvestigateDA.aspx',
   },
   {
     key: 'tw-moea-ga-query',
