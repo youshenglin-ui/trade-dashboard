@@ -38,10 +38,16 @@ const SOURCES = [
     url: 'https://publicinfo.trade.gov.tw/cuswebo/',
   },
   {
-    key: 'tw-moea-gmweb',
+    key: 'tw-moea-ee521',
     tw: true,
-    label: '經濟部統計處 工業產銷存動態調查（產品別）',
-    url: 'https://dmz26.moea.gov.tw/GMWeb/investigate/InvestigateDA.aspx',
+    label: '經濟部統計處 經濟統計數據分析系統（新版，含工業產銷存產品統計）',
+    url: 'https://service.moea.gov.tw/EE521/query/Query.aspx',
+  },
+  {
+    key: 'tw-moea-ga-query',
+    tw: true,
+    label: '經濟部統計處 經濟統計數據分析系統（舊版）',
+    url: 'https://dmz26.moea.gov.tw/GA/query/Query.aspx',
   },
   {
     key: 'tw-customs-ga29',
@@ -54,6 +60,13 @@ const SOURCES = [
     tw: true,
     label: '關務署 輔助查詢',
     url: 'https://portal.sw.nat.gov.tw/APGA/GA31',
+  },
+  {
+    key: 'tw-customs-ga29-list-115-07',
+    tw: true,
+    label: '關務署 統計表 115 年 7 月的檔案清單（免驗證碼）',
+    url: 'https://portal.sw.nat.gov.tw/APGA/GA29_list',
+    form: { fileYear: '115', fileMonth: '7' },
   },
   // ---- 國際 ----
   {
@@ -93,6 +106,8 @@ async function probe(src) {
   const started = Date.now();
   try {
     const res = await fetch(src.url, {
+      method: src.form ? 'POST' : 'GET',
+      body: src.form ? new URLSearchParams(src.form) : undefined,
       headers: { 'User-Agent': USER_AGENT },
       signal: AbortSignal.timeout(60_000),
     });
@@ -100,7 +115,7 @@ async function probe(src) {
     const isJson = (res.headers.get('content-type') ?? '').includes('json');
     await writeFile(join(OUT_DIR, `${src.key}.${isJson ? 'json' : 'html'}`), body);
     let note = '';
-    if (/challenge-platform|Just a moment/.test(body)) note = '被 Cloudflare 驗證擋下';
+    if (/challenge-platform|Just a moment|Attention Required/.test(body)) note = '被 Cloudflare 驗證擋下';
     else if (src.check && isJson) note = src.check(JSON.parse(body));
     else if (!isJson) note = `${(body.length / 1024).toFixed(0)} KB HTML`;
     return { status: res.status, ms: Date.now() - started, note };
