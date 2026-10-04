@@ -9,9 +9,10 @@
 // 台灣來源的查詢頁 HTML 用來分析表單欄位與背後的資料端點，之後才寫正式爬蟲。
 //
 // 2026-10 在雲端（美國 IP）測試：關務署 portal.sw.nat.gov.tw 直接斷線、
-// 經濟部 dmz9.moea.gov.tw / publicinfo.trade.gov.tw 被 Cloudflare 擋（403/502），
+// 經濟部 dmz26.moea.gov.tw（原 dmz9 已停用）/ publicinfo.trade.gov.tw 被擋（403/502），
 // 國際來源（UN Comtrade、Eurostat Comext、CEPII）都正常。
 // 台灣來源請在台灣網路（本機或 self-hosted runner）執行本腳本。
+// 台灣 IP 實測：關務署 GA30 可連（但查詢有驗證碼），國貿署 cuswebo 在台灣也被 Cloudflare 擋。
 
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
@@ -40,7 +41,19 @@ const SOURCES = [
     key: 'tw-moea-gmweb',
     tw: true,
     label: '經濟部統計處 工業產銷存動態調查（產品別）',
-    url: 'https://dmz9.moea.gov.tw/gmweb/investigate/InvestigateDA.aspx',
+    url: 'https://dmz26.moea.gov.tw/GMWeb/investigate/InvestigateDA.aspx',
+  },
+  {
+    key: 'tw-customs-ga29',
+    tw: true,
+    label: '關務署 統計資料下載 統計表（看有沒有免驗證碼的整批檔）',
+    url: 'https://portal.sw.nat.gov.tw/APGA/GA29',
+  },
+  {
+    key: 'tw-customs-ga31',
+    tw: true,
+    label: '關務署 輔助查詢',
+    url: 'https://portal.sw.nat.gov.tw/APGA/GA31',
   },
   // ---- 國際 ----
   {
