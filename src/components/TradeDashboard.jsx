@@ -18,6 +18,7 @@ import {
 import CountryAnalysis from './trade/CountryAnalysis';
 import TradeKpis from './trade/TradeKpis';
 import ProductGroupAnalysis from './trade/ProductGroupAnalysis';
+import AnnualHsExplorer from './trade/AnnualHsExplorer';
 import { ErrorBoundary, CustomTimeTooltip, renderCustomizedLabel, KPICard, MultiSelectDropdown, Segmented, ScrollableChart } from './SharedComponents';
 
 const TradeDashboard = ({
@@ -286,6 +287,9 @@ const TradeDashboard = ({
   }, [filteredData, pivotCountryData, countryViewType, countryMetric, granularity]);
 
   // ** 3. Render Helpers **
+  // 月資料有收錄的稅號（全貨品年度分頁用來標「有月資料」）
+  const trackedCodes = useMemo(() => [...new Set(dataset.map((d) => String(d.hsCode || '')).filter(Boolean))], [dataset]);
+
   const renderOverviewTab = () => (
     <div className="space-y-6">
         <div className="card p-4  h-96 flex flex-col">
@@ -484,6 +488,7 @@ const TradeDashboard = ({
           case 'country': return renderCountryTab();
           case 'pivot': return renderPivotTab();
           case 'analysis': return renderAnalysisTab();
+          case 'annual': return <AnnualHsExplorer trackedCodes={trackedCodes} />;
           default: return renderOverviewTab();
       }
   };
@@ -529,7 +534,7 @@ const TradeDashboard = ({
               </div>
 
               <div className="flex-1 p-3 md:p-6 bg-brand-ground/60">
-                {loading ? <div className="h-64 flex items-center justify-center text-brand-muted">資料載入中…（首次約需 40–50 秒）</div> : renderContent()}
+                {loading && activeTab !== 'annual' ? <div className="h-64 flex items-center justify-center text-brand-muted">資料載入中…（首次約需 40–50 秒）</div> : renderContent()}
               </div>
             </div>
           </ErrorBoundary>

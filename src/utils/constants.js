@@ -1,13 +1,14 @@
 // ==========================================
 // 全域設定與常數 (System Config)
 // ==========================================
-import { TrendingUp, Globe, Table as TableIcon, AlertTriangle } from 'lucide-react';
+import { TrendingUp, Globe, Table as TableIcon, AlertTriangle, Layers } from 'lucide-react';
 
 export const NAV_ITEMS = [
   { id: 'overview', label: '時間趨勢', icon: TrendingUp, section: 'main' },
   { id: 'country', label: '國家分析', icon: Globe, section: 'main' },
   { id: 'pivot', label: '數據樞紐', icon: TableIcon, section: 'main' },
   { id: 'analysis', label: '變動與關聯', icon: AlertTriangle, section: 'main' },
+  { id: 'annual', label: '全貨品年度', icon: Layers, section: 'main' },
 ];
 
 export const GLOBAL_EVENTS = [

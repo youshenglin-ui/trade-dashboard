@@ -14,6 +14,7 @@
     "db:import-carbonfee-coords": "node scripts/import-carbonfee-coords.mjs",
     "crawl:carbonfee": "node scripts/crawl-carbonfee.mjs",
     "crawl:lowcarbon": "node scripts/crawl-lowcarbon.mjs",
+    "db:import-trade-annual": "node scripts/import-trade-annual.mjs",
     "db:import-lowcarbon": "node scripts/import-lowcarbon.mjs",
     "export:lowcarbon": "node scripts/export-lowcarbon-xlsx.mjs"
   },
