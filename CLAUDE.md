@@ -152,6 +152,11 @@
   欄位右移一格，解析時由 `realignFinanceRow()` 自動對齊。國內 CCU 示範案例名錄表 `ccus_ccu_cases`
   （`supabase/ccus_ccu_cases.sql`，含已停止／規劃中案場）。碳費「製程改善」細分規則在 `carbonfeeMetrics.js` 的
   `PROCESS_SUBTYPES`（`CarbonFeeProcessBreakdown.jsx`）。
+- 2026-11 新增 CCUS「第二次調查（供需・人力）」分頁 `energy/CcusRound2View.jsx`（資料 `src/lib/energy/ccusRound2.js`）：
+  115.09.24 發放的 CCS Hub 供需匹配問卷（18 廠）與產業人力供需問卷（14 家），來源為 Google Drive
+  「03環境部-CCUS旗艦計畫/問卷發放/1151030 Final」各廠回覆檔，人工整理成 `data/energy/ccus_r2_*.csv`（不含填表人個資），
+  `node scripts/build-ccus-r2-seed.mjs` 產生 `supabase/ccus_survey_r2_seed.sql`（schema 在 `ccus_survey_r2.sql`）。
+  掃描 PDF 回覆勾選辨識不全，comment 標「掃描檔」者前端顯示「待確認」，有原檔可再人工補正 CSV 後重灌。
 - 跨計畫提醒：產發署（製造部門淨零轉型）與環境部（CCUS 旗艦）屬不同委辦計畫，圖表以「計畫」欄區分，
   對外引用請分開呈現。
 

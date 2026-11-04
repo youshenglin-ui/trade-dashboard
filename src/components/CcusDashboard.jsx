@@ -12,6 +12,8 @@ import { fetchCcusSurvey, fetchScope1Rows, fetchVerifiedEmitterCoords } from '..
 import { paramsByKey } from '../lib/energy/energyMetrics';
 import CcusTransportCost from './energy/CcusTransportCost';
 import CcusSurveyPanel from './energy/CcusSurveyViews';
+import CcusRound2View from './energy/CcusRound2View';
+import { ClipboardCheck } from 'lucide-react';
 import { CCUS_SURVEY_TABS } from './energy/ccusTabs';
 import MapLibreBase from './map/MapLibreBase';
 import { TAIWAN_BOUNDS, REGION_BOUNDS, LABEL_FONT, fc, pt, line, validLL, cubicBezier, quadBezier, addSquareIcon } from './map/mapUtils';
@@ -776,6 +778,7 @@ const LegendRow = ({ sym, children }) => (
 const CCUS_TABS = [
     { id: 'planning', label: '案場與管線規劃', icon: Map },
     ...CCUS_SURVEY_TABS.map(t => ({ id: t.value, label: t.label, icon: t.icon })),
+    { id: 'round2', label: '第二次調查（供需・人力）', icon: ClipboardCheck },
     { id: 'sources', label: '排放源清單', icon: List },
 ];
 
@@ -1311,6 +1314,10 @@ const CcusDashboard = ({ onOpenTrade }) => {
             )}
 
             {/* CCUS 問卷資料：整合地圖 / 碳捕捉 / 碳封存 / 碳再利用（資料來源：Supabase 問卷整併表） */}
+            {activeTab === 'round2' && (
+                <div className="animate-fade-in"><CcusRound2View /></div>
+            )}
+
             {CCUS_SURVEY_TABS.some(t => t.value === activeTab) && (
                 <div className="animate-fade-in">
                     <CcusSurveyPanel view={activeTab} onOpenTrade={onOpenTrade} />
