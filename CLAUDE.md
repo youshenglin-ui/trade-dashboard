@@ -42,6 +42,12 @@
    world-atlas 打包在前端、不依賴外部圖磚；國旗用 flagcdn 圖片，因 Windows 不顯示國旗 emoji；國名對照與座標在
    `src/lib/geo/countries.js`，新國名出現時在那裡補一行）；變動與關聯 `trade/ProductGroupAnalysis.jsx`，產品類別
    （五大基礎化學品等）定義在 `src/lib/trade/productGroups.js`。
+   全貨品年度（2026-11 新增）：海關「全部 HS6 × 國家 × 年」彙整 Excel 存在獨立表 `trade_annual_hs6`
+   （`supabase/trade_annual.sql`，**不併入 trade_records**，避免月/年顆粒混雜與前端全量抓取暴增），前端分頁
+   `trade/AnnualHsExplorer.jsx` 只透過 RPC `trade_annual_drill` / `trade_annual_countries` 取聚合結果，
+   HS2→HS4→HS6 逐層下鑽、圖表只畫前 12 名＋其他。章名在 `src/lib/trade/hsChapters.js`。匯入
+   `npm run db:import-trade-annual -- <檔案.xlsx> --dataset 114-v1`（同年份整批替換）；貨品號列 0「實施資訊保護貨品」
+   標 is_suppressed、不計入總量。雲端環境連不到 5432 時，可 `--dry-run --out rows.json` 再經暫時性 RPC 上傳（用完即刪）。
    已知效能限制：前端目前是「全量抓取 45 萬列再篩選」，載入約 40-50 秒，比原本讀本地 CSV
    還慢，下一步要把篩選/聚合邏輯搬進資料庫查詢（RPC）才能真正做到快速查詢。
 2. **地圖**：2026-09-28 起 CCUS 與氫能地圖已改用 MapLibre GL JS。共用底圖 `src/components/map/MapLibreBase.jsx`
