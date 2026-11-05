@@ -8,7 +8,7 @@ const parse = (f) => {
 };
 const ARR = new Set(['barriers', 'sources', 'shortage_reasons', 'training_areas']);
 const BOOL = new Set(['no_dedicated', 'evaluating']);
-const NUM = /^(scope1_wan_t|employees|ccus_|opt_|base_|cons_|n11|seq|emission_code|conc_code|temp_code|pressure_code|basis_code)/;
+const NUM = /^(lat|lon|scope1_wan_t|employees|ccus_|opt_|base_|cons_|n11|seq|emission_code|conc_code|temp_code|pressure_code|basis_code)/;
 const lit = (k, v) => {
   if (v === '' || v == null) return BOOL.has(k) ? 'false' : 'null';
   if (BOOL.has(k)) return v === '1' ? 'true' : 'false';

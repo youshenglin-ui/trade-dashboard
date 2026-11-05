@@ -15,6 +15,7 @@ import TaiwanLayerMap, { LegendSwatch } from '../maps/TaiwanLayerMap';
 import { AnswersTable, Badge, Card, Collapsible, DataTable, ErrorBlock, Kpi, LoadingBlock } from './ui';
 import CcusCostCompare from './CcusCostCompare';
 import CcuCaseList from './CcuCaseList';
+import { CcusTalentView, HubSupplySection, R2FlueGasCard } from './CcusRound2View';
 import { fetchCcuProductPrices } from '../../lib/energy/fetchEnergySurvey';
 import { useCcusSurvey } from '../../lib/energy/useEnergySurvey';
 import { buildCcusLayers } from '../../lib/energy/ccusLayers';
@@ -300,6 +301,7 @@ export function CcusCaptureView({ data }) {
           ]}
         />
       </Card>
+      <R2FlueGasCard />
     </div>
   );
 }
@@ -322,7 +324,6 @@ export function CcusStorageView({ data }) {
   const willingness = data.answers.filter((a) => a.sheet === '意願與障礙' && a.section?.startsWith('旗艦'));
   const strategy = data.answers.filter((a) => a.sheet === '意願與障礙' && !a.section?.startsWith('旗艦'));
   const finance = data.answers.filter((a) => a.sheet === '成本與財務');
-  const talent = data.answers.filter((a) => a.sheet === '人才需求');
   const params = paramsByKey(data.params);
   const lcoc = params.ccus_ccs_lcoc_ntd_t;
 
@@ -374,6 +375,8 @@ export function CcusStorageView({ data }) {
         </div>
       </div>
 
+      <HubSupplySection data={data} />
+
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         <Card title="CCUS 使用意向、障礙與促進因素（勾選家數）" subtitle={`115年環境部 CCUS 旗艦供需匹配問卷，共 ${willingness.length} 份`}>
           <div className="h-[300px]">
@@ -405,7 +408,6 @@ export function CcusStorageView({ data }) {
       <Collapsible title={`意願與障礙勾選明細（${willingness.length} 份）`} defaultOpen><AnswersTable rows={willingness} /></Collapsible>
       <Collapsible title={`成本與財務（${finance.length} 份，金額：萬元）`}><AnswersTable rows={finance} /></Collapsible>
       <Collapsible title={`115年產發署問卷：減碳策略中 CCUS 占比（${strategy.length} 廠）`}><AnswersTable rows={strategy} /></Collapsible>
-      <Collapsible title={`CCUS 人才需求（${talent.length} 家）`}><AnswersTable rows={talent} /></Collapsible>
     </div>
   );
 }
@@ -525,6 +527,7 @@ export default function CcusSurveyPanel({ view, onOpenTrade }) {
   }
   if (view === 'capture') return <CcusCaptureView data={data} />;
   if (view === 'storage') return <CcusStorageView data={data} />;
+  if (view === 'talent') return <CcusTalentView data={data} />;
   if (view === 'utilization') return <CcusUtilizationView data={data} onOpenTrade={onOpenTrade} />;
   return <CcusOverviewView data={data} onOpenTrade={onOpenTrade} />;
 }

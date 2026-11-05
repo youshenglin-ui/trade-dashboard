@@ -6,8 +6,9 @@ create table if not exists ccus_r2_plants (
   scope1_wan_t numeric, capture_volume text, start_timing text, handover text, transport_pref text,
   barriers text[], cost_knowledge text, cost_estimate text,
   share_lt1500 text, share_1500_3000 text, share_3000_5000 text, share_5000_8000 text, share_gt8000 text,
-  comment text
+  comment text, lat numeric, lon numeric  -- 依問卷廠址地址概略定位
 );
+alter table ccus_r2_plants add column if not exists lat numeric, add column if not exists lon numeric;
 create table if not exists ccus_r2_units (
   id bigserial primary key, plant_key text references ccus_r2_plants(plant_key) on delete cascade,
   seq int, unit_code text, unit_note text, emission_code int, conc_code int, temp_code int, pressure_code int, basis_code int
