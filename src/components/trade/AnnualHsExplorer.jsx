@@ -35,6 +35,7 @@ export default function AnnualHsExplorer({ trackedCodes = [] }) {
   const [path, setPath] = useState([]); // 已下鑽的代碼，例 ['28', '2804']
   const [country, setCountry] = useState('');
   const [keyword, setKeyword] = useState('');
+  const [hits, setHits] = useState(null); // 跨層級搜尋結果（null = 沒在搜尋）
   const [rows, setRows] = useState([]);
   const [countries, setCountries] = useState([]);
   const [selected, setSelected] = useState(null); // HS6 層點選的品項（右側國家排行用）
@@ -74,6 +75,17 @@ export default function AnnualHsExplorer({ trackedCodes = [] }) {
     return () => { alive = false; };
   }, [year, flow, countryPrefix]);
 
+  useEffect(() => {
+    const q = keyword.trim();
+    if (!year || q.length < 2) { setHits(null); return undefined; } // eslint-disable-line react-hooks/set-state-in-effect
+    let alive = true;
+    setHits(undefined);
+    const t = setTimeout(() => {
+      rpc('trade_annual_search', { p_year: year, p_flow: flow, p_q: q }).then((d) => alive && setHits(d)).catch(() => alive && setHits([]));
+    }, 300);
+    return () => { alive = false; clearTimeout(t); };
+  }, [keyword, year, flow]);
+
   // 國家選單：用目前層級（未套國家）的國家排行
   const [countryOptions, setCountryOptions] = useState([]);
   useEffect(() => {
@@ -85,15 +97,14 @@ export default function AnnualHsExplorer({ trackedCodes = [] }) {
 
   const total = useMemo(() => rows.reduce((s, r) => s + Number(r.value_usd_thousand || 0), 0), [rows]);
   const filtered = useMemo(() => {
-    const k = keyword.trim().toLowerCase();
-    let cum = 0;
-    const withShare = rows.map((r) => {
+    const out = [];
+    for (const r of rows) {
       const v = Number(r.value_usd_thousand || 0);
-      cum += v;
-      return { ...r, label: labelFor(level, r), share: total ? v / total : 0, cum: total ? cum / total : 0 };
-    });
-    return k ? withShare.filter((r) => r.code.includes(k) || (r.label || '').toLowerCase().includes(k)) : withShare;
-  }, [rows, keyword, total, level]);
+      const prev = out.length ? out[out.length - 1].cumV : 0;
+      out.push({ ...r, label: labelFor(level, r), share: total ? v / total : 0, cumV: prev + v, cum: total ? (prev + v) / total : 0 });
+    }
+    return out;
+  }, [rows, total, level]);
 
   const chartData = useMemo(() => {
     const top = filtered.slice(0, TOP_N).map((r) => ({ code: r.code, name: `${r.code} ${r.label || ''}`.slice(0, 18), v: Number(r.value_usd_thousand || 0) }));
@@ -102,6 +113,7 @@ export default function AnnualHsExplorer({ trackedCodes = [] }) {
     return top;
   }, [filtered]);
 
+  const chartMax = chartData.reduce((m, d) => Math.max(m, d.v), 0);
   const n80 = useMemo(() => filtered.findIndex((r) => r.cum >= 0.8) + 1, [filtered]);
   const countryTotal = countries.reduce((s, r) => s + Number(r.value_usd_thousand || 0), 0);
 
@@ -109,6 +121,8 @@ export default function AnnualHsExplorer({ trackedCodes = [] }) {
     if (level === 6) { setSelected(selected === code ? null : code); return; }
     setPath([...path, code]); setKeyword(''); setSelected(null);
   };
+  // 跨層級搜尋：直接跳到某個 HS6 品項（父層 HS2/HS4 自動展開）
+  const jumpTo = (hs6) => { setPath([hs6.slice(0, 2), hs6.slice(0, 4)]); setSelected(hs6); setKeyword(''); };
   const goTo = (i) => { setPath(path.slice(0, i)); setSelected(null); setKeyword(''); };
 
   if (!loading && !error && years.length === 0) {
@@ -132,9 +146,31 @@ export default function AnnualHsExplorer({ trackedCodes = [] }) {
         </select>
         <label className="flex items-center gap-2 h-10 px-3 border border-brand-line rounded-lg bg-white flex-1 min-w-[10rem] max-w-xs">
           <Search size={15} className="text-brand-muted" />
-          <input value={keyword} onChange={(e) => { setKeyword(e.target.value); setPage(1); }} placeholder="在本層搜尋代碼或品名" className="w-full text-sm outline-none bg-transparent" />
+          <input value={keyword} onChange={(e) => { setKeyword(e.target.value); setPage(1); }} placeholder="搜尋代碼或品名（例：2804、氫）" className="w-full text-sm outline-none bg-transparent" />
         </label>
       </div>
+
+      {hits === undefined && keyword.trim().length >= 2 && <div className="card p-3 text-sm text-brand-muted">搜尋中…</div>}
+      {hits && (
+        <div className="card p-3 md:p-4">
+          <div className="text-sm font-bold text-brand-dark mb-2">全部品項中符合「{keyword.trim()}」的{flow}品項（HS6）{hits.length >= 50 ? '（前 50 筆）' : `（${hits.length} 筆）`}</div>
+          {hits.length === 0 ? (
+            <p className="text-sm text-brand-muted">找不到符合的品項。這份資料是 6 碼稅號，可輸入前 2／4／6 碼或中文品名；若代碼正確，可能是 {year - 1911} 年沒有這項{flow}。</p>
+          ) : (
+            <ul className="divide-y divide-brand-line max-h-72 overflow-y-auto">
+              {hits.map((h) => (
+                <li key={h.code} data-hit>
+                  <button onClick={() => jumpTo(h.code)} className="w-full text-left py-2 px-1 text-sm flex items-center gap-2 hover:bg-brand-soft/50">
+                    <span className="font-mono font-bold text-brand">{h.code}</span>
+                    <span className="flex-1 truncate">{h.name}</span>
+                    <span className="tabular-nums text-brand-muted whitespace-nowrap">{fmtUsdK(h.value_usd_thousand)}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
 
       <nav className="flex flex-wrap items-center gap-1 text-sm font-bold">
         <button onClick={() => goTo(0)} className={`px-2 py-1 rounded ${path.length ? 'text-brand hover:bg-brand-soft' : 'text-brand-dark'}`}>全部貨品</button>
@@ -166,7 +202,7 @@ export default function AnnualHsExplorer({ trackedCodes = [] }) {
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={chartData} layout="vertical" margin={{ left: 8, right: 16 }}>
                   <CartesianGrid horizontal={false} stroke="#eef2f6" />
-                  <XAxis type="number" tickFormatter={(v) => `${(v / 1e5).toFixed(0)}億`} tick={{ fontSize: 12 }} />
+                  <XAxis type="number" tickFormatter={(v) => (chartMax >= 3e5 ? `${(v / 1e5).toFixed(0)}億` : chartMax >= 1e5 ? `${(v / 1e5).toFixed(1)}億` : `${(v / 10).toLocaleString(undefined, { maximumFractionDigits: 0 })}萬`)} tick={{ fontSize: 12 }} />
                   <YAxis type="category" dataKey="name" width={150} tick={{ fontSize: 12 }} interval={0} />
                   <Tooltip formatter={(v) => [fmtUsdK(v), '金額']} />
                   <Bar dataKey="v" radius={[0, 4, 4, 0]} onClick={(d) => d?.code && drill(d.code)} cursor="pointer">
