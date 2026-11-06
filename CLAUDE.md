@@ -44,7 +44,9 @@
    （五大基礎化學品等）定義在 `src/lib/trade/productGroups.js`。
    全貨品年度（2026-11 新增）：海關「全部 HS6 × 國家 × 年」彙整 Excel 存在獨立表 `trade_annual_hs6`
    （`supabase/trade_annual.sql`，**不併入 trade_records**，避免月/年顆粒混雜與前端全量抓取暴增），前端分頁
-   `trade/AnnualHsExplorer.jsx` 只透過 RPC `trade_annual_drill` / `trade_annual_countries` 取聚合結果，
+   `trade/AnnualHsExplorer.jsx` 只透過 RPC `trade_annual_drill` / `trade_annual_countries` / `trade_annual_search` 取結果；
+   RPC 讀預先聚合表 `trade_annual_agg`（anon statement_timeout 只有 3 秒，即時 group by 18 萬列會逾時——已踩過），
+   **匯入後要 `select trade_annual_refresh_agg()`**（匯入腳本會自動呼叫）。
    HS2→HS4→HS6 逐層下鑽、圖表只畫前 12 名＋其他。章名在 `src/lib/trade/hsChapters.js`。匯入
    `npm run db:import-trade-annual -- <檔案.xlsx> --dataset 114-v1`（同年份整批替換）；貨品號列 0「實施資訊保護貨品」
    標 is_suppressed、不計入總量。雲端環境連不到 5432 時，可 `--dry-run --out rows.json` 再經暫時性 RPC 上傳（用完即刪）。

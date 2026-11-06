@@ -94,6 +94,7 @@ try {
     );
     process.stdout.write(`\r寫入 ${Math.min(i + BATCH, rows.length)}/${rows.length}`);
   }
+  await client.query('select trade_annual_refresh_agg()');
   await client.query('commit');
   console.log('\n完成');
 } catch (e) {
